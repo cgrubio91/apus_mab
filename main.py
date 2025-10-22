@@ -23,12 +23,13 @@ app = FastAPI()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Base de datos
+# Base de datos (Railway)
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
+    "port": int(os.getenv("DB_PORT", 3306)),  # 👈 puerto convertido a entero
 }
 
 # Twilio WhatsApp
@@ -65,7 +66,15 @@ def gemini_generate(prompt: str) -> str:
 def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y retorna resultados."""
     try:
+        # 🔍 Log para verificar si las variables del entorno están cargadas
+        log(f"🔍 DB Config usada: {DB_CONFIG}")
+
+        if not all(DB_CONFIG.values()):
+            log("⚠️ Variables de entorno incompletas. Revisa la configuración en Render.")
+            return [{"error": "Configuración de base de datos incompleta."}]
+
         conn = mysql.connector.connect(**DB_CONFIG)
+        log("✅ Conexión a la base de datos establecida correctamente.")
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
         rows = cursor.fetchall()
