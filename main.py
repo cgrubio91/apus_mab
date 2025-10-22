@@ -29,7 +29,7 @@ DB_CONFIG = {
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
-    "port": int(os.getenv("DB_PORT", 3306)),  # 👈 puerto convertido a entero
+    "port": int(os.getenv("DB_PORT", 58803)),  # 👈 puerto convertido a entero
 }
 
 # Twilio WhatsApp
@@ -156,7 +156,7 @@ async def whatsapp_webhook(request: Request):
     # 📤 Enviar respuesta al usuario
     # ===============================
     send_whatsapp_message(from_number, respuesta)
-    log(f"🗣️ Respuesta enviada: {respuesta}")
+    log(f"🗣️🌱 Respuesta enviada: {respuesta}")
 
     return "OK"
 
