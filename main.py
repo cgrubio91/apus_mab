@@ -1,5 +1,5 @@
 # ===============================
-# 📦 main.py — MAPUS BOT IA SQL + APU
+# 📦 main.py — MAPUS BOT IA SQL + APU + CONTROL DE USUARIOS
 # ===============================
 
 from fastapi import FastAPI, Request
@@ -64,27 +64,13 @@ def gemini_generate(prompt: str) -> str:
 def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y devuelve los resultados."""
     try:
-        safe_db_config = {
-            "host": DB_CONFIG.get("host"),
-            "user": DB_CONFIG.get("user"),
-            "password": "***",
-            "database": DB_CONFIG.get("database"),
-            "port": DB_CONFIG.get("port"),
-        }
-        log(f"🔍 DB Config usada: {safe_db_config}")
-
-        if not all(DB_CONFIG.values()):
-            return [{"error": "Configuración de base de datos incompleta."}]
-
         conn = mysql.connector.connect(**DB_CONFIG)
-        log("✅ Conexión a la base de datos establecida correctamente.")
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
         rows = cursor.fetchall()
         cursor.close()
         conn.close()
         return rows
-
     except Exception as e:
         log(f"❌ Error SQL: {e}")
         return [{"error": str(e)}]
@@ -100,6 +86,24 @@ def send_whatsapp_message(to, text):
 
 
 # ===============================
+# 👥 CONTROL DE USUARIOS
+# ===============================
+def usuario_autorizado(telefono: str):
+    """Verifica si el usuario está autorizado en la tabla 'usuarios'."""
+    try:
+        conn = mysql.connector.connect(**DB_CONFIG)
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
+        user = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return user
+    except Exception as e:
+        log(f"❌ Error verificando usuario: {e}")
+        return None
+
+
+# ===============================
 # 💬 ENDPOINT WHATSAPP WEBHOOK
 # ===============================
 @app.post("/whatsapp_webhook")
@@ -111,8 +115,17 @@ async def whatsapp_webhook(request: Request):
 
     log(f"📩 Mensaje recibido de {from_number}: {message_body}")
 
+    # 🛡️ Verificación de usuario
+    user = usuario_autorizado(from_number)
+    if not user:
+        send_whatsapp_message(from_number, "🚫 Acceso restringido.\nNo tienes permiso para usar este asistente.\nContacta con el administrador para solicitar acceso.")
+        log(f"❌ Acceso denegado a {from_number}")
+        return "UNAUTHORIZED"
+
+    log(f"✅ Usuario autorizado: {user['nombre']} ({user['rol']})")
+
     if not message_body:
-        send_whatsapp_message(from_number, "👋 ¡Hola! Envíame una pregunta sobre tus APUs o ítems, y te ayudaré con gusto.")
+        send_whatsapp_message(from_number, f"👋 Hola {user['nombre']}! Envíame una pregunta sobre tus APUs o ítems, y te ayudaré con gusto.")
         return "OK"
 
     # ===============================
@@ -156,7 +169,7 @@ async def whatsapp_webhook(request: Request):
             prompt_resumen = f"""
             Eres un ingeniero experto en Análisis de Precios Unitarios (APU).
             Resume de manera clara, cálida y profesional (máximo 5 líneas) los resultados SQL,
-            saludando al usuario y cerrando con una despedida corta.
+            saludando al usuario por su nombre ({user['nombre']}) y cerrando con una despedida corta.
             Resultados: {json.dumps(resultados, ensure_ascii=False)}
             """
             respuesta = gemini_generate(prompt_resumen)
@@ -169,7 +182,7 @@ async def whatsapp_webhook(request: Request):
         for i, parte in enumerate(partes):
             send_whatsapp_message(from_number, parte)
             log(f"🗣️ Parte {i+1}/{len(partes)} enviada ({len(parte)} caracteres).")
-            time.sleep(2)  # 🕒 Pequeña pausa para simular typing
+            time.sleep(2)
     else:
         send_whatsapp_message(from_number, respuesta)
         log(f"🗣️ Respuesta enviada ({len(respuesta)} caracteres).")
