@@ -151,12 +151,25 @@ async def whatsapp_webhook(request: Request):
             respuesta = "No se encontraron resultados para tu consulta."
         else:
             prompt_resumen = f"""
-            Eres un experto en análisis de precios unitarios (APU).
-            Resume los siguientes resultados en lenguaje natural, usando un tono amable y profesional,
-            saludando al inicio y despidiéndote al final.
+            Actúa como un experto en Análisis de Precios Unitarios (APU) y obras civiles.
+            Redacta una respuesta breve, profesional y cálida (máximo 5 líneas), explicando los resultados
+            de forma resumida, clara y útil para un ingeniero. Incluye un saludo inicial y una despedida corta.
             Resultados: {json.dumps(resultados, ensure_ascii=False)}
             """
+
             respuesta = gemini_generate(prompt_resumen)
+
+            # 🔪 Si la respuesta excede el límite permitido por WhatsApp
+            if len(respuesta) > 1500:
+                partes = [respuesta[i:i+1500] for i in range(0, len(respuesta), 1500)]
+                for i, parte in enumerate(partes):
+                    if i == len(partes) - 1:
+                        parte += "\n\n¿Deseas que te envíe más detalles?"
+                    send_whatsapp_message(from_number, parte)
+                    log(f"🗣️ Parte {i+1}/{len(partes)} enviada ({len(parte)} caracteres).")
+            else:
+                send_whatsapp_message(from_number, respuesta)
+                log(f"🗣️ Respuesta enviada ({len(respuesta)} caracteres).")
 
     # ===============================
     # 📤 Responder por WhatsApp
