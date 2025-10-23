@@ -8,6 +8,7 @@ import requests
 import json
 import re
 import os
+import time
 from twilio.rest import Client
 from datetime import datetime
 from dotenv import load_dotenv
@@ -16,7 +17,6 @@ from dotenv import load_dotenv
 # 🔑 CONFIGURACIÓN INICIAL
 # ===============================
 load_dotenv()
-
 app = FastAPI()
 
 # Gemini
@@ -46,6 +46,7 @@ def log(msg):
 
 
 def gemini_generate(prompt: str) -> str:
+    """Llama a la API de Gemini para generar texto."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
@@ -61,6 +62,7 @@ def gemini_generate(prompt: str) -> str:
 
 
 def ejecutar_sql(query: str):
+    """Ejecuta una consulta SQL y devuelve los resultados."""
     try:
         safe_db_config = {
             "host": DB_CONFIG.get("host"),
@@ -89,6 +91,7 @@ def ejecutar_sql(query: str):
 
 
 def send_whatsapp_message(to, text):
+    """Envía un mensaje de WhatsApp por Twilio."""
     try:
         client.messages.create(from_=FROM_WHATSAPP, to=to, body=text)
         log(f"✅ Mensaje enviado a {to}")
@@ -101,6 +104,7 @@ def send_whatsapp_message(to, text):
 # ===============================
 @app.post("/whatsapp_webhook")
 async def whatsapp_webhook(request: Request):
+    """Procesa mensajes entrantes desde Twilio WhatsApp."""
     data = await request.form()
     from_number = data.get("From")
     message_body = data.get("Body", "").strip()
@@ -112,12 +116,11 @@ async def whatsapp_webhook(request: Request):
         return "OK"
 
     # ===============================
-    # 🧠 PROMPT MEJORADO
+    # 🧠 PROMPT PARA SQL
     # ===============================
     prompt_sql = f"""
     Actúa como un asistente experto en bases de datos MySQL y en análisis de precios unitarios (APU) de obras civiles.
-    Tu tarea es interpretar preguntas en lenguaje natural sobre ítems, insumos, rendimientos, proyectos o entidades,
-    y convertirlas en consultas SQL válidas según la estructura de la tabla:
+    Convierte la solicitud del usuario en una consulta SQL válida, basada en la tabla:
 
     Tabla: apus
     - fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad, contratista,
@@ -129,7 +132,7 @@ async def whatsapp_webhook(request: Request):
     Reglas:
     - Solo genera consultas SELECT completas.
     - Si el usuario pide algo inexistente, responde: "Esa información no existe."
-    - No incluyas formato Markdown ni ```sql```.
+    - No uses formato Markdown ni ```sql```.
 
     Usuario: "{message_body}"
     """
@@ -139,7 +142,7 @@ async def whatsapp_webhook(request: Request):
     log(f"🧠 SQL generado: {sql_query}")
 
     # ===============================
-    # 🗃️ Ejecutar consulta
+    # 🗃️ EJECUTAR CONSULTA SQL
     # ===============================
     if not sql_query.lower().startswith("select"):
         respuesta = "Solo se permiten consultas de lectura."
@@ -151,31 +154,25 @@ async def whatsapp_webhook(request: Request):
             respuesta = "No se encontraron resultados para tu consulta."
         else:
             prompt_resumen = f"""
-            Actúa como un experto en Análisis de Precios Unitarios (APU) y obras civiles.
-            Redacta una respuesta breve, profesional y cálida (máximo 5 líneas), explicando los resultados
-            de forma resumida, clara y útil para un ingeniero. Incluye un saludo inicial y una despedida corta.
+            Eres un ingeniero experto en Análisis de Precios Unitarios (APU).
+            Resume de manera clara, cálida y profesional (máximo 5 líneas) los resultados SQL,
+            saludando al usuario y cerrando con una despedida corta.
             Resultados: {json.dumps(resultados, ensure_ascii=False)}
             """
-
             respuesta = gemini_generate(prompt_resumen)
 
-            # 🔪 Si la respuesta excede el límite permitido por WhatsApp
-            if len(respuesta) > 1500:
-                partes = [respuesta[i:i+1500] for i in range(0, len(respuesta), 1500)]
-                for i, parte in enumerate(partes):
-                    if i == len(partes) - 1:
-                        parte += "\n\n¿Deseas que te envíe más detalles?"
-                    send_whatsapp_message(from_number, parte)
-                    log(f"🗣️ Parte {i+1}/{len(partes)} enviada ({len(parte)} caracteres).")
-            else:
-                send_whatsapp_message(from_number, respuesta)
-                log(f"🗣️ Respuesta enviada ({len(respuesta)} caracteres).")
-
     # ===============================
-    # 📤 Responder por WhatsApp
+    # 📤 ENVÍO DE RESPUESTA
     # ===============================
-    send_whatsapp_message(from_number, respuesta)
-    log(f"🗣️ Respuesta enviada: {respuesta}")
+    if len(respuesta) > 1500:
+        partes = [respuesta[i:i+1500] for i in range(0, len(respuesta), 1500)]
+        for i, parte in enumerate(partes):
+            send_whatsapp_message(from_number, parte)
+            log(f"🗣️ Parte {i+1}/{len(partes)} enviada ({len(parte)} caracteres).")
+            time.sleep(2)  # 🕒 Pequeña pausa para simular typing
+    else:
+        send_whatsapp_message(from_number, respuesta)
+        log(f"🗣️ Respuesta enviada ({len(respuesta)} caracteres).")
 
     return "OK"
 
