@@ -1,5 +1,5 @@
 # ===============================
-# 📦 main.py — MAPUS BOT IA SQL
+# 📦 main.py — MAPUS BOT IA SQL + APU
 # ===============================
 
 from fastapi import FastAPI, Request
@@ -15,24 +15,24 @@ from dotenv import load_dotenv
 # ===============================
 # 🔑 CONFIGURACIÓN INICIAL
 # ===============================
-load_dotenv()  # Carga variables desde .env
+load_dotenv()
 
 app = FastAPI()
 
-# Gemini API
+# Gemini
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# Base de datos (Railway)
+# DB (Railway)
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
-    "port": int(os.getenv("DB_PORT", 58803)),  # 👈 puerto convertido a entero
+    "port": int(os.getenv("DB_PORT", 3306)),
 }
 
-# Twilio WhatsApp
+# Twilio
 ACCOUNT_SID = os.getenv("ACCOUNT_SID")
 AUTH_TOKEN = os.getenv("AUTH_TOKEN")
 FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
@@ -42,12 +42,10 @@ client = Client(ACCOUNT_SID, AUTH_TOKEN)
 # 🧠 FUNCIONES AUXILIARES
 # ===============================
 def log(msg):
-    """Imprime logs con timestamp para depuración."""
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
 def gemini_generate(prompt: str) -> str:
-    """Genera texto usando Gemini API."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
     try:
@@ -56,21 +54,24 @@ def gemini_generate(prompt: str) -> str:
         if "candidates" not in data:
             log(f"❌ Error Gemini: {json.dumps(data, indent=2)}")
             return "No se pudo procesar tu solicitud con la IA."
-        text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        return text
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except Exception as e:
         log(f"❌ Error conectando con Gemini: {e}")
         return "Error al conectar con la IA de Gemini."
 
 
 def ejecutar_sql(query: str):
-    """Ejecuta una consulta SQL y retorna resultados."""
     try:
-        # 🔍 Log para verificar si las variables del entorno están cargadas
-        log(f"🔍 DB Config usada: {DB_CONFIG}")
+        safe_db_config = {
+            "host": DB_CONFIG.get("host"),
+            "user": DB_CONFIG.get("user"),
+            "password": "***",
+            "database": DB_CONFIG.get("database"),
+            "port": DB_CONFIG.get("port"),
+        }
+        log(f"🔍 DB Config usada: {safe_db_config}")
 
         if not all(DB_CONFIG.values()):
-            log("⚠️ Variables de entorno incompletas. Revisa la configuración en Render.")
             return [{"error": "Configuración de base de datos incompleta."}]
 
         conn = mysql.connector.connect(**DB_CONFIG)
@@ -81,13 +82,13 @@ def ejecutar_sql(query: str):
         cursor.close()
         conn.close()
         return rows
+
     except Exception as e:
         log(f"❌ Error SQL: {e}")
         return [{"error": str(e)}]
 
 
 def send_whatsapp_message(to, text):
-    """Envía un mensaje de WhatsApp usando Twilio."""
     try:
         client.messages.create(from_=FROM_WHATSAPP, to=to, body=text)
         log(f"✅ Mensaje enviado a {to}")
@@ -100,7 +101,6 @@ def send_whatsapp_message(to, text):
 # ===============================
 @app.post("/whatsapp_webhook")
 async def whatsapp_webhook(request: Request):
-    """Recibe mensajes entrantes de Twilio WhatsApp."""
     data = await request.form()
     from_number = data.get("From")
     message_body = data.get("Body", "").strip()
@@ -108,15 +108,16 @@ async def whatsapp_webhook(request: Request):
     log(f"📩 Mensaje recibido de {from_number}: {message_body}")
 
     if not message_body:
-        send_whatsapp_message(from_number, "Por favor envíame una pregunta o solicitud válida.")
+        send_whatsapp_message(from_number, "👋 ¡Hola! Envíame una pregunta sobre tus APUs o ítems, y te ayudaré con gusto.")
         return "OK"
 
     # ===============================
-    # 🧠 Generar SQL con Gemini
+    # 🧠 PROMPT MEJORADO
     # ===============================
     prompt_sql = f"""
-    Eres un asistente experto en SQL para MySQL.
-    Convierte preguntas en consultas SQL válidas según esta estructura:
+    Actúa como un asistente experto en bases de datos MySQL y en análisis de precios unitarios (APU) de obras civiles.
+    Tu tarea es interpretar preguntas en lenguaje natural sobre ítems, insumos, rendimientos, proyectos o entidades,
+    y convertirlas en consultas SQL válidas según la estructura de la tabla:
 
     Tabla: apus
     - fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad, contratista,
@@ -125,9 +126,10 @@ async def whatsapp_webhook(request: Request):
       insumo_descripcion, insumo_unidad, rendimiento_insumo, precio_unitario_apu,
       precio_parcial_apu, observacion, link_documento
 
-    Solo genera consultas SELECT completas.
-    Si el usuario pide algo inexistente, responde: "Esa información no existe".
-    No incluyas formato Markdown ni bloques ```sql```.
+    Reglas:
+    - Solo genera consultas SELECT completas.
+    - Si el usuario pide algo inexistente, responde: "Esa información no existe."
+    - No incluyas formato Markdown ni ```sql```.
 
     Usuario: "{message_body}"
     """
@@ -137,7 +139,7 @@ async def whatsapp_webhook(request: Request):
     log(f"🧠 SQL generado: {sql_query}")
 
     # ===============================
-    # 🗃️ Ejecutar consulta SQL
+    # 🗃️ Ejecutar consulta
     # ===============================
     if not sql_query.lower().startswith("select"):
         respuesta = "Solo se permiten consultas de lectura."
@@ -145,18 +147,22 @@ async def whatsapp_webhook(request: Request):
         resultados = ejecutar_sql(sql_query)
         log(f"📊 Resultados SQL: {resultados}")
 
-        # Si no hay resultados
         if not resultados or "error" in resultados[0]:
             respuesta = "No se encontraron resultados para tu consulta."
         else:
-            prompt_resumen = f"Resume los siguientes resultados en lenguaje natural: {json.dumps(resultados, ensure_ascii=False)}"
+            prompt_resumen = f"""
+            Eres un experto en análisis de precios unitarios (APU).
+            Resume los siguientes resultados en lenguaje natural, usando un tono amable y profesional,
+            saludando al inicio y despidiéndote al final.
+            Resultados: {json.dumps(resultados, ensure_ascii=False)}
+            """
             respuesta = gemini_generate(prompt_resumen)
 
     # ===============================
-    # 📤 Enviar respuesta al usuario
+    # 📤 Responder por WhatsApp
     # ===============================
     send_whatsapp_message(from_number, respuesta)
-    log(f"🗣️🌱 Respuesta enviada: {respuesta}")
+    log(f"🗣️ Respuesta enviada: {respuesta}")
 
     return "OK"
 
