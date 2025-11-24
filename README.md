@@ -119,13 +119,13 @@ Gracias por consultar con MAPUS BOT.
 ## 6. Instalación y ejecución
 
 Dependencias
-fastapi==0.115.2
-uvicorn==0.30.6
-mysql-connector-python==9.0.0
-requests==2.32.3
-twilio==9.2.3
-python-dotenv==1.0.1
-python-multipart==0.0.9
+* fastapi==0.115.2
+* uvicorn==0.30.6
+* mysql-connector-python==9.0.0
+* requests==2.32.3
+* twilio==9.2.3
+* python-dotenv==1.0.1
+* python-multipart==0.0.9
 
 Instalación
 pip install -r requirements.txt
