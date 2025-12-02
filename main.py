@@ -209,4 +209,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     log(f"🚀 Iniciando servidor en puerto {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
-z
