@@ -73,14 +73,14 @@ def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y devuelve los resultados."""
     conn = None
     try:
-        # Usando la configuración SSL que el script de prueba confirmó que funciona
+        # 🎯 Usando la configuración SSL que el script de prueba confirmó que funciona
         conn = mysql.connector.connect(
             host=DB_CONFIG["host"],
             user=DB_CONFIG["user"],
             password=DB_CONFIG["password"],
             database=DB_CONFIG["database"],
             port=DB_CONFIG["port"],
-            **SSL_CONFIG_SUCCESS
+            **SSL_CONFIG_SUCCESS**
         )
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
@@ -114,14 +114,14 @@ def usuario_autorizado(telefono: str):
     for intento in range(MAX_REINTENTOS):
         conn = None
         try:
-            # Usando la configuración SSL que el script de prueba confirmó que funciona
+            # 🎯 Usando la configuración SSL que el script de prueba confirmó que funciona
             conn = mysql.connector.connect(
                 host=DB_CONFIG["host"],
                 user=DB_CONFIG["user"],
                 password=DB_CONFIG["password"],
                 database=DB_CONFIG["database"],
                 port=DB_CONFIG["port"],
-                **SSL_CONFIG_SUCCESS
+                **SSL_CONFIG_SUCCESS**
             )
             cursor = conn.cursor(dictionary=True)
             cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
@@ -243,6 +243,20 @@ async def whatsapp_webhook(request: Request):
 
     return "OK"
 
+# ===============================
+# 🔍 ENDPOINT DE DIAGNÓSTICO (Temporal)
+# ===============================
+@app.get("/ip_check")
+def ip_check():
+    """Endpoint temporal para obtener la IP pública del servidor de Render."""
+    try:
+        # Usamos un servicio externo simple que devuelve la IP de la solicitud
+        ip = requests.get('https://icanhazip.com', timeout=5).text.strip()
+        log(f"🌐 IP PÚBLICA SALIENTE DE RENDER: {ip}")
+        return {"ip_address": ip, "message": "IP obtenida. Revisa los logs de Render, busca esta IP y añádela a la Whitelist de TiDB Cloud."}
+    except Exception as e:
+        log(f"❌ Error al obtener IP: {e}")
+        return {"error": str(e), "message": "No se pudo obtener la IP."}
 
 # ===============================
 # 🏁 SERVIDOR LOCAL
