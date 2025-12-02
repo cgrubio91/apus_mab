@@ -65,7 +65,14 @@ def gemini_generate(prompt: str) -> str:
 def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y devuelve los resultados."""
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = mysql.connector.connect(
+            host=DB_CONFIG["host"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            database=DB_CONFIG["database"],
+            port=DB_CONFIG["port"],
+            ssl_disabled=False
+        )
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
         rows = cursor.fetchall()
@@ -92,7 +99,14 @@ def send_whatsapp_message(to, text):
 def usuario_autorizado(telefono: str):
     """Verifica si el usuario está autorizado en la tabla 'usuarios'."""
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = mysql.connector.connect(
+            host=DB_CONFIG["host"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"],
+            database=DB_CONFIG["database"],
+            port=DB_CONFIG["port"],
+            ssl_disabled=False
+        )
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
         user = cursor.fetchone()
