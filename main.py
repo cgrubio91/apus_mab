@@ -34,6 +34,13 @@ client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
 
 # ===============================
+# 🧠 FUNCIONES AUXILIARES
+# ===============================
+def log(msg):
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
+
+
+# ===============================
 # 🗄️ CONFIGURACIÓN DE BASE DE DATOS
 # ===============================
 def get_db_connection():
