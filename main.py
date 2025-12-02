@@ -23,14 +23,25 @@ app = FastAPI()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# DB (Railway)
+# DB (TiDB Cloud)
 DB_CONFIG = {
     "host": os.getenv("DB_HOST"),
     "user": os.getenv("DB_USER"),
     "password": os.getenv("DB_PASSWORD"),
     "database": os.getenv("DB_NAME"),
-    "port": int(os.getenv("DB_PORT", 3306)),
+    "port": int(os.getenv("DB_PORT", 4000)),
 }
+
+# Configurar SSL para TiDB Cloud
+ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
+if os.path.exists(ssl_ca_path):
+    DB_CONFIG["ssl_ca"] = ssl_ca_path
+    DB_CONFIG["ssl_verify_cert"] = True
+    DB_CONFIG["ssl_verify_identity"] = True
+else:
+    # Intentar sin certificado específico
+    DB_CONFIG["ssl_disabled"] = False
+
 
 # Twilio
 ACCOUNT_SID = os.getenv("ACCOUNT_SID")
@@ -198,19 +209,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     log(f"🚀 Iniciando servidor en puerto {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-    
-    # ===============================
-# 🔍 ENDPOINT DE DIAGNÓSTICO (Temporal)
-# ===============================
-@app.get("/ip_check")
-def ip_check():
-    """Endpoint temporal para obtener la IP pública del servidor de Render."""
-    try:
-        # Usamos un servicio externo simple que devuelve la IP de la solicitud
-        ip = requests.get('https://icanhazip.com', timeout=5).text.strip()
-        log(f"🌐 IP PÚBLICA SALIENTE DE RENDER: {ip}")
-        return {"ip_address": ip, "message": "IP obtenida. Revisa los logs de Render, busca esta IP y añádela a la Whitelist de TiDB Cloud."}
-    except Exception as e:
-        log(f"❌ Error al obtener IP: {e}")
-        return {"error": str(e), "message": "No se pudo obtener la IP."}
+z
