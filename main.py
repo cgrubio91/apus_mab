@@ -108,6 +108,7 @@ def usuario_autorizado(telefono: str):
             ssl_disabled=False
         )
         cursor = conn.cursor(dictionary=True)
+        # La consulta busca el número limpio
         cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
         user = cursor.fetchone()
         cursor.close()
@@ -125,22 +126,26 @@ def usuario_autorizado(telefono: str):
 async def whatsapp_webhook(request: Request):
     """Procesa mensajes entrantes desde Twilio WhatsApp."""
     data = await request.form()
-    from_number = data.get("From")
+    
+    from_number_raw = data.get("From")
     message_body = data.get("Body", "").strip()
 
-    log(f"📩 Mensaje recibido de {from_number}: {message_body}")
+    # 🎯 AJUSTE CLAVE: Limpiar el prefijo 'whatsapp:' del número
+    from_number = from_number_raw.replace("whatsapp:", "").strip()
+    
+    log(f"📩 Mensaje recibido de {from_number} (Original: {from_number_raw}): {message_body}")
 
     # 🛡️ Verificación de usuario
-    user = usuario_autorizado(from_number)
+    user = usuario_autorizado(from_number) # Usamos el número limpio
     if not user:
-        send_whatsapp_message(from_number, "🚫 Acceso restringido.\nNo tienes permiso para usar este asistente.\nContacta con el administrador para solicitar acceso.")
+        send_whatsapp_message(from_number_raw, "🚫 Acceso restringido.\nNo tienes permiso para usar este asistente.\nContacta con el administrador para solicitar acceso.")
         log(f"❌ Acceso denegado a {from_number}")
         return "UNAUTHORIZED"
 
     log(f"✅ Usuario autorizado: {user['nombre']} ({user['rol']})")
 
     if not message_body:
-        send_whatsapp_message(from_number, f"👋 Hola {user['nombre']}! Envíame una pregunta sobre tus APUs o ítems, y te ayudaré con gusto.")
+        send_whatsapp_message(from_number_raw, f"👋 Hola {user['nombre']}! Envíame una pregunta sobre tus APUs o ítems, y te ayudaré con gusto.")
         return "OK"
 
     # ===============================
@@ -192,14 +197,15 @@ async def whatsapp_webhook(request: Request):
     # ===============================
     # 📤 ENVÍO DE RESPUESTA
     # ===============================
+    # OJO: Aquí se usa from_number_raw para enviar, porque Twilio lo requiere
     if len(respuesta) > 1500:
         partes = [respuesta[i:i+1500] for i in range(0, len(respuesta), 1500)]
         for i, parte in enumerate(partes):
-            send_whatsapp_message(from_number, parte)
+            send_whatsapp_message(from_number_raw, parte)
             log(f"🗣️ Parte {i+1}/{len(partes)} enviada ({len(parte)} caracteres).")
             time.sleep(2)
     else:
-        send_whatsapp_message(from_number, respuesta)
+        send_whatsapp_message(from_number_raw, respuesta)
         log(f"🗣️ Respuesta enviada ({len(respuesta)} caracteres).")
 
     return "OK"
