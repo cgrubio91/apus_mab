@@ -97,26 +97,48 @@ def send_whatsapp_message(to, text):
 # 👥 CONTROL DE USUARIOS
 # ===============================
 def usuario_autorizado(telefono: str):
-    """Verifica si el usuario está autorizado en la tabla 'usuarios'."""
-    try:
-        conn = mysql.connector.connect(
-            host=DB_CONFIG["host"],
-            user=DB_CONFIG["user"],
-            password=DB_CONFIG["password"],
-            database=DB_CONFIG["database"],
-            port=DB_CONFIG["port"],
-            ssl_disabled=False
-        )
-        cursor = conn.cursor(dictionary=True)
-        # La consulta busca el número limpio
-        cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
-        user = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        return user
-    except Exception as e:
-        log(f"❌ Error verificando usuario: {e}")
-        return None
+    """Verifica si el usuario está autorizado en la tabla 'usuarios', con reintento."""
+    MAX_REINTENTOS = 3
+    
+    for intento in range(MAX_REINTENTOS):
+        conn = None
+        try:
+            conn = mysql.connector.connect(
+                host=DB_CONFIG["host"],
+                user=DB_CONFIG["user"],
+                password=DB_CONFIG["password"],
+                database=DB_CONFIG["database"],
+                port=DB_CONFIG["port"],
+                ssl_disabled=False
+            )
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
+            user = cursor.fetchone()
+            cursor.close()
+            conn.close()
+            return user # Retorna exitosamente
+            
+        except mysql.connector.Error as e:
+            error_code = e.errno
+            
+            # Error 2013: Lost connection to MySQL server during query
+            if error_code == 2013 and intento < MAX_REINTENTOS - 1:
+                log(f"⚠️ Error SQL 2013 (Conexión Perdida) en intento {intento + 1}. Reintentando en 1 segundo...")
+                time.sleep(1)
+                continue # Pasa al siguiente intento
+            
+            # Para cualquier otro error o el último intento fallido
+            log(f"❌ Error verificando usuario (Final): {e}")
+            return None
+            
+        except Exception as e:
+            log(f"❌ Error inesperado verificando usuario: {e}")
+            return None
+        finally:
+            if conn and conn.is_connected():
+                conn.close()
+
+    return None
 
 
 # ===============================
