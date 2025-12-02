@@ -3,8 +3,8 @@
 # ===============================
 
 from fastapi import FastAPI, Request
-import mysql.connector
-from mysql.connector import pooling
+import pymysql
+import pymysql.cursors
 import requests
 import json
 import re
@@ -30,31 +30,20 @@ AUTH_TOKEN = os.getenv("AUTH_TOKEN")
 FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
 client = Client(ACCOUNT_SID, AUTH_TOKEN)
 
-# ===============================
-# 🗄️ CONFIGURACIÓN DE BASE DE DATOS (POOL GLOBAL)
-# ===============================
-db_pool = None
 
-def init_db_pool():
-    """Inicializa el pool de conexiones con estrategia de fallback para SSL."""
-    global db_pool
-    
-    # Configuración base
-    base_config = {
-        "host": os.getenv("DB_HOST"),
-        "user": os.getenv("DB_USER"),
-        "password": os.getenv("DB_PASSWORD"),
-        "database": os.getenv("DB_NAME"),
-        "port": int(os.getenv("DB_PORT", 4000)),
-        "connect_timeout": 60,  # Aumentado a 60s
-        "pool_name": "mypool",
-        "pool_size": 3,  # Reducido a 3 para evitar saturación
-        "pool_reset_session": True
-    }
 
-    # Intento 1: Con Certificado Específico
+
+# ===============================
+# 🗄️ CONFIGURACIÓN DE BASE DE DATOS
+# ===============================
+def get_db_connection():
+    """
+    Crea una nueva conexión a la base de datos usando PyMySQL.
+    PyMySQL es más robusto para conexiones SSL en TiDB Cloud.
+    """
     try:
-        config_v1 = base_config.copy()
+        # Configuración SSL
+        ssl_config = {}
         ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
         
         # Asegurar ruta absoluta
@@ -62,65 +51,30 @@ def init_db_pool():
             ssl_ca_path = os.path.join(os.getcwd(), ssl_ca_path)
 
         if os.path.exists(ssl_ca_path):
-            config_v1["ssl_ca"] = ssl_ca_path
-            config_v1["ssl_verify_cert"] = True
-            config_v1["ssl_verify_identity"] = True
-            print(f"� Intentando conectar con certificado: {ssl_ca_path}")
-            
-            db_pool = pooling.MySQLConnectionPool(**config_v1)
-            print("✅ Pool inicializado correctamente (Modo: Certificado Personalizado)")
-            return
-    except Exception as e:
-        print(f"⚠️ Falló conexión con certificado personalizado: {e}")
-        print("🔄 Intentando estrategia de respaldo (SSL del Sistema)...")
+            ssl_config = {"ca": ssl_ca_path}
+        else:
+            # Si no hay certificado, usamos un contexto SSL por defecto pero permisivo
+            import ssl
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            ssl_config = ctx
 
-    # Intento 2: Fallback a SSL del Sistema (Sin especificar CA)
-    try:
-        config_v2 = base_config.copy()
-        config_v2["ssl_disabled"] = False  # Forza SSL pero usa CAs del sistema
-        # Remover llaves conflictivas si existen
-        config_v2.pop("ssl_ca", None)
-        config_v2.pop("ssl_verify_cert", None)
-        config_v2.pop("ssl_verify_identity", None)
-        
-        db_pool = pooling.MySQLConnectionPool(**config_v2)
-        print("✅ Pool inicializado correctamente (Modo: SSL del Sistema)")
-        return
-    except Exception as e:
-        print(f"❌ Error fatal: Todas las estrategias de conexión fallaron. Último error: {e}")
-
-# Inicializar pool al arrancar
-init_db_pool()
-
-# ===============================
-# 🧠 FUNCIONES AUXILIARES
-# ===============================
-def log(msg):
-    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-
-
-def get_db_connection():
-    """Obtiene una conexión del pool global."""
-    global db_pool
-    if not db_pool:
-        log("⚠️ El pool no estaba inicializado, intentando inicializar...")
-        init_db_pool()
-    
-    try:
-        conn = db_pool.get_connection()
-        if not conn.is_connected():
-            conn.reconnect(attempts=3, delay=2)
+        conn = pymysql.connect(
+            host=os.getenv("DB_HOST"),
+            user=os.getenv("DB_USER"),
+            password=os.getenv("DB_PASSWORD"),
+            database=os.getenv("DB_NAME"),
+            port=int(os.getenv("DB_PORT", 4000)),
+            cursorclass=pymysql.cursors.DictCursor,
+            ssl=ssl_config,
+            connect_timeout=30
+        )
         return conn
+
     except Exception as e:
-        log(f"❌ Error obteniendo conexión del pool: {e}")
-        # Intento desesperado de reconexión forzada
-        try:
-            log("🔄 Intentando recrear el pool...")
-            init_db_pool()
-            return db_pool.get_connection()
-        except Exception as e2:
-            log(f"❌ Fallo total de conexión: {e2}")
-            raise e
+        log(f"❌ Error conectando a DB (PyMySQL): {e}")
+        raise e
 
 
 def gemini_generate(prompt: str) -> str:
