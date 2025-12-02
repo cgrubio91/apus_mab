@@ -36,38 +36,58 @@ client = Client(ACCOUNT_SID, AUTH_TOKEN)
 db_pool = None
 
 def init_db_pool():
-    """Inicializa el pool de conexiones a la base de datos."""
+    """Inicializa el pool de conexiones con estrategia de fallback para SSL."""
     global db_pool
+    
+    # Configuración base
+    base_config = {
+        "host": os.getenv("DB_HOST"),
+        "user": os.getenv("DB_USER"),
+        "password": os.getenv("DB_PASSWORD"),
+        "database": os.getenv("DB_NAME"),
+        "port": int(os.getenv("DB_PORT", 4000)),
+        "connect_timeout": 60,  # Aumentado a 60s
+        "pool_name": "mypool",
+        "pool_size": 3,  # Reducido a 3 para evitar saturación
+        "pool_reset_session": True
+    }
+
+    # Intento 1: Con Certificado Específico
     try:
-        db_config = {
-            "host": os.getenv("DB_HOST"),
-            "user": os.getenv("DB_USER"),
-            "password": os.getenv("DB_PASSWORD"),
-            "database": os.getenv("DB_NAME"),
-            "port": int(os.getenv("DB_PORT", 4000)),
-            "connect_timeout": 30,  # Aumentado para evitar timeouts
-            "pool_name": "mypool",
-            "pool_size": 5,
-            "pool_reset_session": True
-        }
-
-        # Configuración SSL
+        config_v1 = base_config.copy()
         ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
-        if os.path.exists(ssl_ca_path):
-            db_config["ssl_ca"] = ssl_ca_path
-            db_config["ssl_verify_cert"] = True
-            db_config["ssl_verify_identity"] = True
-            print(f"🔒 SSL configurado con certificado: {ssl_ca_path}")
-        else:
-            # Si no hay certificado, permitimos SSL pero sin verificación estricta
-            # Esto es crucial para Render si el archivo .pem no se subió
-            db_config["ssl_disabled"] = False
-            print("⚠️ Certificado SSL no encontrado. Usando SSL estándar del sistema.")
+        
+        # Asegurar ruta absoluta
+        if not os.path.isabs(ssl_ca_path):
+            ssl_ca_path = os.path.join(os.getcwd(), ssl_ca_path)
 
-        db_pool = pooling.MySQLConnectionPool(**db_config)
-        print("✅ Pool de conexiones a TiDB inicializado correctamente.")
+        if os.path.exists(ssl_ca_path):
+            config_v1["ssl_ca"] = ssl_ca_path
+            config_v1["ssl_verify_cert"] = True
+            config_v1["ssl_verify_identity"] = True
+            print(f"� Intentando conectar con certificado: {ssl_ca_path}")
+            
+            db_pool = pooling.MySQLConnectionPool(**config_v1)
+            print("✅ Pool inicializado correctamente (Modo: Certificado Personalizado)")
+            return
     except Exception as e:
-        print(f"❌ Error fatal inicializando DB Pool: {e}")
+        print(f"⚠️ Falló conexión con certificado personalizado: {e}")
+        print("🔄 Intentando estrategia de respaldo (SSL del Sistema)...")
+
+    # Intento 2: Fallback a SSL del Sistema (Sin especificar CA)
+    try:
+        config_v2 = base_config.copy()
+        config_v2["ssl_disabled"] = False  # Forza SSL pero usa CAs del sistema
+        # Remover llaves conflictivas si existen
+        config_v2.pop("ssl_ca", None)
+        config_v2.pop("ssl_verify_cert", None)
+        config_v2.pop("ssl_verify_identity", None)
+        
+        db_pool = pooling.MySQLConnectionPool(**config_v2)
+        print("✅ Pool inicializado correctamente (Modo: SSL del Sistema)")
+        return
+    except Exception as e:
+        print(f"❌ Error fatal: Todas las estrategias de conexión fallaron. Último error: {e}")
 
 # Inicializar pool al arrancar
 init_db_pool()
