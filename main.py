@@ -252,3 +252,18 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     log(f"🚀 Iniciando servidor en puerto {port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
+    
+    # ===============================
+# 🔍 ENDPOINT DE DIAGNÓSTICO (Temporal)
+# ===============================
+@app.get("/ip_check")
+def ip_check():
+    """Endpoint temporal para obtener la IP pública del servidor de Render."""
+    try:
+        # Usamos un servicio externo simple que devuelve la IP de la solicitud
+        ip = requests.get('https://icanhazip.com', timeout=5).text.strip()
+        log(f"🌐 IP PÚBLICA SALIENTE DE RENDER: {ip}")
+        return {"ip_address": ip, "message": "IP obtenida. Revisa los logs de Render, busca esta IP y añádela a la Whitelist de TiDB Cloud."}
+    except Exception as e:
+        log(f"❌ Error al obtener IP: {e}")
+        return {"error": str(e), "message": "No se pudo obtener la IP."}
