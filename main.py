@@ -56,6 +56,32 @@ def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
 
 
+def get_db_connection():
+    """Obtiene una conexión a la base de datos con reconexión automática."""
+    max_retries = 3
+    retry_delay = 1
+    
+    for attempt in range(max_retries):
+        try:
+            conn = mysql.connector.connect(
+                **DB_CONFIG,
+                autocommit=True,
+                pool_reset_session=True,
+                connect_timeout=10,
+                pool_size=5
+            )
+            # Verificar que la conexión esté activa
+            conn.ping(reconnect=True, attempts=3, delay=1)
+            return conn
+        except Exception as e:
+            log(f"⚠️ Intento {attempt + 1}/{max_retries} de conexión falló: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                retry_delay *= 2  # Backoff exponencial
+            else:
+                raise
+
+
 def gemini_generate(prompt: str) -> str:
     """Llama a la API de Gemini para generar texto."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
@@ -74,17 +100,20 @@ def gemini_generate(prompt: str) -> str:
 
 def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y devuelve los resultados."""
+    conn = None
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
         return rows
     except Exception as e:
         log(f"❌ Error SQL: {e}")
         return [{"error": str(e)}]
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def send_whatsapp_message(to, text):
@@ -101,17 +130,20 @@ def send_whatsapp_message(to, text):
 # ===============================
 def usuario_autorizado(telefono: str):
     """Verifica si el usuario está autorizado en la tabla 'usuarios'."""
+    conn = None
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
+        conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
         user = cursor.fetchone()
         cursor.close()
-        conn.close()
         return user
     except Exception as e:
         log(f"❌ Error verificando usuario: {e}")
         return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 
 # ===============================
