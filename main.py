@@ -33,6 +33,9 @@ DB_CONFIG = {
     "ssl_disabled": False
 }
 
+# 🎯 AJUSTE CLAVE 1: Ruta al archivo CA (debe estar en la raíz del despliegue)
+CA_FILE_PATH = "isrgrootx1.pem" 
+
 # Twilio
 ACCOUNT_SID = os.getenv("ACCOUNT_SID")
 AUTH_TOKEN = os.getenv("AUTH_TOKEN")
@@ -64,6 +67,7 @@ def gemini_generate(prompt: str) -> str:
 
 def ejecutar_sql(query: str):
     """Ejecuta una consulta SQL y devuelve los resultados."""
+    conn = None
     try:
         conn = mysql.connector.connect(
             host=DB_CONFIG["host"],
@@ -71,17 +75,21 @@ def ejecutar_sql(query: str):
             password=DB_CONFIG["password"],
             database=DB_CONFIG["database"],
             port=DB_CONFIG["port"],
-            ssl_disabled=False
+            ssl_disabled=False,
+            # 🎯 AJUSTE CLAVE 2: Usar el certificado CA
+            ssl_ca=CA_FILE_PATH
         )
         cursor = conn.cursor(dictionary=True)
         cursor.execute(query)
         rows = cursor.fetchall()
         cursor.close()
-        conn.close()
         return rows
     except Exception as e:
         log(f"❌ Error SQL: {e}")
         return [{"error": str(e)}]
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
 
 
 def send_whatsapp_message(to, text):
@@ -109,13 +117,14 @@ def usuario_autorizado(telefono: str):
                 password=DB_CONFIG["password"],
                 database=DB_CONFIG["database"],
                 port=DB_CONFIG["port"],
-                ssl_disabled=False
+                ssl_disabled=False,
+                # 🎯 AJUSTE CLAVE 2: Usar el certificado CA
+                ssl_ca=CA_FILE_PATH
             )
             cursor = conn.cursor(dictionary=True)
             cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
             user = cursor.fetchone()
             cursor.close()
-            conn.close()
             return user # Retorna exitosamente
             
         except mysql.connector.Error as e:
@@ -138,7 +147,7 @@ def usuario_autorizado(telefono: str):
             if conn and conn.is_connected():
                 conn.close()
 
-    return None
+    return None # Si todos los reintentos fallaron
 
 
 # ===============================
@@ -152,7 +161,7 @@ async def whatsapp_webhook(request: Request):
     from_number_raw = data.get("From")
     message_body = data.get("Body", "").strip()
 
-    # 🎯 AJUSTE CLAVE: Limpiar el prefijo 'whatsapp:' del número
+    # Limpiar el prefijo 'whatsapp:' del número
     from_number = from_number_raw.replace("whatsapp:", "").strip()
     
     log(f"📩 Mensaje recibido de {from_number} (Original: {from_number_raw}): {message_body}")
@@ -160,6 +169,7 @@ async def whatsapp_webhook(request: Request):
     # 🛡️ Verificación de usuario
     user = usuario_autorizado(from_number) # Usamos el número limpio
     if not user:
+        # Usamos from_number_raw para enviar la respuesta a Twilio
         send_whatsapp_message(from_number_raw, "🚫 Acceso restringido.\nNo tienes permiso para usar este asistente.\nContacta con el administrador para solicitar acceso.")
         log(f"❌ Acceso denegado a {from_number}")
         return "UNAUTHORIZED"
@@ -219,7 +229,6 @@ async def whatsapp_webhook(request: Request):
     # ===============================
     # 📤 ENVÍO DE RESPUESTA
     # ===============================
-    # OJO: Aquí se usa from_number_raw para enviar, porque Twilio lo requiere
     if len(respuesta) > 1500:
         partes = [respuesta[i:i+1500] for i in range(0, len(respuesta), 1500)]
         for i, parte in enumerate(partes):
