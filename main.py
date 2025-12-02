@@ -35,7 +35,7 @@ DB_CONFIG = {
 
 # 🎯 CONFIGURACIÓN SSL DE ÉXITO (del script de prueba)
 SSL_CONFIG_SUCCESS = {
-    'ssl_disabled': False,
+    'ssl_disabled': True,
     'ssl_verify_cert': False, 
     'ssl_verify_identity': False,
 }
