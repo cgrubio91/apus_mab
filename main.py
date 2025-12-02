@@ -4,6 +4,7 @@
 
 from fastapi import FastAPI, Request
 import mysql.connector
+from mysql.connector import pooling
 import requests
 import json
 import re
@@ -23,31 +24,53 @@ app = FastAPI()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# DB (TiDB Cloud)
-DB_CONFIG = {
-    "host": os.getenv("DB_HOST"),
-    "user": os.getenv("DB_USER"),
-    "password": os.getenv("DB_PASSWORD"),
-    "database": os.getenv("DB_NAME"),
-    "port": int(os.getenv("DB_PORT", 4000)),
-}
-
-# Configurar SSL para TiDB Cloud
-ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
-if os.path.exists(ssl_ca_path):
-    DB_CONFIG["ssl_ca"] = ssl_ca_path
-    DB_CONFIG["ssl_verify_cert"] = True
-    DB_CONFIG["ssl_verify_identity"] = True
-else:
-    # Intentar sin certificado específico
-    DB_CONFIG["ssl_disabled"] = False
-
-
 # Twilio
 ACCOUNT_SID = os.getenv("ACCOUNT_SID")
 AUTH_TOKEN = os.getenv("AUTH_TOKEN")
 FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
 client = Client(ACCOUNT_SID, AUTH_TOKEN)
+
+# ===============================
+# 🗄️ CONFIGURACIÓN DE BASE DE DATOS (POOL GLOBAL)
+# ===============================
+db_pool = None
+
+def init_db_pool():
+    """Inicializa el pool de conexiones a la base de datos."""
+    global db_pool
+    try:
+        db_config = {
+            "host": os.getenv("DB_HOST"),
+            "user": os.getenv("DB_USER"),
+            "password": os.getenv("DB_PASSWORD"),
+            "database": os.getenv("DB_NAME"),
+            "port": int(os.getenv("DB_PORT", 4000)),
+            "connect_timeout": 30,  # Aumentado para evitar timeouts
+            "pool_name": "mypool",
+            "pool_size": 5,
+            "pool_reset_session": True
+        }
+
+        # Configuración SSL
+        ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
+        if os.path.exists(ssl_ca_path):
+            db_config["ssl_ca"] = ssl_ca_path
+            db_config["ssl_verify_cert"] = True
+            db_config["ssl_verify_identity"] = True
+            print(f"🔒 SSL configurado con certificado: {ssl_ca_path}")
+        else:
+            # Si no hay certificado, permitimos SSL pero sin verificación estricta
+            # Esto es crucial para Render si el archivo .pem no se subió
+            db_config["ssl_disabled"] = False
+            print("⚠️ Certificado SSL no encontrado. Usando SSL estándar del sistema.")
+
+        db_pool = pooling.MySQLConnectionPool(**db_config)
+        print("✅ Pool de conexiones a TiDB inicializado correctamente.")
+    except Exception as e:
+        print(f"❌ Error fatal inicializando DB Pool: {e}")
+
+# Inicializar pool al arrancar
+init_db_pool()
 
 # ===============================
 # 🧠 FUNCIONES AUXILIARES
@@ -57,29 +80,27 @@ def log(msg):
 
 
 def get_db_connection():
-    """Obtiene una conexión a la base de datos con reconexión automática."""
-    max_retries = 3
-    retry_delay = 1
+    """Obtiene una conexión del pool global."""
+    global db_pool
+    if not db_pool:
+        log("⚠️ El pool no estaba inicializado, intentando inicializar...")
+        init_db_pool()
     
-    for attempt in range(max_retries):
+    try:
+        conn = db_pool.get_connection()
+        if not conn.is_connected():
+            conn.reconnect(attempts=3, delay=2)
+        return conn
+    except Exception as e:
+        log(f"❌ Error obteniendo conexión del pool: {e}")
+        # Intento desesperado de reconexión forzada
         try:
-            conn = mysql.connector.connect(
-                **DB_CONFIG,
-                autocommit=True,
-                pool_reset_session=True,
-                connect_timeout=10,
-                pool_size=5
-            )
-            # Verificar que la conexión esté activa
-            conn.ping(reconnect=True, attempts=3, delay=1)
-            return conn
-        except Exception as e:
-            log(f"⚠️ Intento {attempt + 1}/{max_retries} de conexión falló: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                retry_delay *= 2  # Backoff exponencial
-            else:
-                raise
+            log("🔄 Intentando recrear el pool...")
+            init_db_pool()
+            return db_pool.get_connection()
+        except Exception as e2:
+            log(f"❌ Fallo total de conexión: {e2}")
+            raise e
 
 
 def gemini_generate(prompt: str) -> str:
@@ -144,6 +165,34 @@ def usuario_autorizado(telefono: str):
     finally:
         if conn and conn.is_connected():
             conn.close()
+
+
+# ===============================
+# 🩺 HEALTH CHECK
+# ===============================
+@app.get("/")
+def home():
+    return {"status": "online", "message": "Bot de WhatsApp APUs activo 🚀"}
+
+@app.get("/health")
+def health_check():
+    """Verifica la conexión a la base de datos."""
+    status = {"status": "ok", "database": "connected"}
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        cursor.close()
+    except Exception as e:
+        status["status"] = "error"
+        status["database"] = str(e)
+        log(f"❌ Health check falló: {e}")
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+    return status
 
 
 # ===============================
