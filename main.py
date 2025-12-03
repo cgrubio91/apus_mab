@@ -3,7 +3,6 @@
 # ===============================
 
 from fastapi import FastAPI, Request
-import psycopg2
 from psycopg2.extras import RealDictCursor
 
 import requests
@@ -13,6 +12,9 @@ import os
 import time
 from datetime import datetime
 from dotenv import load_dotenv
+
+# Import centralized database configuration
+from db_config import get_db_connection, execute_query
 
 try:
     from twilio.rest import Client
@@ -45,47 +47,6 @@ else:
 # ===============================
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-def get_db_connection():
-    """Create a new DB connection using psycopg2 for Google Cloud SQL (PostgreSQL).
-    Supports both TCP/IP and Unix socket connections.
-    """
-    try:
-        # Cloud SQL instance connection name for Unix socket (e.g., project:region:instance)
-        cloud_sql_connection_name = os.getenv("CLOUD_SQL_CONNECTION_NAME")
-        
-        # Mapeo de variables de entorno (ajusta según tu .env si es necesario)
-        db_user = os.getenv("DB_USER") or os.getenv("db_user")
-        db_password = os.getenv("DB_PASSWORD") or os.getenv("db_password")
-        db_name = os.getenv("DB_NAME") or os.getenv("db_dbname")
-        db_host = os.getenv("DB_HOST") or os.getenv("db_host")
-        db_port = os.getenv("DB_PORT") or os.getenv("db_port") or 5432
-
-        db_sslmode = os.getenv("DB_SSLMODE") or os.getenv("db_sslmode") or "prefer"
-
-        if cloud_sql_connection_name:
-            # Use Unix socket provided by Cloud SQL Auth proxy
-            unix_socket_dir = f"/cloudsql/{cloud_sql_connection_name}"
-            conn = psycopg2.connect(
-                user=db_user,
-                password=db_password,
-                dbname=db_name,
-                host=unix_socket_dir
-            )
-        else:
-            # Fallback to TCP connection (IP address)
-            conn = psycopg2.connect(
-                host=db_host,
-                user=db_user,
-                password=db_password,
-                dbname=db_name,
-                port=int(db_port),
-                sslmode=db_sslmode,
-                connect_timeout=30
-            )
-        return conn
-    except Exception as e:
-        log(f"❌ Error connecting to Cloud SQL DB (PostgreSQL): {e}")
-        raise
 
 
 def gemini_generate(prompt: str) -> str:
@@ -140,7 +101,7 @@ def usuario_autorizado(telefono: str):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
+        cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = true", (telefono,))
         user = cursor.fetchone()
         cursor.close()
         return user
