@@ -1,78 +1,65 @@
-import mysql.connector
+import psycopg2
 import os
-from dotenv import load_dotenv
 
-load_dotenv()
+# --- 🛠️ CONFIGURACIÓN DE CONEXIÓN ---
+# Nota: La librería psycopg2 usa 'dbname' en lugar de 'DB_NAME'
+DB_HOST = "35.198.53.120"
+DB_PORT = "5432"
+DB_NAME = "apus-mab"
+DB_USER = "postgres"
+DB_PASSWORD = r"/9N+pL#kXFI|\v%z"
+DB_SSLMODE = "require"
+# db_sslmode=require implica usar SSL
+# Para conexiones simples, a veces basta con solo el host, user, password, dbname y port.
+# Si el requerimiento de Cloud SQL es estricto, es posible que necesites un certificado SSL.
+# Para esta prueba inicial, usaremos los parámetros básicos.
 
-print("🔍 Verificando tablas en TiDB...\n")
-
-try:
-    ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
-    
-    config = {
-        "host": os.getenv("DB_HOST"),
-        "user": os.getenv("DB_USER"),
-        "password": os.getenv("DB_PASSWORD"),
-        "database": os.getenv("DB_NAME"),
-        "port": int(os.getenv("DB_PORT", 4000)),
-    }
-    
-    if os.path.exists(ssl_ca_path):
-        config["ssl_ca"] = ssl_ca_path
-        config["ssl_verify_cert"] = True
-        config["ssl_verify_identity"] = True
-    
-    conn = mysql.connector.connect(**config)
-    cursor = conn.cursor()
-    
-    # Listar todas las tablas
-    cursor.execute("SHOW TABLES")
-    tables = cursor.fetchall()
-    
-    print("📊 Tablas encontradas:")
-    for table in tables:
-        print(f"  - {table[0]}")
-    
-    print("\n" + "="*50)
-    
-    # Verificar tabla usuarios
-    if ('usuarios',) in tables:
-        cursor.execute("SELECT COUNT(*) FROM usuarios")
-        count = cursor.fetchone()[0]
-        print(f"✅ Tabla 'usuarios': {count} registros")
+def test_cloudsql_connection():
+    """
+    Intenta conectarse a la base de datos PostgreSQL en Google Cloud SQL.
+    """
+    conn = None
+    try:
+        print(f"🔗 Intentando conectar a PostgreSQL en {DB_HOST}:{DB_PORT}...")
         
-        cursor.execute("SELECT telefono, nombre, rol, activo FROM usuarios")
-        users = cursor.fetchall()
-        print("\n👥 Usuarios registrados:")
-        for user in users:
-            status = "✅ Activo" if user[3] == 1 else "❌ Inactivo"
-            print(f"  - {user[1]} ({user[0]}) - Rol: {user[2]} - {status}")
-    else:
-        print("❌ Tabla 'usuarios' no encontrada")
-    
-    print("\n" + "="*50)
-    
-    # Verificar tabla apus
-    if ('apus',) in tables:
-        cursor.execute("SELECT COUNT(*) FROM apus")
-        count = cursor.fetchone()[0]
-        print(f"✅ Tabla 'apus': {count} registros")
+        # Conexión básica usando psycopg2
+        conn = psycopg2.connect(
+            host=DB_HOST,
+            port=DB_PORT,
+            dbname=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            sslmode=DB_SSLMODE
+            # Si la conexión falla debido a SSL, podrías intentar añadir:
+            # sslmode="require" 
+            # *PERO* asegúrate de que tu entorno local tiene los certificados raíz de Cloud SQL.
+        )
         
-        if count > 0:
-            cursor.execute("SELECT * FROM apus LIMIT 1")
-            sample = cursor.fetchone()
-            print(f"\n📝 Ejemplo de registro (primeras columnas):")
-            cursor.execute("SHOW COLUMNS FROM apus")
-            columns = cursor.fetchall()
-            print(f"  Total de columnas: {len(columns)}")
-            for i, col in enumerate(columns[:5]):  # Mostrar primeras 5 columnas
-                print(f"  - {col[0]}: {col[1]}")
-    else:
-        print("❌ Tabla 'apus' no encontrada")
-        print("\n⚠️  IMPORTANTE: Necesitas crear la tabla 'apus' para que el bot funcione.")
+        # Si la conexión es exitosa
+        print("✅ ¡Conexión a Cloud SQL exitosa!")
+        
+        # Opcional: Ejecutar una consulta simple para verificar que la DB está viva
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT version();")
+            db_version = cursor.fetchone()
+            print(f"📊 Versión de la base de datos: {db_version[0]}")
+            
+        return True
+
+    except psycopg2.OperationalError as e:
+        print(f"❌ FALLÓ LA CONEXIÓN (Error Operacional):")
+        print(f"   Asegúrate que la IP de tu red local está autorizada en Google Cloud SQL.")
+        print(f"   Error: {e}")
+        return False
     
-    cursor.close()
-    conn.close()
-    
-except Exception as e:
-    print(f"❌ Error: {e}")
+    except Exception as e:
+        print(f"❌ Ocurrió un error inesperado durante la conexión: {e}")
+        return False
+        
+    finally:
+        if conn:
+            conn.close()
+            print("📴 Conexión cerrada.")
+
+if __name__ == "__main__":
+    test_cloudsql_connection()

@@ -9,8 +9,8 @@ env/
 ENV/
 
 # Configuración local
-.env
-*.env
+# .env
+# *.env
 
 # Archivos de caché y compilación
 __pycache__/

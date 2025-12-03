@@ -3,16 +3,22 @@
 # ===============================
 
 from fastapi import FastAPI, Request
-import pymysql
-import pymysql.cursors
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 import requests
 import json
 import re
 import os
 import time
-from twilio.rest import Client
 from datetime import datetime
 from dotenv import load_dotenv
+
+try:
+    from twilio.rest import Client
+except Exception as e:
+    print(f"⚠️ Twilio import failed: {e}")
+    Client = None
 
 # ===============================
 # 🔑 CONFIGURACIÓN INICIAL
@@ -25,63 +31,61 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # Twilio
-ACCOUNT_SID = os.getenv("ACCOUNT_SID")
-AUTH_TOKEN = os.getenv("AUTH_TOKEN")
-FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
-
-
-
+if Client:
+    ACCOUNT_SID = os.getenv("ACCOUNT_SID")
+    AUTH_TOKEN = os.getenv("AUTH_TOKEN")
+    FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
+    client = Client(ACCOUNT_SID, AUTH_TOKEN)
+else:
+    ACCOUNT_SID = AUTH_TOKEN = FROM_WHATSAPP = None
+    client = None
 
 # ===============================
 # 🧠 FUNCIONES AUXILIARES
 # ===============================
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
-
-
-# ===============================
-# 🗄️ CONFIGURACIÓN DE BASE DE DATOS
-# ===============================
 def get_db_connection():
-    """
-    Crea una nueva conexión a la base de datos usando PyMySQL.
-    PyMySQL es más robusto para conexiones SSL en TiDB Cloud.
+    """Create a new DB connection using psycopg2 for Google Cloud SQL (PostgreSQL).
+    Supports both TCP/IP and Unix socket connections.
     """
     try:
-        # Configuración SSL
-        ssl_config = {}
-        ssl_ca_path = os.getenv("DB_SSL_CA", "isrgrootx1.pem")
+        # Cloud SQL instance connection name for Unix socket (e.g., project:region:instance)
+        cloud_sql_connection_name = os.getenv("CLOUD_SQL_CONNECTION_NAME")
         
-        # Asegurar ruta absoluta
-        if not os.path.isabs(ssl_ca_path):
-            ssl_ca_path = os.path.join(os.getcwd(), ssl_ca_path)
+        # Mapeo de variables de entorno (ajusta según tu .env si es necesario)
+        db_user = os.getenv("DB_USER") or os.getenv("db_user")
+        db_password = os.getenv("DB_PASSWORD") or os.getenv("db_password")
+        db_name = os.getenv("DB_NAME") or os.getenv("db_dbname")
+        db_host = os.getenv("DB_HOST") or os.getenv("db_host")
+        db_port = os.getenv("DB_PORT") or os.getenv("db_port") or 5432
 
-        if os.path.exists(ssl_ca_path):
-            ssl_config = {"ca": ssl_ca_path}
+        db_sslmode = os.getenv("DB_SSLMODE") or os.getenv("db_sslmode") or "prefer"
+
+        if cloud_sql_connection_name:
+            # Use Unix socket provided by Cloud SQL Auth proxy
+            unix_socket_dir = f"/cloudsql/{cloud_sql_connection_name}"
+            conn = psycopg2.connect(
+                user=db_user,
+                password=db_password,
+                dbname=db_name,
+                host=unix_socket_dir
+            )
         else:
-            # Si no hay certificado, usamos un contexto SSL por defecto pero permisivo
-            import ssl
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            ssl_config = ctx
-
-        conn = pymysql.connect(
-            host=os.getenv("DB_HOST"),
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASSWORD"),
-            database=os.getenv("DB_NAME"),
-            port=int(os.getenv("DB_PORT", 4000)),
-            cursorclass=pymysql.cursors.DictCursor,
-            ssl=ssl_config,
-            connect_timeout=30
-        )
+            # Fallback to TCP connection (IP address)
+            conn = psycopg2.connect(
+                host=db_host,
+                user=db_user,
+                password=db_password,
+                dbname=db_name,
+                port=int(db_port),
+                sslmode=db_sslmode,
+                connect_timeout=30
+            )
         return conn
-
     except Exception as e:
-        log(f"❌ Error conectando a DB (PyMySQL): {e}")
-        raise e
+        log(f"❌ Error connecting to Cloud SQL DB (PostgreSQL): {e}")
+        raise
 
 
 def gemini_generate(prompt: str) -> str:
@@ -105,7 +109,7 @@ def ejecutar_sql(query: str):
     conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute(query)
         rows = cursor.fetchall()
         cursor.close()
@@ -114,7 +118,7 @@ def ejecutar_sql(query: str):
         log(f"❌ Error SQL: {e}")
         return [{"error": str(e)}]
     finally:
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 
@@ -135,7 +139,7 @@ def usuario_autorizado(telefono: str):
     conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         cursor.execute("SELECT * FROM usuarios WHERE telefono = %s AND activo = 1", (telefono,))
         user = cursor.fetchone()
         cursor.close()
@@ -144,7 +148,7 @@ def usuario_autorizado(telefono: str):
         log(f"❌ Error verificando usuario: {e}")
         return None
     finally:
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
 
 
@@ -171,7 +175,7 @@ def health_check():
         status["database"] = str(e)
         log(f"❌ Health check falló: {e}")
     finally:
-        if conn and conn.is_connected():
+        if conn:
             conn.close()
     return status
 

@@ -6,7 +6,7 @@ load_dotenv()
 
 print("🔍 Probando conexión a TiDB...")
 print(f"Host: {os.getenv('DB_HOST')}")
-print(f"Port: {os.getenv('DB_PORT', 4000)}")
+print(f"Port: {os.getenv('DB_PORT', 5432)}")
 print(f"User: {os.getenv('DB_USER')}")
 print(f"Database: {os.getenv('DB_NAME')}")
 
@@ -18,7 +18,7 @@ try:
         "user": os.getenv("DB_USER"),
         "password": os.getenv("DB_PASSWORD"),
         "database": os.getenv("DB_NAME"),
-        "port": int(os.getenv("DB_PORT", 4000)),
+        "port": int(os.getenv("DB_PORT", 5432)),
     }
     
     if os.path.exists(ssl_ca_path):
