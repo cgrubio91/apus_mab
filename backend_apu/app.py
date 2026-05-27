@@ -4,7 +4,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from db_config import execute_query
+from ..db_config import execute_query
 from .api import api_router
 
 log = logging.getLogger("mapus.backend")

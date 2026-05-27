@@ -1,6 +1,6 @@
 """
 🤖 AI Provider Module
-Abstracts Gemini and Ollama as interchangeable AI backends.
+Abstracts Gemini and Ollama as interchangeable AI backends with resilient parsing.
 """
 
 import json
@@ -16,53 +16,89 @@ load_dotenv()
 
 log = logging.getLogger("mapus.ai")
 
-# ── Configuration ────────────────────────────────────────────────────
-AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").strip().lower()
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+# ── Límites de Seguridad de Infraestructura ─────────────────────────
+MAX_DOC_CHARS = 500_000  # Evita token explosion / memory blowup en PDFs densos
 
-# Gemini
+# ── Dynamic Configuration Helpers ────────────────────────────────────
+def get_ai_provider() -> str:
+    return os.getenv("AI_PROVIDER", "gemini").strip().lower()
+
+def get_ollama_host() -> str:
+    return os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+
+def get_ollama_model() -> str:
+    return os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+
+def get_gemini_model() -> str:
+    return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+
+# ── Fail-Fast Environment Validation ─────────────────────────────────
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+if get_ai_provider() == "gemini" and not GEMINI_API_KEY:
+    raise RuntimeError("Configuración Inválida: GEMINI_API_KEY no configurada en las variables de entorno.")
+
+
+# ── Reutilización Eficiente de Conexiones (HTTP Keep-Alive) ──────────
+SESSION = requests.Session()
 
 
 def _call_gemini(payload: dict, timeout: int = 300) -> dict:
-    """Send a request to Gemini API."""
-    url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
-    resp = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=(30, timeout))
+    """Send a request to Gemini API reusing connection pool sockets."""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{get_gemini_model()}:generateContent?key={GEMINI_API_KEY}"
+    resp = SESSION.post(
+        url, 
+        headers={"Content-Type": "application/json"}, 
+        json=payload, 
+        timeout=(30, timeout)
+    )
     resp.raise_for_status()
     return resp.json()
 
 
 def _call_ollama(payload: dict, timeout: int = 300) -> dict:
-    """Send a request to Ollama API."""
-    url = f"{OLLAMA_HOST}/api/chat"
-    resp = requests.post(url, json=payload, timeout=(30, timeout))
+    """Send a request to Ollama API reusing connection pool sockets."""
+    url = f"{get_ollama_host()}/api/chat"
+    resp = SESSION.post(
+        url, 
+        headers={"Content-Type": "application/json"}, 
+        json=payload, 
+        timeout=(30, timeout)
+    )
     resp.raise_for_status()
     return resp.json()
 
 
+def _safe_extract_gemini_text(data: dict) -> Optional[str]:
+    """CORRECCIÓN: Consolida robustamente todas las partes de la respuesta para evitar truncamiento."""
+    candidates = data.get("candidates", [])
+    if not candidates:
+        prompt_feedback = data.get("promptFeedback", {})
+        if prompt_feedback:
+            log.warning("Gemini content block feedback: %s", json.dumps(prompt_feedback))
+        return None
+    
+    content = candidates[0].get("content", {})
+    parts = content.get("parts", [])
+    if not parts:
+        return None
+        
+    # Combina dinámicamente todos los fragmentos devueltos por el modelo
+    return "".join(p.get("text", "") for p in parts).strip()
+
+
 def generate_text(prompt: str, system: Optional[str] = None, timeout: int = 120) -> str:
-    """
-    Generate text using the configured AI provider.
-
-    Args:
-        prompt: The user prompt / instruction
-        system: Optional system prompt (Ollama only; Gemini ignores)
-        timeout: Max seconds to wait for response
-
-    Returns:
-        Generated text string
-    """
-    if AI_PROVIDER == "ollama":
+    """Generate text using the configured AI provider, raising errors on failure."""
+    provider = get_ai_provider()
+    
+    if provider == "ollama":
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
         payload = {
-            "model": OLLAMA_MODEL,
+            "model": get_ollama_model(),
             "messages": messages,
             "stream": False,
             "options": {"temperature": 0.1},
@@ -70,46 +106,38 @@ def generate_text(prompt: str, system: Optional[str] = None, timeout: int = 120)
         try:
             data = _call_ollama(payload, timeout)
             return data.get("message", {}).get("content", "").strip()
-        except Exception as e:
-            log.error("Ollama text generation failed: %s", e)
-            return f"Error con Ollama: {e}"
+        except Exception:
+            # CORRECCIÓN: log.exception preserva el stack trace completo para monitoreo
+            log.exception("Ollama text generation failed")
+            raise
 
     # Default: Gemini
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    if system:
+        payload["systemInstruction"] = {"parts": [{"text": system}]}
+
     try:
         data = _call_gemini(payload, timeout)
-        candidates = data.get("candidates", [])
-        if not candidates:
-            log.error("Gemini returned no candidates: %s", json.dumps(data)[:500])
-            return "No se pudo procesar tu solicitud con la IA."
-        return candidates[0]["content"]["parts"][0]["text"].strip()
-    except Exception as e:
-        log.error("Gemini text generation failed: %s", e)
-        return f"Error con Gemini: {e}"
+        text = _safe_extract_gemini_text(data)
+        if text is None:
+            raise RuntimeError("Gemini devolvió una estructura sin fragmentos de texto válidos.")
+        return text
+    except Exception:
+        log.exception("Gemini text generation failed")
+        raise
 
 
 def _repair_json(raw: str) -> str:
-    """
-    Attempt to repair malformed JSON returned by the AI.
-    Handles:
-    - Unclosed strings at end of content
-    - Trailing commas
-    - Truncated JSON (missing closing brackets/braces)
-    """
+    """Intenta reparar estructuras JSON truncadas o corruptas devueltas por el LLM."""
     raw = raw.strip()
     if not raw:
         return raw
 
-    # Remove markdown fences if present
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[-1]
         raw = raw.rsplit("```", 1)[0]
         raw = raw.strip()
 
-    # Fix unclosed strings: track quote state by unescaped quotes only.
-    # This handles the case where truncation happens inside a string value,
-    # where a simple count('"') % 2 would be even (first quote opens a field,
-    # second quote opens the value string, but the closing quote is missing).
     in_string = False
     escape = False
     for ch in raw:
@@ -124,13 +152,9 @@ def _repair_json(raw: str) -> str:
     if in_string:
         raw = raw + '"'
 
-    # Remove trailing commas before closing brackets/braces
     raw = re.sub(r",\s*([}\]])", r"\1", raw)
-
-    # Remove trailing commas at end of content
     raw = re.sub(r",\s*$", "", raw)
 
-    # Close unclosed objects/arrays using a stack to preserve correct nesting order
     stack = []
     in_string = False
     escape = False
@@ -162,23 +186,25 @@ def _repair_json(raw: str) -> str:
 
 
 def _parse_json_safely(content: str) -> list:
-    """
-    Try to parse JSON content with repair fallback.
-    Returns extracted insumos list or raises on failure.
-    """
+    """Parsea JSON con fallbacks de reparación defensiva avanzada."""
     try:
         parsed = json.loads(content)
-        return parsed.get("insumos", [])
+        if isinstance(parsed, dict):
+            return parsed.get("insumos", [])
+        if isinstance(parsed, list):
+            return parsed
+        return []
     except json.JSONDecodeError:
         log.warning("Initial JSON parse failed, attempting repair...")
         repaired = _repair_json(content)
         try:
             parsed = json.loads(repaired)
             log.info("JSON repair successful")
-            return parsed.get("insumos", [])
-        except json.JSONDecodeError as e:
-            # Last resort: try to extract partial array from the content
-            log.warning("JSON repair also failed, trying partial extraction: %s", e)
+            if isinstance(parsed, dict):
+                return parsed.get("insumos", [])
+            return parsed if isinstance(parsed, list) else []
+        except json.JSONDecodeError:
+            log.warning("JSON repair failed, attempting partial flat extraction fallback")
             extracted = _extract_partial_array(content)
             if extracted:
                 return extracted
@@ -187,26 +213,20 @@ def _parse_json_safely(content: str) -> list:
 
 def _extract_partial_array(content: str) -> list:
     """
-    Try to extract whatever partial data is available from a JSON-like response.
-    Tries multiple strategies to salvage data from truncated JSON.
+    NOTA DE DISEÑO: Esta función sirve exclusivamente como último recurso para rescatar 
+    estructuras planas (FLAT JSON). Puede fallar o ignorar datos en estructuras con anidamiento complejo.
     """
     results = []
-
-    # Strategy 1: repair and parse the whole thing
     try:
         repaired = _repair_json(content)
         parsed = json.loads(repaired)
-        items = parsed.get("insumos", [])
-        if items:
+        items = parsed.get("insumos", []) if isinstance(parsed, dict) else parsed
+        if items and isinstance(items, list):
             return items
-    except (json.JSONDecodeError, ValueError):
+    except Exception:
         pass
 
-    # Strategy 2: find complete array elements (objects between { and })
-    # Works even when the outer array/object brackets are missing
     candidates = [content]
-
-    # Try with repaired closing brackets
     open_brackets = content.count("[")
     close_brackets = content.count("]")
     open_braces = content.count("{")
@@ -218,48 +238,31 @@ def _extract_partial_array(content: str) -> list:
         candidates.append(content + "}" * (open_braces - close_braces))
 
     for text in candidates:
-        # Try to find and parse any complete JSON objects within the text
         for match in re.finditer(r'\{[^{}]*\}', text):
             try:
                 obj = json.loads(match.group())
                 if isinstance(obj, dict) and any(k in obj for k in ("codigo_insumo", "insumo_descripcion", "item", "items_descripcion")):
                     results.append(obj)
-            except (json.JSONDecodeError, ValueError):
+            except Exception:
                 continue
-
-        # Try to find nested objects inside truncated arrays
-        for match in re.finditer(r'\{[^{}]*\]', text):
-            try:
-                candidate = match.group()
-                candidate = candidate.rstrip("]") + "}"
-                obj = json.loads(candidate)
-                if isinstance(obj, dict) and any(k in obj for k in ("codigo_insumo", "insumo_descripcion", "item", "items_descripcion")):
-                    results.append(obj)
-            except (json.JSONDecodeError, ValueError):
-                continue
-
     return results
 
 
 def extract_structured(prompt: str, document_text: str, schema: dict, timeout: int = 300) -> list:
-    """
-    Extract structured JSON data from document text using the configured AI provider.
+    """Extract structured JSON data from document text using the configured AI provider."""
+    # CORRECCIÓN: Validación dura del contrato del esquema para evitar excepciones silenciosas del LLM
+    if not isinstance(schema, dict):
+        raise ValueError("El parámetro 'schema' debe ser obligatoriamente un diccionario válido (JSON Schema).")
 
-    Args:
-        prompt: System prompt describing the extraction task
-        document_text: The document content to extract from
-        schema: JSON schema for structured output (Gemini only; Ollama uses prompt instructions)
-        timeout: Max seconds to wait
-
-    Returns:
-        List of extracted items (dicts)
-    """
+    # CORRECCIÓN: Defensa perimetral contra desbordamiento de tokens/RAM por PDFs masivos
+    document_text = document_text[:MAX_DOC_CHARS]
     max_attempts = 2
+    provider = get_ai_provider()
 
-    if AI_PROVIDER == "ollama":
+    if provider == "ollama":
         full_prompt = f"""{prompt}
 
-DOCUMENTO:
+DOCUMENTO TRUNCADO (MÁX {MAX_DOC_CHARS} CARACTERES):
 {document_text}
 
 Responde SOLO con un objeto JSON válido que contenga una clave "insumos" con un array de objetos extraídos.
@@ -268,7 +271,7 @@ NO incluyas explicaciones ni texto adicional, solo el JSON."""
         for attempt in range(max_attempts):
             try:
                 payload = {
-                    "model": OLLAMA_MODEL,
+                    "model": get_ollama_model(),
                     "messages": [{"role": "user", "content": full_prompt}],
                     "stream": False,
                     "options": {"temperature": 0.1},
@@ -276,10 +279,9 @@ NO incluyas explicaciones ni texto adicional, solo el JSON."""
                 }
                 data = _call_ollama(payload, timeout)
                 content = data.get("message", {}).get("content", "").strip()
-                result = _parse_json_safely(content)
-                return result
-            except Exception as e:
-                log.warning("Ollama structured extraction attempt %d/%d failed: %s", attempt + 1, max_attempts, e)
+                return _parse_json_safely(content)
+            except Exception:
+                log.exception("Ollama structured extraction attempt %d/%d failed", attempt + 1, max_attempts)
                 if attempt == max_attempts - 1:
                     raise
 
@@ -302,29 +304,26 @@ NO incluyas explicaciones ni texto adicional, solo el JSON."""
                 },
             }
             data = _call_gemini(payload, timeout)
-            content = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            content = _safe_extract_gemini_text(data)
+            if content is None:
+                raise RuntimeError("Gemini devolvió una estructura vacía o fue bloqueada por filtros de seguridad.")
             return _parse_json_safely(content)
-        except Exception as e:
-            log.warning("Gemini structured extraction attempt %d/%d failed: %s", attempt + 1, max_attempts, e)
+        except Exception:
+            log.exception("Gemini structured extraction attempt %d/%d failed", attempt + 1, max_attempts)
             if attempt == max_attempts - 1:
                 raise
+    return []
 
 
 def extract_from_pdf_multimodal(pdf_base64: str, filename: str, prompt: str, schema: dict, timeout: int = 600) -> list:
-    """
-    Extract from PDF using multimodal (image) understanding.
-    Only available for Gemini; falls back to text-only for Ollama by raising an error.
+    """Extract from PDF using multimodal (image) understanding (Gemini Only)."""
+    if not isinstance(schema, dict):
+        raise ValueError("El parámetro 'schema' debe ser obligatoriamente un diccionario válido (JSON Schema).")
 
-    Uses a longer timeout (600s default) for PDF processing since large documents
-    with dense tables can take several minutes per batch.
-
-    Returns:
-        List of extracted items
-    """
-    if AI_PROVIDER == "ollama":
+    if get_ai_provider() == "ollama":
         raise NotImplementedError(
-            "Ollama does not support direct PDF processing. "
-            "Extract text from the PDF locally first, then use extract_structured()."
+            "Ollama no admite procesamiento multimodal nativo de archivos PDF completos en este flujo. "
+            "Extraiga el texto del PDF localmente y use la función extract_structured()."
         )
 
     payload = {
@@ -344,11 +343,10 @@ def extract_from_pdf_multimodal(pdf_base64: str, filename: str, prompt: str, sch
     }
     try:
         data = _call_gemini(payload, timeout)
-        candidates = data.get("candidates", [])
-        if not candidates:
-            raise ValueError("Gemini returned no candidates for multimodal request")
-        content = candidates[0]["content"]["parts"][0]["text"].strip()
+        content = _safe_extract_gemini_text(data)
+        if content is None:
+            raise RuntimeError("Gemini no devolvió candidatos válidos para la extracción multimodal del PDF.")
         return _parse_json_safely(content)
-    except Exception as e:
-        log.error("Gemini PDF multimodal extraction failed for %s: %s", filename, e)
+    except Exception:
+        log.exception("Gemini PDF multimodal extraction failed for %s", filename)
         raise
