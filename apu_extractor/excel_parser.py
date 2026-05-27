@@ -71,6 +71,39 @@ def excel_to_dataframe_dict(excel_path: str) -> dict:
     except Exception as e:
         raise Exception(f"Failed to read Excel file into DataFrames: {e}")
 
+
+BATCH_SIZE = 200
+
+
+def extract_text_from_excel_batched(excel_path: str):
+    """
+    Reads an Excel file and yields text chunks (batches of rows) one at a time.
+    Each chunk is a small enough to fit in the AI context window.
+
+    Yields:
+        tuple[str, str]: (sheet_name, text_chunk)
+    """
+    if not os.path.exists(excel_path):
+        raise FileNotFoundError(f"Excel file not found at: {excel_path}")
+
+    xl = pd.ExcelFile(excel_path)
+    for sheet_name in xl.sheet_names:
+        df = xl.parse(sheet_name, header=None)
+        df = df.dropna(how='all').dropna(axis=1, how='all')
+        if df.empty:
+            continue
+
+        rows = []
+        for _, row in df.iterrows():
+            row_str = " | ".join([str(val).strip() if pd.notna(val) else "" for val in row])
+            rows.append(row_str)
+
+        for start in range(0, len(rows), BATCH_SIZE):
+            chunk = rows[start:start + BATCH_SIZE]
+            text = f"### HOJA: {sheet_name} (filas {start+1}-{start+len(chunk)}) ###\n" + "\n".join(chunk)
+            yield sheet_name, text
+
+
 if __name__ == "__main__":
     # Test script if executed directly
     import sys

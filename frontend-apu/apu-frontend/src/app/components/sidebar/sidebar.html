@@ -1,0 +1,54 @@
+<nav class="sidebar" [class.collapsed]="isCollapsed">
+  <div class="sidebar-header">
+    <div class="logo-wrapper">
+      <div class="logo-icon">
+        <span class="diamond"></span>
+      </div>
+      <div class="logo-text" *ngIf="!isCollapsed">
+        <span class="app-title">MAPUS</span>
+        <span class="app-subtitle">APU · OBRA CIVIL</span>
+      </div>
+    </div>
+    <button class="toggle-btn" (click)="isCollapsed = !isCollapsed">
+      <span class="menu-icon">☰</span>
+    </button>
+  </div>
+
+  <ul class="nav-menu">
+    <li class="nav-item">
+      <a class="nav-link" routerLink="/dashboard-apus" routerLinkActive="active">
+        <span class="icon">📊</span>
+        <span class="text" *ngIf="!isCollapsed">Dashboard</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
+      <a class="nav-link" routerLink="/nuevos-apu-ia" routerLinkActive="active">
+        <span class="icon">🤖</span>
+        <span class="text" *ngIf="!isCollapsed">Nuevos APUS-IA</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
+      <a class="nav-link" routerLink="/chat-apus" routerLinkActive="active">
+        <span class="icon">💬</span>
+        <span class="text" *ngIf="!isCollapsed">Consulta</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
+      <a class="nav-link" routerLink="/consulta-apus" routerLinkActive="active">
+        <span class="icon">📁</span>
+        <span class="text" *ngIf="!isCollapsed">Banco de APUS</span>
+      </a>
+    </li>
+  </ul>
+
+
+  <div class="sidebar-footer" *ngIf="!isCollapsed">
+    <div class="engine-indicator">
+      <span class="indicator-dot"></span>
+      <span class="indicator-text">Gemini · Activo</span>
+    </div>
+  </div>
+</nav>

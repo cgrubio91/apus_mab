@@ -1,0 +1,180 @@
+<div class="dashboard-container">
+  <!-- Top Header with Title and Action -->
+  <header class="dashboard-header animate-fade-in">
+    <div class="header-titles">
+      <span class="breadcrumb">MAPUS · WORKSPACE</span>
+      <h1>Dashboard de Proyectos</h1>
+      <p>Visión consolidada de los Análisis de Precios Unitarios extraídos y costos directos por proyecto.</p>
+    </div>
+    <button class="export-btn">
+      <span>Exportar reporte</span>
+      <span class="arrow">↗</span>
+    </button>
+  </header>
+
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Cargando panel de control...</p>
+  </div>
+
+  <div class="dashboard-content animate-fade-in" *ngIf="!isLoading">
+    <!-- Stats Grid -->
+    <div class="stats-grid">
+      <!-- Card 1 -->
+      <div class="stat-card">
+        <span class="card-label">PROYECTOS ACTIVOS</span>
+        <h2 class="card-value">{{ stats.totalProyectos }}</h2>
+        <div class="trend-badge success">
+          <span class="trend-icon">↗</span>
+          <span class="trend-text">+2 vs mes anterior</span>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="stat-card">
+        <span class="card-label">APUS EN BANCO</span>
+        <h2 class="card-value">{{ stats.totalApus }}</h2>
+        <div class="trend-badge info">
+          <span class="trend-icon">↗</span>
+          <span class="trend-text">+{{ stats.ultimoMes }} vs mes anterior</span>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="stat-card">
+        <span class="card-label">COSTO DIRECTO ACUM.</span>
+        <h2 class="card-value">$4.21 M</h2>
+        <div class="trend-badge success">
+          <span class="trend-icon">↗</span>
+          <span class="trend-text">+8.4% vs mes anterior</span>
+        </div>
+      </div>
+
+      <!-- Card 4 -->
+      <div class="stat-card">
+        <span class="card-label">PRECISIÓN IA PROMEDIO</span>
+        <h2 class="card-value">98.4%</h2>
+        <div class="trend-badge danger">
+          <span class="trend-icon">↘</span>
+          <span class="trend-text">-0.2% vs mes anterior</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Grid Section -->
+    <div class="main-grid">
+      <!-- Proyectos Recientes Section -->
+      <div class="grid-card project-list-card">
+        <div class="card-header">
+          <h3>Proyectos Recientes</h3>
+          <span class="header-count">4 de {{ stats.totalProyectos }}</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="premium-table">
+            <thead>
+              <tr>
+                <th>CÓDIGO</th>
+                <th>PROYECTO</th>
+                <th>CAP.</th>
+                <th>COSTO DIRECTO</th>
+                <th>ESTADO</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="code-col">NP-336</td>
+                <td class="name-col">Edificio Residencial Terraza Sur</td>
+                <td>14</td>
+                <td class="price-col">$ 432,109,540</td>
+                <td><span class="status-pill active">En curso</span></td>
+              </tr>
+              <tr>
+                <td class="code-col">NP-329</td>
+                <td class="name-col">Tramo Vial A24 — Andén Norte</td>
+                <td>9</td>
+                <td class="price-col">$ 281,450,000</td>
+                <td><span class="status-pill warning">Revisión</span></td>
+              </tr>
+              <tr>
+                <td class="code-col">NP-312</td>
+                <td class="name-col">Reforzamiento Estructural Sede B</td>
+                <td>7</td>
+                <td class="price-col">$ 124,800,200</td>
+                <td><span class="status-pill success">Aprobado</span></td>
+              </tr>
+              <tr>
+                <td class="code-col">NP-298</td>
+                <td class="name-col">Plaza Cubierta Polideportiva</td>
+                <td>11</td>
+                <td class="price-col">$ 198,772,000</td>
+                <td><span class="status-pill active">En curso</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Distribución por Capítulo Section -->
+      <div class="grid-card distribution-card">
+        <div class="card-header">
+          <h3>Distribución por Capítulo</h3>
+          <span class="header-desc">Participación del costo directo total</span>
+        </div>
+
+        <div class="distribution-list">
+          <div class="dist-item">
+            <div class="dist-info">
+              <span class="dist-name">Cimentación</span>
+              <span class="dist-value">$ 928 M</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 72%"></div>
+            </div>
+          </div>
+
+          <div class="dist-item">
+            <div class="dist-info">
+              <span class="dist-name">Estructura</span>
+              <span class="dist-value">$ 1.60 B</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 85%"></div>
+            </div>
+          </div>
+
+          <div class="dist-item">
+            <div class="dist-info">
+              <span class="dist-name">Mampostería</span>
+              <span class="dist-value">$ 598 M</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 45%"></div>
+            </div>
+          </div>
+
+          <div class="dist-item">
+            <div class="dist-info">
+              <span class="dist-name">Acabados</span>
+              <span class="dist-value">$ 757 M</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 60%"></div>
+            </div>
+          </div>
+
+          <div class="dist-item">
+            <div class="dist-info">
+              <span class="dist-name">Instalaciones</span>
+              <span class="dist-value">$ 336 M</span>
+            </div>
+            <div class="progress-bar-container">
+              <div class="progress-bar" style="width: 30%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

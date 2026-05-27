@@ -4,7 +4,6 @@ MAPUS Core Engine & API
 WhatsApp bot (Twilio) + Angular REST frontend + Gemini AI extraction + PostgreSQL
 """
 
-import asyncio
 import json
 import logging
 import os
@@ -13,27 +12,24 @@ import time
 import base64
 from datetime import datetime, date
 
-from fastapi import FastAPI, Request, UploadFile, File, Query, HTTPException, Body
+from fastapi import FastAPI, Request, UploadFile, File, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from psycopg2.extras import RealDictCursor
 
 from db_config import get_db_connection, execute_query
 from apu_extractor import (
-    extract_apus_from_excel,
-    extract_apus_from_pdf_batched,
+    extract_text_from_excel,
+    extract_text_from_pdf,
+    extract_apus_from_text,
+    extract_apus_from_pdf_multimodal,
     post_process_extracted_data,
     generate_copy_paste_table,
     insert_apus_batch,
-    insert_apus_stream,
     get_unique_projects,
     get_apus,
-    get_dashboard_stats,
     delete_project_apus,
 )
-from apu_extractor.ai_provider import generate_text as ai_generate
-from apu_extractor.db_service import get_filter_options
-from backend_apu.controllers.job_manager import JobStatus, job_manager
 
 from twilio.rest import Client
 from twilio.request_validator import RequestValidator
@@ -107,13 +103,26 @@ async def log_and_rate_limit(request: Request, call_next):
 
 
 # ── Gemini helpers ───────────────────────────────────────────────────
+GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+
 def gemini_generate(prompt: str) -> str:
-    """Generate text using the configured AI provider (Gemini or Ollama)."""
-    system = (
-        "Eres un asistente experto en bases de datos PostgreSQL "
-        "y en análisis de precios unitarios (APU) de obras civiles."
-    )
-    return ai_generate(prompt, system=system, timeout=300)
+    """Call Gemini API and return the generated text."""
+    import requests as http
+
+    url = f"{GEMINI_URL}?key={GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    try:
+        r = http.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=45)
+        r.raise_for_status()
+        data = r.json()
+        if "candidates" not in data or not data["candidates"]:
+            log.error("Gemini returned no candidates: %s", json.dumps(data)[:500])
+            return "No se pudo procesar tu solicitud con la IA."
+        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except Exception as e:
+        log.error("Gemini call failed: %s", e)
+        return "Error al conectar con la IA de Gemini."
 
 
 # ── SQL helpers ──────────────────────────────────────────────────────
@@ -290,11 +299,7 @@ def home():
         "version": "2.1.0",
         "endpoints": {
             "extract_file": "POST /api/extract-file",
-            "extract_file_async": "POST /api/extract-file-async",
             "save_extracted": "POST /api/save-extracted",
-            "get_job": "GET /api/jobs/{job_id}",
-            "stream_job": "GET /api/jobs/{job_id}/stream",
-            "list_jobs": "GET /api/jobs",
             "projects": "GET /api/projects",
             "apus": "GET /api/apus",
             "chat_assistant": "POST /api/chat-assistant",
@@ -317,7 +322,7 @@ def health():
 
 # ── File processing ──────────────────────────────────────────────────
 @app.post("/api/extract-file")
-async def extract_file(file: UploadFile = File(...), auto_save: bool = Query(True)):
+async def extract_file(file: UploadFile = File(...)):
     filename = file.filename or "unknown"
     ext = os.path.splitext(filename)[1].lower()
 
@@ -341,20 +346,8 @@ async def extract_file(file: UploadFile = File(...), auto_save: bool = Query(Tru
         raw_insumos = []
 
         if ext == ".pdf":
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-
-            try:
-                raw_insumos = extract_apus_from_pdf_batched(tmp_path, filename)
-            finally:
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except PermissionError:
-                        log.warning("Could not remove temp file (in use): %s", tmp_path)
+            pdf_b64 = base64.b64encode(content).decode("utf-8")
+            raw_insumos = extract_apus_from_pdf_multimodal(pdf_b64, filename)
 
         elif ext in (".xlsx", ".xls"):
             import tempfile
@@ -364,33 +357,24 @@ async def extract_file(file: UploadFile = File(...), auto_save: bool = Query(Tru
                 tmp_path = tmp.name
 
             try:
-                raw_insumos = extract_apus_from_excel(tmp_path, filename)
+                excel_text = extract_text_from_excel(tmp_path)
+                raw_insumos = extract_apus_from_text(excel_text, filename)
             finally:
                 if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except PermissionError:
-                        log.warning("Could not remove temp file (in use): %s", tmp_path)
+                    os.remove(tmp_path)
 
         cleaned = post_process_extracted_data(raw_insumos, filename)
         table = generate_copy_paste_table(cleaned)
 
         log.info("Extracted %d insumos from %s", len(cleaned), filename)
 
-        response = {
+        return {
             "success": True,
             "filename": filename,
             "count": len(cleaned),
             "copy_paste_table": table,
             "insumos": cleaned,
         }
-
-        if auto_save and cleaned:
-            save_result = insert_apus_batch(cleaned)
-            log.info("Auto-saved %d APU lines", save_result.get("count", 0))
-            response["saved"] = save_result
-
-        return response
 
     except HTTPException:
         raise
@@ -400,187 +384,16 @@ async def extract_file(file: UploadFile = File(...), auto_save: bool = Query(Tru
 
 
 @app.post("/api/save-extracted")
-async def save_extracted(payload: list = Body(...)):
+async def save_extracted(payload: list):
     if not payload:
         raise HTTPException(status_code=400, detail="No hay datos para guardar.")
-
-    total = len(payload)
-
-    async def stream():
-        for update in insert_apus_stream(payload):
-            yield json.dumps(update) + "\n"
-
-        log.info("Saved %d APU lines to database", total)
-
-    return StreamingResponse(stream(), media_type="application/x-ndjson")
-
-
-# ── Background Job Endpoints ─────────────────────────────────────────
-import tempfile as _tempfile
-
-
-def _run_extraction(job_id: str, content: bytes, filename: str, ext: str):
-    from apu_extractor.gemini_extractor import (
-        extract_apus_from_pdf_batched,
-        extract_apus_from_excel,
-        post_process_extracted_data,
-        generate_copy_paste_table,
-    )
-
     try:
-        raw_insumos = []
-
-        if ext == ".pdf":
-            job_manager.update_phase(job_id, "Preparando PDF...")
-
-            with _tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-
-            def pdf_progress(batch_idx, total_batches, phase_text):
-                job_manager.update_phase(
-                    job_id,
-                    phase_text,
-                    current_batch=batch_idx,
-                    total_batches=total_batches,
-                    pct=round((batch_idx / total_batches) * 100) if total_batches > 0 else 0,
-                )
-
-            try:
-                raw_insumos = extract_apus_from_pdf_batched(tmp_path, filename, progress_callback=pdf_progress)
-            finally:
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except PermissionError:
-                        log.warning("Could not remove temp file: %s", tmp_path)
-
-        elif ext in (".xlsx", ".xls"):
-            job_manager.update_phase(job_id, "Preparando Excel...")
-
-            with _tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-
-            def excel_progress(batch_idx, total_batches, phase_text):
-                job_manager.update_phase(
-                    job_id,
-                    phase_text,
-                    current_batch=batch_idx,
-                    total_batches=total_batches,
-                    pct=round((batch_idx / total_batches) * 100) if total_batches > 0 else 0,
-                )
-
-            try:
-                raw_insumos = extract_apus_from_excel(tmp_path, filename, progress_callback=excel_progress)
-            finally:
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except PermissionError:
-                        log.warning("Could not remove temp file: %s", tmp_path)
-
-        job_manager.update_phase(job_id, "Post-procesando datos...", current_batch=0, total_batches=0, pct=95)
-        time.sleep(0.5)
-
-        cleaned = post_process_extracted_data(raw_insumos, filename)
-        table = generate_copy_paste_table(cleaned)
-
-        result = {
-            "success": True,
-            "filename": filename,
-            "count": len(cleaned),
-            "copy_paste_table": table,
-            "insumos": cleaned,
-        }
-
-        job_manager.set_result(job_id, result)
-        log.info("Job %s completed: %d insumos from %s", job_id, len(cleaned), filename)
-
+        res = insert_apus_batch(payload)
+        log.info("Saved %d APU lines — success=%s", res.get("count", 0), res.get("success"))
+        return res
     except Exception as e:
-        log.error("Job %s failed: %s", job_id, e)
-        job_manager.set_error(job_id, str(e))
-
-
-@app.post("/api/extract-file-async")
-async def extract_file_async(file: UploadFile = File(...)):
-    filename = file.filename or "unknown"
-    ext = os.path.splitext(filename)[1].lower()
-
-    if ext not in (".pdf", ".xlsx", ".xls"):
-        raise HTTPException(
-            status_code=400,
-            detail="Formato no soportado. Suba PDF (.pdf) o Excel (.xlsx, .xls).",
-        )
-
-    content = await file.read()
-
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Archivo demasiado grande (máx {MAX_FILE_SIZE // (1024*1024)} MB).",
-        )
-
-    log.info("Async file upload: %s (%d bytes)", filename, len(content))
-
-    job = job_manager.create_job(filename)
-    job_manager.update_progress(job.id, status=JobStatus.QUEUED)
-
-    job_manager.submit_job(job.id, _run_extraction, content, filename, ext)
-
-    return {"job_id": job.id, "status": "queued", "filename": filename}
-
-
-@app.get("/api/jobs/{job_id}")
-async def get_job(job_id: str):
-    job = job_manager.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job no encontrado o expirado.")
-    return job.to_dict()
-
-
-@app.get("/api/jobs/{job_id}/stream")
-async def stream_job(job_id: str):
-    job = job_manager.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job no encontrado o expirado.")
-
-    async def event_stream():
-        last_version = -1
-        while True:
-            current_job = job_manager.get_job(job_id)
-            if not current_job:
-                yield f"event: error\ndata: {json.dumps({'error': 'Job no encontrado'})}\n\n"
-                break
-
-            data = current_job.to_dict()
-
-            if current_job.progress_version > last_version:
-                last_version = current_job.progress_version
-                yield f"event: progress\ndata: {json.dumps(data)}\n\n"
-
-            if current_job.status in (JobStatus.DONE, JobStatus.ERROR):
-                event_type = "done" if current_job.status == JobStatus.DONE else "error"
-                yield f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
-                break
-
-            await asyncio.sleep(0.5)
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
-@app.get("/api/jobs")
-async def list_jobs(limit: int = Query(20, ge=1, le=100)):
-    jobs = job_manager.list_jobs(limit=limit)
-    return {"jobs": [j.to_dict() for j in jobs]}
+        log.error("Error saving to DB: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── DB queries ───────────────────────────────────────────────────────
@@ -600,32 +413,12 @@ async def get_apus_endpoint(
     items_descripcion: str = Query(None),
     insumo_descripcion: str = Query(None),
     tipo_insumo: str = Query(None),
-    contratista: str = Query(None),
-    entidad: str = Query(None),
-    codigo_insumo: str = Query(None),
-    item: str = Query(None),
-    item_unidad: str = Query(None),
-    insumo_unidad: str = Query(None),
-    pais: str = Query(None),
-    numero_contrato: str = Query(None),
-    search: str = Query(None),
-    sort_by: str = Query(None),
-    sort_order: str = Query("asc"),
     limit: int = Query(50, ge=1, le=MAX_APU_LIMIT),
     offset: int = Query(0, ge=0),
 ):
-    filters = {k: v for k, v in locals().items()
-               if v is not None and k not in ("limit", "offset", "search", "sort_by", "sort_order")}
+    filters = {k: v for k, v in locals().items() if v is not None and k not in ("limit", "offset")}
     try:
-        return get_apus(filters, limit, offset, sort_by=sort_by, sort_order=sort_order, search=search)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/apus/filter-options")
-async def apus_filter_options():
-    try:
-        return get_filter_options()
+        return get_apus(filters, limit, offset)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -635,14 +428,6 @@ async def delete_project(nombre_proyecto: str = Query(..., min_length=1)):
     log.warning("Deleting project: %s", nombre_proyecto)
     try:
         return delete_project_apus(nombre_proyecto)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.get("/api/dashboard")
-async def dashboard():
-    try:
-        return get_dashboard_stats()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -853,6 +638,3 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     log.info("Starting MAPUS server on port %d", port)
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-
-

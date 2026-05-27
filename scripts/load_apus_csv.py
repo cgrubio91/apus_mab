@@ -12,7 +12,7 @@ from db_config import get_db_connection
 from psycopg2 import Error
 
 # ============ CONFIGURACIÓN ============
-CSV_PATH = r"C:\Users\cgrub\Downloads\apus_csv\APUS_V1.csv"
+CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "APUS_V1.csv")
 BATCH_SIZE = 1000  # Tamaño del lote para inserción masiva
 
 

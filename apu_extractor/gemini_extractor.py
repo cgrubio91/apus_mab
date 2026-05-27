@@ -1,17 +1,24 @@
 """
-🧠 Gemini Extractor Module
-Communicates with Google Gemini API to extract structured APU data from documents.
+🧠 AI Extractor Module
+Extracts structured APU data from documents using the configured AI provider (Gemini / Ollama).
 Cleans and formats data according to user instructions (dates YYYY-MM-DD, Latin numeric format).
 """
 
 import os
 import re
 import json
-import requests
+import logging
 from datetime import datetime
+from dotenv import load_dotenv
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+from apu_extractor.ai_provider import (
+    extract_structured,
+    extract_from_pdf_multimodal,
+)
+
+load_dotenv()
+
+log = logging.getLogger("mapus.extractor")
 
 def clean_numeric_value(value):
     """
@@ -151,6 +158,14 @@ def get_extraction_prompt(filename: str = None) -> str:
     - La columna ENTIDAD corresponde a la entidad contratante (ej. IDU, INVIAS, alcaldías, etc.).
     - La columna CIUDAD y PAÍS deben deducirse del contexto si no aparecen explícitos (ej. Bogotá, Colombia).
     
+    LIMPIEZA DE DATOS (crucial):
+    1. IGNORA filas completamente vacías, filas de totales (TOTAL, SUBTOTAL, SUMA), filas de resumen o encabezados repetidos.
+    2. IGNORA filas que sean solo separadores (guiones, asteriscos, etc.).
+    3. Normaliza descripciones: elimina espacios múltiples, tabs, saltos de línea internos.
+    4. Unifica unidades: por ejemplo "H-H", "hh", "HH" → "H-H"; "M3", "mt3" → "M3"; "und", "unidad" → "UND".
+    5. Si un insumo no tiene código o descripción clara, no lo incluyas.
+    6. Limpia caracteres extraños producto de OCR (corchetes sueltos, símbolos raros, etc.).
+    
     RESPONDE EXCLUSIVAMENTE CON UN OBJETO JSON que contenga una lista bajo la clave "insumos".
     Sigue estrictamente la estructura del esquema JSON.
     """
@@ -196,78 +211,164 @@ def get_response_schema():
         }
     }
 
-def call_gemini_api(contents_payload: list) -> list:
-    """
-    Helper function to send content to the Gemini API and request JSON output.
-    """
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set in environment variables.")
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    
-    payload = {
-        "contents": contents_payload,
-        "generationConfig": {
-            "responseMimeType": "application/json",
-            "responseSchema": get_response_schema(),
-            "temperature": 0.1
-        }
-    }
-    
-    try:
-        response = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=90)
-        response.raise_for_status()
-        data = response.json()
-        
-        if "candidates" not in data or not data["candidates"]:
-            raise Exception(f"No response candidates returned from Gemini: {json.dumps(data)}")
-            
-        content_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-        parsed_json = json.loads(content_text)
-        return parsed_json.get("insumos", [])
-        
-    except Exception as e:
-        raise Exception(f"Error communicating with Gemini API: {e}")
-
 def extract_apus_from_text(document_text: str, filename: str = None) -> list:
     """
-    Extracts APUs from a text string (such as parsed Excel or PDF text).
+    Extracts APUs from a text string using the configured AI provider.
     """
     prompt = get_extraction_prompt(filename)
-    
-    contents_payload = [
-        {
-            "parts": [
-                {"text": prompt},
-                {"text": f"Aquí está el contenido del documento:\n\n{document_text}"}
-            ]
-        }
-    ]
-    
-    return call_gemini_api(contents_payload)
+    schema = get_response_schema()
+    return extract_structured(prompt, document_text, schema)
 
 def extract_apus_from_pdf_multimodal(pdf_base64: str, filename: str = None) -> list:
     """
-    Extracts APUs directly from a base64 encoded PDF file using Gemini's native PDF support.
-    This provides maximum accuracy for complex layouts.
+    Extracts APUs directly from a base64 encoded PDF using the configured AI provider.
+    Falls back to text extraction for providers that don't support multimodal.
     """
     prompt = get_extraction_prompt(filename)
+    schema = get_response_schema()
+    try:
+        return extract_from_pdf_multimodal(pdf_base64, filename, prompt, schema)
+    except NotImplementedError:
+        log.warning("PDF multimodal not supported by current provider, extracting text first")
+        import base64
+        import tempfile
+        try:
+            pdf_bytes = base64.b64decode(pdf_base64)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(pdf_bytes)
+                tmp_path = tmp.name
+            from apu_extractor.pdf_parser import extract_text_from_pdf
+            text = extract_text_from_pdf(tmp_path)
+            if text.strip():
+                return extract_structured(prompt, text, schema)
+            raise
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+
+def extract_apus_from_excel(excel_path: str, filename: str = None, progress_callback=None) -> list:
+    """
+    Extracts APUs from an Excel file in batches of rows to avoid exceeding
+    the AI context window. Each batch is processed independently and results
+    are merged.
+    """
+    from apu_extractor.excel_parser import extract_text_from_excel_batched
+
+    all_insumos = []
+    prompt = get_extraction_prompt(filename)
+    schema = get_response_schema()
+
+    batches = list(extract_text_from_excel_batched(excel_path))
+    total_batches = len(batches)
+
+    for i, (sheet_name, chunk_text) in enumerate(batches):
+        log.info("Processing batch %d/%d from %s / %s (%d chars)", i+1, total_batches, filename or excel_path, sheet_name, len(chunk_text))
+        if progress_callback:
+            progress_callback(i + 1, total_batches, f"Procesando hoja {sheet_name} ({i+1}/{total_batches})")
+            
+        try:
+            batch_result = extract_structured(prompt, chunk_text, schema)
+            all_insumos.extend(batch_result)
+        except Exception as e:
+            log.warning("Batch failed for %s / %s: %s", filename or excel_path, sheet_name, e)
+
+    log.info("Extracted %d insumos from %s (batched)", len(all_insumos), filename or excel_path)
+    return all_insumos
+
+
+MAX_MULTIMODAL_PAGES = 30
+
+
+def _get_pdf_page_count(pdf_path: str) -> int:
+    """Get total page count of a PDF using pypdf."""
+    from pypdf import PdfReader
+    try:
+        reader = PdfReader(pdf_path)
+        return len(reader.pages)
+    except Exception:
+        return 0
+
+
+def extract_apus_from_pdf_batched(pdf_path: str, filename: str = None, progress_callback=None) -> list:
+    """
+    Extracts APUs from a PDF file in page batches.
+
+    Strategy:
+    1. Try multimodal (send PDF page-batches as images) via Gemini
+    2. If multimodal fails or not available, fall back to text batches
+
+    Args:
+        pdf_path: Path to the PDF file on disk
+        filename: Original filename for logging
+
+    Returns:
+        Merged list of insumos from all batches
+    """
+    from apu_extractor.pdf_parser import extract_text_from_pdf_batched
+
+    all_insumos = []
+    prompt = get_extraction_prompt(filename)
+    schema = get_response_schema()
+    total_pages = _get_pdf_page_count(pdf_path)
+
+    use_multimodal = total_pages <= MAX_MULTIMODAL_PAGES
+
+    if use_multimodal:
+        from apu_extractor.pdf_parser import split_pdf_to_base64_batches
+        try:
+            if progress_callback:
+                progress_callback(1, 1, "Preparando páginas del PDF para análisis visual...")
+                
+            multimodal_batches = list(split_pdf_to_base64_batches(pdf_path))
+            total = len(multimodal_batches)
+
+            for idx, (label, pdf_b64) in enumerate(multimodal_batches):
+                log.info("Multimodal batch %s (%d b64 chars)", label, len(pdf_b64))
+                if progress_callback:
+                    progress_callback(idx + 1, total, f"IA GEMINI · Analizando imágenes de {label}...")
+                try:
+                    batch_result = extract_from_pdf_multimodal(pdf_b64, f"{filename} ({label})", prompt, schema)
+                    all_insumos.extend(batch_result)
+                    log.info("Multimodal batch %s → %d insumos", label, len(batch_result))
+                except NotImplementedError:
+                    log.info("Multimodal not supported for %s, switching to text", label)
+                    use_multimodal = False
+                    break
+                except Exception as e:
+                    log.warning("Multimodal batch %s failed: %s", label, e)
+                    # We skip text fallback for individual batch failures to avoid blocking the GIL
+                    
+            if use_multimodal:
+                log.info("Extracted %d insumos from %s (multimodal batched)", len(all_insumos), filename or pdf_path)
+                return all_insumos
+        except NotImplementedError:
+            log.info("Multimodal not available, using text batches")
+
+    total = max(1, (total_pages + 4) // 5)  # 5 is PDF_BATCH_SIZE
+    log.info("Using text-based extraction for %s (%d pages, %d batches)", filename or pdf_path, total_pages, total)
+
+    if progress_callback:
+        progress_callback(0, total, "Leyendo documento PDF (esto puede tardar unos minutos)...")
+
+    # Evaluate generator lazily so we don't block the thread entirely before any progress
+    text_batches_gen = extract_text_from_pdf_batched(pdf_path)
     
-    contents_payload = [
-        {
-            "parts": [
-                {"text": prompt},
-                {
-                    "inlineData": {
-                        "mimeType": "application/pdf",
-                        "data": pdf_base64
-                    }
-                }
-            ]
-        }
-    ]
-    
-    return call_gemini_api(contents_payload)
+    for idx, (label, chunk_text) in enumerate(text_batches_gen):
+        log.info("Text batch %s (%d chars)", label, len(chunk_text))
+        if progress_callback:
+            progress_callback(idx + 1, total, f"IA GEMINI · Procesando texto de {label}...")
+            
+        try:
+            batch_result = extract_structured(prompt, chunk_text, schema)
+            all_insumos.extend(batch_result)
+            log.info("Text batch %s → %d insumos", label, len(batch_result))
+        except Exception as e:
+            log.warning("Text batch %s failed: %s", label, e)
+
+    log.info("Extracted %d insumos from %s (text batched)", len(all_insumos), filename or pdf_path)
+    return all_insumos
+
+
 
 def post_process_extracted_data(insumos: list, filename: str = None) -> list:
     """

@@ -1,0 +1,144 @@
+<div class="consulta-container">
+  <header class="page-header animate-fade-in">
+    <div class="header-titles">
+      <span class="breadcrumb">MAPUS · WORKSPACE</span>
+      <h1>Banco de APUS</h1>
+      <p>Catálogo centralizado de Análisis de Precios Unitarios extraídos y validados.</p>
+    </div>
+    <div class="header-actions">
+      <button class="clear-filters-btn" (click)="resetFilters()" [class.has-filters]="hasActiveFilters()" title="Limpiar todos los filtros">
+        ✕ Limpiar filtros
+      </button>
+    </div>
+  </header>
+
+  <!-- Search Bar -->
+  <section class="search-bar animate-fade-in">
+    <div class="search-box-wrapper">
+      <span class="search-icon">🔍</span>
+      <input
+        type="text"
+        [(ngModel)]="searchText"
+        (ngModelChange)="onSearch()"
+        placeholder="Buscar en todo… proyecto, ciudad, insumo, observación..."
+      />
+    </div>
+    <div class="results-badge">
+      <span>{{ apus.length }} de {{ total }} APUs</span>
+    </div>
+  </section>
+
+  <!-- Active Filters Chips -->
+  <div class="active-filters" *ngIf="hasActiveFilters()">
+    <span class="chip-label">Filtros activos:</span>
+    <span class="filter-chip" *ngFor="let col of visibleColumns">
+      <ng-container *ngIf="filters[col.key]">
+        <span class="chip-key">{{ col.label }}:</span>
+        <span class="chip-val">{{ filters[col.key] }}</span>
+        <span class="chip-remove" (click)="clearColumnFilter(col, $event)">✕</span>
+      </ng-container>
+    </span>
+  </div>
+
+  <!-- Loading State -->
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Cargando banco de APUs...</p>
+  </div>
+
+  <!-- Spreadsheet Table -->
+  <div class="table-card animate-fade-in" *ngIf="!isLoading">
+    <div class="table-responsive">
+      <table class="premium-table">
+        <thead>
+          <tr>
+            <th *ngFor="let col of visibleColumns"
+              class="th-{{ col.type }}"
+              [class.sortable]="col.sortable"
+              [class.sorted]="sortBy === col.key"
+              [class.filter-active]="!!filters[col.key]"
+              [style.width]="col.width">
+              <div class="th-content">
+                <span class="th-label" (click)="sortByColumn(col)">{{ col.label }}</span>
+                <span class="sort-icon" *ngIf="sortBy === col.key">{{ getSortIcon(col) }}</span>
+                <span class="filter-icon"
+                  *ngIf="col.filterable"
+                  [class.active]="activeFilterCol === col.key"
+                  [class.has-filter]="!!filters[col.key]"
+                  (click)="toggleFilterDropdown(col, $event)">▼</span>
+              </div>
+
+              <!-- Filter Dropdown -->
+              <div class="filter-dropdown" *ngIf="activeFilterCol === col.key" (click)="$event.stopPropagation()">
+                <div class="filter-dropdown-header">
+                  <span>Filtrar por {{ col.label.toLowerCase() }}</span>
+                  <span class="filter-clear" *ngIf="filters[col.key]" (click)="clearColumnFilter(col, $event)">✕</span>
+                </div>
+
+                <!-- Text input for all filterable columns -->
+                <input
+                  type="text"
+                  class="filter-input"
+                  [(ngModel)]="filterSearchText[col.key]"
+                  (ngModelChange)="onFilterInputChange(col)"
+                  (keydown.enter)="applyColumnTextFilter(col)"
+                  placeholder="Escribe para filtrar…"
+                  autofocus
+                />
+
+                <!-- Option list for categorical columns -->
+                <div class="filter-options" *ngIf="hasFilterOptions(col)">
+                  <div class="filter-option"
+                    *ngFor="let opt of (filteredOptionLists[col.key] || getFilterOptionsFor(col))"
+                    [class.selected]="filters[col.key] === opt"
+                    (click)="selectFilterOption(col, opt)">
+                    <span class="option-check">{{ filters[col.key] === opt ? '✓' : '' }}</span>
+                    <span class="option-label">{{ opt }}</span>
+                  </div>
+                  <div class="filter-no-results" *ngIf="(filteredOptionLists[col.key] || getFilterOptionsFor(col)).length === 0">
+                    Sin resultados
+                  </div>
+                </div>
+
+                <!-- Apply button for text-only columns -->
+                <div class="filter-actions" *ngIf="!hasFilterOptions(col)">
+                  <button class="filter-btn" (click)="applyColumnTextFilter(col)">Aplicar</button>
+                </div>
+              </div>
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let apu of apus">
+            <td *ngFor="let col of visibleColumns"
+              [class]="getCellClass(apu, col)"
+              [title]="getCellValue(apu, col)">
+              {{ formatCellValue(apu, col) }}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Empty State -->
+    <div class="empty-state" *ngIf="apus.length === 0">
+      <span class="empty-icon">📁</span>
+      <p>No se encontraron registros en el banco de APUs</p>
+    </div>
+
+    <!-- Pagination -->
+    <footer class="pagination-footer" *ngIf="totalPages > 1">
+      <span class="page-indicator">Página {{ currentPage }} / {{ totalPages }} · {{ total }} registros</span>
+      <div class="pagination-actions">
+        <button class="nav-page-btn" (click)="prevPage()" [disabled]="currentPage === 1">Anterior</button>
+        <span class="page-numbers">
+          <button *ngFor="let p of getPages()"
+            class="page-btn"
+            [class.active]="p === currentPage"
+            (click)="goToPage(p)">{{ p }}</button>
+        </span>
+        <button class="nav-page-btn" (click)="nextPage()" [disabled]="currentPage === totalPages">Siguiente</button>
+      </div>
+    </footer>
+  </div>
+</div>

@@ -126,6 +126,48 @@ def insert_apus_batch(apus_list: list) -> dict:
         if conn:
             conn.close()
 
+
+def insert_apus_stream(apus_list: list, batch_size: int = 50):
+    """
+    Generator that inserts APU rows in batches and yields progress updates.
+
+    Yields:
+        dict with keys: type ('progress'), inserted (int), total (int), errors (list)
+    """
+    total = len(apus_list)
+    if not total:
+        yield {"type": "complete", "inserted": 0, "total": 0, "errors": []}
+        return
+
+    inserted = 0
+    all_errors = []
+
+    for start in range(0, total, batch_size):
+        batch = apus_list[start : start + batch_size]
+        try:
+            result = insert_apus_batch(batch)
+            if result.get("success"):
+                inserted += len(batch)
+            if result.get("errors"):
+                all_errors.extend(result["errors"])
+        except Exception as e:
+            all_errors.append(str(e))
+
+        yield {
+            "type": "progress",
+            "inserted": min(inserted, total),
+            "total": total,
+            "errors": all_errors,
+        }
+
+    yield {
+        "type": "complete",
+        "inserted": inserted,
+        "total": total,
+        "errors": all_errors,
+    }
+
+
 def get_unique_projects() -> list:
     """
     Retrieves all unique project names from the apus table.
@@ -143,74 +185,78 @@ def get_unique_projects() -> list:
         print(f"❌ Error getting unique projects: {e}")
         return []
 
-def get_apus(filters: dict = None, limit: int = 50, offset: int = 0) -> dict:
+ALLOWED_SORT_COLUMNS = {
+    "id", "fecha_aprobacion_apu", "fecha_analisis_apu", "ciudad", "pais",
+    "entidad", "contratista", "nombre_proyecto", "numero_contrato",
+    "item", "items_descripcion", "item_unidad", "precio_unitario",
+    "precio_unitario_sin_aiu", "codigo_insumo", "tipo_insumo",
+    "insumo_descripcion", "insumo_unidad", "rendimiento_insumo",
+    "precio_unitario_apu", "precio_parcial_apu", "observacion", "link_documento"
+}
+
+def get_apus(filters: dict = None, limit: int = 50, offset: int = 0,
+             sort_by: str = None, sort_order: str = "asc", search: str = None) -> dict:
     """
-    Retrieves APU rows with pagination and filters.
-    
-    Supported filters in dict:
-        - nombre_proyecto (str, partial ILIKE match)
-        - ciudad (str, partial ILIKE match)
-        - items_descripcion (str, partial ILIKE match)
-        - insumo_descripcion (str, partial ILIKE match)
-        - tipo_insumo (str, exact match)
+    Retrieves APU rows with pagination, filters, sorting, and global search.
     """
     where_clauses = []
     params = []
-    
+
     if filters:
-        if filters.get("nombre_proyecto"):
-            where_clauses.append("nombre_proyecto ILIKE %s")
-            params.append(f"%{filters['nombre_proyecto']}%")
-            
-        if filters.get("ciudad"):
-            where_clauses.append("ciudad ILIKE %s")
-            params.append(f"%{filters['ciudad']}%")
-            
-        if filters.get("items_descripcion"):
-            where_clauses.append("items_descripcion ILIKE %s")
-            params.append(f"%{filters['items_descripcion']}%")
-            
-        if filters.get("insumo_descripcion"):
-            where_clauses.append("insumo_descripcion ILIKE %s")
-            params.append(f"%{filters['insumo_descripcion']}%")
-            
-        if filters.get("tipo_insumo"):
-            where_clauses.append("tipo_insumo = %s")
-            params.append(filters["tipo_insumo"])
-            
+        for col in ["nombre_proyecto", "ciudad", "items_descripcion",
+                     "insumo_descripcion", "tipo_insumo", "contratista",
+                     "entidad", "codigo_insumo", "item", "item_unidad",
+                     "insumo_unidad", "pais", "numero_contrato"]:
+            val = filters.get(col)
+            if val:
+                where_clauses.append(f"{col} ILIKE %s")
+                params.append(f"%{val}%")
+
+    if search:
+        search_cols = [
+            "nombre_proyecto", "ciudad", "entidad", "contratista",
+            "item", "items_descripcion", "codigo_insumo", "tipo_insumo",
+            "insumo_descripcion", "numero_contrato", "pais", "observacion"
+        ]
+        search_parts = [f"{c} ILIKE %s" for c in search_cols]
+        where_clauses.append(f"({' OR '.join(search_parts)})")
+        for _ in search_cols:
+            params.append(f"%{search}%")
+
     where_str = ""
     if where_clauses:
         where_str = "WHERE " + " AND ".join(where_clauses)
-        
-    # Query total count for pagination metadata
+
+    if sort_by and sort_by in ALLOWED_SORT_COLUMNS:
+        order = "DESC" if sort_order and sort_order.upper() == "DESC" else "ASC"
+        order_clause = f"ORDER BY {sort_by} {order}, id"
+    else:
+        order_clause = "ORDER BY nombre_proyecto, item, id"
+
     count_query = f"SELECT COUNT(*) FROM apus {where_str};"
-    
-    # Query paginated rows
     query = f"""
-        SELECT * 
-        FROM apus 
-        {where_str} 
-        ORDER BY nombre_proyecto, item, id
+        SELECT *
+        FROM apus
+        {where_str}
+        {order_clause}
         LIMIT %s OFFSET %s;
     """
-    
+
     query_params = params + [limit, offset]
-    
+
     try:
         total_count = execute_query(count_query, params=params if params else None, dict_cursor=False)[0][0]
         rows = execute_query(query, params=query_params, dict_cursor=True)
-        
-        # Serialize python datetimes to string for API comfort
+
         for row in rows:
             if row.get("fecha_aprobacion_apu"):
                 row["fecha_aprobacion_apu"] = row["fecha_aprobacion_apu"].strftime("%Y-%m-%d")
             if row.get("fecha_analisis_apu"):
                 row["fecha_analisis_apu"] = row["fecha_analisis_apu"].strftime("%Y-%m-%d")
-            # Convert decimal fields to floats
             for key in ["precio_unitario", "precio_unitario_sin_aiu", "rendimiento_insumo", "precio_unitario_apu", "precio_parcial_apu"]:
                 if row.get(key) is not None:
                     row[key] = float(row[key])
-                    
+
         return {
             "total": total_count,
             "limit": limit,
@@ -220,6 +266,48 @@ def get_apus(filters: dict = None, limit: int = 50, offset: int = 0) -> dict:
     except Exception as e:
         print(f"❌ Error querying APUs: {e}")
         return {"total": 0, "limit": limit, "offset": offset, "data": [], "error": str(e)}
+
+
+def get_filter_options() -> dict:
+    """Returns distinct values for filter dropdowns."""
+    queries = {
+        "proyectos": "SELECT DISTINCT nombre_proyecto FROM apus WHERE nombre_proyecto IS NOT NULL AND nombre_proyecto != '–' ORDER BY nombre_proyecto",
+        "ciudades": "SELECT DISTINCT ciudad FROM apus WHERE ciudad IS NOT NULL AND ciudad != '–' ORDER BY ciudad",
+        "tipos_insumo": "SELECT DISTINCT tipo_insumo FROM apus WHERE tipo_insumo IS NOT NULL AND tipo_insumo != '–' ORDER BY tipo_insumo",
+        "entidades": "SELECT DISTINCT entidad FROM apus WHERE entidad IS NOT NULL AND entidad != '–' ORDER BY entidad",
+        "contratistas": "SELECT DISTINCT contratista FROM apus WHERE contratista IS NOT NULL AND contratista != '–' ORDER BY contratista",
+    }
+    result = {}
+    for key, sql in queries.items():
+        try:
+            rows = execute_query(sql, params=None, dict_cursor=False)
+            result[key] = [r[0] for r in rows]
+        except Exception as e:
+            result[key] = []
+    return result
+
+def get_dashboard_stats() -> dict:
+    """
+    Returns dashboard metrics: total apus, projects, cities, and records from last month.
+    """
+    stats = {"total_apus": 0, "total_proyectos": 0, "total_ciudades": 0, "ultimo_mes": 0}
+    try:
+        stats["total_apus"] = execute_query("SELECT COUNT(*) FROM apus;", dict_cursor=False)[0][0]
+        stats["total_proyectos"] = len(get_unique_projects())
+        ciudades = execute_query(
+            "SELECT DISTINCT ciudad FROM apus WHERE ciudad IS NOT NULL AND ciudad != '–';",
+            dict_cursor=False,
+        )
+        stats["total_ciudades"] = len([r[0] for r in ciudades if r[0]])
+        stats["ultimo_mes"] = execute_query(
+            """SELECT COUNT(*) FROM apus
+               WHERE created_at >= NOW() - INTERVAL '30 days';""",
+            dict_cursor=False,
+        )[0][0]
+    except Exception as e:
+        print(f"Error getting dashboard stats: {e}")
+    return stats
+
 
 def delete_project_apus(project_name: str) -> dict:
     """

@@ -1,0 +1,70 @@
+<div class="chat-container">
+  <!-- Header -->
+  <header class="chat-header animate-fade-in">
+    <div class="header-info">
+      <span class="breadcrumb">MAPUS · WORKSPACE</span>
+      <h1>Consulta IA</h1>
+      <p>Pregunta a tu banco de APUs en lenguaje natural. Respuestas fundamentadas en tus propios datos.</p>
+    </div>
+    <button class="btn-clear" (click)="clearChat()" title="Limpiar conversación">
+      <span class="clear-icon">🗑️</span>
+      <span class="text">Limpiar chat</span>
+    </button>
+  </header>
+
+  <!-- Messages Area -->
+  <div class="messages-area animate-fade-in" #scrollContainer>
+    <div
+      class="message-wrapper"
+      *ngFor="let msg of messages"
+      [class.user]="msg.isUser"
+      [class.bot]="!msg.isUser"
+    >
+      <div class="avatar-icon" *ngIf="!msg.isUser">🤖</div>
+      <div class="avatar-icon" *ngIf="msg.isUser">👤</div>
+      <div class="message-bubble">
+        <div class="message-content" [innerText]="msg.text"></div>
+        <div class="message-time">{{ msg.timestamp | date:'HH:mm' }}</div>
+      </div>
+    </div>
+
+    <!-- Typing Loader -->
+    <div class="message-wrapper bot" *ngIf="isLoading">
+      <div class="avatar-icon">🤖</div>
+      <div class="message-bubble typing-bubble">
+        <div class="typing-indicator">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Suggested Questions Area -->
+  <div class="suggested-questions animate-fade-in" *ngIf="messages.length <= 1 && !isLoading">
+    <button class="suggestion-chip" (click)="selectSuggestion('Compara rendimientos de concreto entre proyectos del último trimestre')">
+      Compara rendimientos de concreto entre proyectos del último trimestre
+    </button>
+    <button class="suggestion-chip" (click)="selectSuggestion('Lista los APUs cuyo precio unitario subió más de 10 % en el último mes')">
+      Lista los APUs cuyo precio unitario subió más de 10 % en el último mes
+    </button>
+    <button class="suggestion-chip" (click)="selectSuggestion('Genera resumen de costos por capítulo del proyecto NP-329')">
+      Genera resumen de costos por capítulo del proyecto NP-329
+    </button>
+  </div>
+
+  <!-- Input Area -->
+  <div class="input-area animate-fade-in">
+    <input
+      type="text"
+      [(ngModel)]="userInput"
+      (keyup.enter)="sendMessage()"
+      placeholder="Escribe tu consulta sobre los APUs..."
+      [disabled]="isLoading"
+    />
+    <button class="btn-send" (click)="sendMessage()" [disabled]="!userInput.trim() || isLoading" title="Enviar mensaje">
+      <span class="send-icon">➔</span>
+    </button>
+  </div>
+</div>
