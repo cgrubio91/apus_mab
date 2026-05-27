@@ -1,100 +1,177 @@
+import asyncio
+import json
 import logging
 import os
 import tempfile
-import json
-import asyncio
 import traceback
+from typing import Any
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Body
+import magic
+from fastapi import APIRouter, Body, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 
 from ..services.job_manager import job_manager
+from apu_extractor import (
+    extract_apus_from_excel,
+    extract_apus_from_pdf_batched,
+    insert_apus_stream,
+    post_process_extracted_data,
+    generate_copy_paste_table,
+)
 
 log = logging.getLogger("mapus.backend.extractor")
 router = APIRouter()
 
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
-ALLOWED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
+# ---------------------------------------------------------------------------
+# Constantes (mueve a settings.py / pydantic-settings cuando puedas)
+# ---------------------------------------------------------------------------
+MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50 MB
+MAX_STREAM_SECONDS: int = 300          # 5 min SSE timeout
+
+ALLOWED_EXTENSIONS: dict[str, str] = {
+    ".pdf":  "application/pdf",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls":  "application/vnd.ms-excel",
+}
 
 
-def _process_file(content: bytes, ext: str, filename: str, progress_callback=None):
-    """The background task logic — runs in a thread."""
-    log.info("_process_file START: %s (%d bytes, ext=%s)", filename, len(content), ext)
-    
-    from apu_extractor import (
-        extract_apus_from_excel,
-        extract_apus_from_pdf_batched,
-        post_process_extracted_data,
-        generate_copy_paste_table,
-    )
+# ---------------------------------------------------------------------------
+# Schema
+# ---------------------------------------------------------------------------
+class InsumoItem(BaseModel):
+    """Representa un insumo/APU extraído. Ajusta los campos a tu modelo real."""
+    codigo:      str | None   = Field(None, description="Código del insumo")
+    descripcion: str          = Field(...,  description="Descripción del insumo")
+    unidad:      str | None   = Field(None, description="Unidad de medida")
+    cantidad:    float | None = Field(None, ge=0)
+    precio:      float | None = Field(None, ge=0)
+    extra:       dict[str, Any] = Field(default_factory=dict)
 
-    raw_insumos = []
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
-        tmp.write(content)
-        tmp_path = tmp.name
-
-    log.info("_process_file: Temp file written to %s", tmp_path)
+# ---------------------------------------------------------------------------
+# Lógica de extracción (se ejecuta en un thread del ThreadPoolExecutor)
+# ---------------------------------------------------------------------------
+def _process_file(
+    tmp_path: str,
+    ext: str,
+    filename: str,
+    progress_callback=None,
+) -> dict[str, Any]:
+    """
+    Recibe la RUTA del temporal en lugar de los bytes para no saturar la RAM.
+    El thread es responsable de eliminar el archivo al terminar.
+    """
+    log.info("_process_file START  file=%s  path=%s  ext=%s", filename, tmp_path, ext)
+    raw_insumos: list = []
 
     try:
         if ext == ".pdf":
-            log.info("_process_file: Starting PDF extraction...")
-            raw_insumos = extract_apus_from_pdf_batched(tmp_path, filename, progress_callback=progress_callback)
-            log.info("_process_file: PDF extraction returned %d raw insumos", len(raw_insumos))
+            log.info("_process_file: iniciando extracción PDF…")
+            raw_insumos = extract_apus_from_pdf_batched(
+                tmp_path, filename, progress_callback=progress_callback
+            )
         elif ext in (".xlsx", ".xls"):
-            log.info("_process_file: Starting Excel extraction...")
-            raw_insumos = extract_apus_from_excel(tmp_path, filename, progress_callback=progress_callback)
-            log.info("_process_file: Excel extraction returned %d raw insumos", len(raw_insumos))
+            log.info("_process_file: iniciando extracción Excel…")
+            raw_insumos = extract_apus_from_excel(
+                tmp_path, filename, progress_callback=progress_callback
+            )
+
+        log.info("_process_file: %d insumos raw extraídos", len(raw_insumos))
 
         if progress_callback:
-            progress_callback(100, 100, "Limpiando y formateando datos...")
+            progress_callback(100, 100, "Limpiando y formateando datos…")
 
         cleaned = post_process_extracted_data(raw_insumos, filename)
-        table = generate_copy_paste_table(cleaned)
+        table   = generate_copy_paste_table(cleaned)
 
-        log.info("_process_file DONE: Extracted %d insumos from %s", len(cleaned), filename)
-
+        log.info("_process_file DONE  insumos=%d  file=%s", len(cleaned), filename)
         return {
-            "success": True,
-            "filename": filename,
-            "count": len(cleaned),
+            "success":          True,
+            "filename":         filename,
+            "count":            len(cleaned),
             "copy_paste_table": table,
-            "insumos": cleaned,
+            "insumos":          cleaned,
         }
-    except Exception as e:
-        log.error("_process_file ERROR: %s\n%s", e, traceback.format_exc())
+
+    except Exception:
+        log.error("_process_file ERROR  file=%s\n%s", filename, traceback.format_exc())
         raise
+
     finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+                log.info("_process_file: temporal eliminado → %s", tmp_path)
+        except OSError as e:
+            log.error("No se pudo eliminar el temporal %s: %s", tmp_path, e)
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
 @router.post("/extract-file")
 async def extract_file(file: UploadFile = File(...)):
     filename = file.filename or "unknown"
-    ext = os.path.splitext(filename)[1].lower()
+    ext      = os.path.splitext(filename)[1].lower()
 
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Formato no soportado. Suba PDF (.pdf) o Excel (.xlsx, .xls).",
+            detail=f"Formato no soportado. Suba uno de: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    content = await file.read()
+    # tmp_path = None antes del try para evitar usar locals() en el except
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            tmp_path     = tmp.name
+            total_bytes  = 0
+            is_first_chunk = True
 
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Archivo demasiado grande (máx {MAX_FILE_SIZE // (1024*1024)} MB).",
-        )
+            # Lectura en chunks de 8 KB: valida tamaño y magic bytes al vuelo
+            while chunk := await file.read(8192):
+                total_bytes += len(chunk)
 
-    log.info("File upload: %s (%d bytes)", filename, len(content))
-    
-    # Create background job
+                if total_bytes > MAX_FILE_SIZE:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"Archivo demasiado grande (máx {MAX_FILE_SIZE // (1024 ** 2)} MB).",
+                    )
+
+                if is_first_chunk:
+                    detected_mime = magic.from_buffer(chunk[:4096], mime=True)
+                    if detected_mime != ALLOWED_EXTENSIONS[ext]:
+                        raise HTTPException(
+                            status_code=422,
+                            detail="El contenido real del archivo no coincide con su extensión.",
+                        )
+                    is_first_chunk = False
+
+                tmp.write(chunk)
+
+    except HTTPException:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise
+    except Exception as e:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+        raise HTTPException(status_code=500, detail=f"Error al guardar archivo temporal: {e}")
+
+    log.info(
+        "Archivo recibido y verificado: %s (%d bytes en disco → %s)",
+        filename, total_bytes, tmp_path,
+    )
+
     job = job_manager.create_job(filename)
-    job_manager.submit(job.id, _process_file, content, ext, filename)
+    job_manager.submit(job.id, _process_file, tmp_path, ext, filename)
 
-    return {"success": True, "job_id": job.id, "message": "Procesamiento iniciado en segundo plano"}
+    return {
+        "success": True,
+        "job_id":  job.id,
+        "message": "Procesamiento iniciado en segundo plano",
+    }
 
 
 @router.get("/jobs")
@@ -117,61 +194,76 @@ async def stream_job_progress(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")
 
-    log.info("SSE stream started for job %s (current status: %s)", job_id, job.status)
+    log.info("SSE stream abierto  job=%s  status=%s", job_id, job.status)
 
     async def event_stream():
-        """
-        Always send the current state every second, regardless of whether
-        updated_at changed. This ensures the frontend always gets updates
-        and avoids race conditions with thread timing.
-        """
-        tick = 0
+        start = asyncio.get_event_loop().time()
+        tick  = 0
+
         while True:
+            # ── Timeout ───────────────────────────────────────────────────
+            elapsed = asyncio.get_event_loop().time() - start
+            if elapsed > MAX_STREAM_SECONDS:
+                log.warning("SSE timeout  job=%s  elapsed=%.0fs", job_id, elapsed)
+                yield f"data: {json.dumps({'id': job_id, 'status': 'TIMEOUT'})}\n\n"
+                break
+
+            # ── Obtener estado y emitir ───────────────────────────────────
             try:
-                data = job.to_json()
-                yield f"data: {data}\n\n"
+                current_job = job_manager.get_job(job_id)
+                if not current_job:
+                    yield f"data: {json.dumps({'id': job_id, 'status': 'ERROR', 'error': 'El trabajo ya no existe'})}\n\n"
+                    break
+
+                yield f"data: {current_job.to_json()}\n\n"
+
+                # tick y log dentro del try para que current_job siempre esté definida
                 tick += 1
-                
                 if tick % 10 == 0:
-                    log.info("SSE tick %d for job %s: status=%s phase=%s pct=%d",
-                             tick, job_id, job.status, job.progress.get("phase", "?"), job.progress.get("percent", 0))
-            except Exception as e:
-                log.error("SSE serialization error for job %s: %s", job_id, e)
-                yield f"data: {json.dumps({'id': job_id, 'status': 'ERROR', 'error': str(e), 'progress': {'phase': 'Error de serialización', 'percent': 0, 'current_batch': 0, 'total_batches': 0}})}\n\n"
+                    log.debug(
+                        "SSE tick=%d  job=%s  status=%s",
+                        tick, job_id, current_job.status,
+                    )
+
+                if current_job.status in ("DONE", "ERROR"):
+                    log.info("SSE stream cerrado  job=%s  status=%s", job_id, current_job.status)
+                    break
+
+            except Exception as exc:
+                log.error("SSE serialización  job=%s  error=%s", job_id, exc)
+                yield f"data: {json.dumps({'id': job_id, 'status': 'ERROR', 'error': str(exc)})}\n\n"
                 break
-            
-            if job.status in ("DONE", "ERROR"):
-                log.info("SSE stream ending for job %s (status: %s)", job_id, job.status)
-                break
-                
+
             await asyncio.sleep(1)
 
     return StreamingResponse(
         event_stream(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
+            "Cache-Control":     "no-cache",
+            "Connection":        "keep-alive",
             "X-Accel-Buffering": "no",
-        }
+        },
     )
 
 
 @router.post("/save-extracted")
-async def save_extracted(payload: list = Body(...)):
+async def save_extracted(payload: list[InsumoItem] = Body(...)):
     if not payload:
         raise HTTPException(status_code=400, detail="No hay datos para guardar.")
 
-    import json
-    from fastapi.responses import StreamingResponse
-    from apu_extractor import insert_apus_stream
-
-    total = len(payload)
+    raw_payload = [item.model_dump() for item in payload]
 
     async def stream():
-        for update in insert_apus_stream(payload):
-            yield json.dumps(update) + "\n"
-
-        log.info("Saved %d APU lines to database via streaming", total)
+        count = 0
+        try:
+            for update in insert_apus_stream(raw_payload):
+                yield json.dumps(update) + "\n"
+                count += 1
+        except asyncio.CancelledError:
+            log.warning("Cliente cerró la conexión en /save-extracted prematuramente.")
+            raise
+        finally:
+            log.info("save_extracted: %d líneas procesadas", count)
 
     return StreamingResponse(stream(), media_type="application/x-ndjson")
