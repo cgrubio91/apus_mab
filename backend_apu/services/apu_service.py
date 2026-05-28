@@ -148,21 +148,43 @@ class ApuService:
             raise
 
     def get_dashboard_stats(self) -> Dict[str, Any]:
-        """Obtiene métricas para el dashboard."""
-        query = """
-            SELECT 
+        """Obtiene métricas reales del banco de APUs para el dashboard."""
+        summary_query = """
+            SELECT
                 COUNT(*) as total_apus,
                 COUNT(DISTINCT nombre_proyecto) as total_projects,
                 COUNT(DISTINCT ciudad) as total_cities,
-                AVG(precio_unitario) as avg_precio_unitario
+                SUM(CASE WHEN item IS NOT NULL AND items_descripcion IS NOT NULL
+                         AND codigo_insumo IS NOT NULL AND precio_unitario IS NOT NULL
+                    THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as precision_ia
             FROM apus
-            WHERE precio_unitario IS NOT NULL
+        """
+        breakdown_query = """
+            SELECT tipo_insumo, COUNT(*) as apu_count
+            FROM apus
+            GROUP BY tipo_insumo
+            ORDER BY apu_count DESC
         """
         try:
             with get_db_connection() as conn:
                 with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    cursor.execute(query)
-                    return cursor.fetchone()
+                    cursor.execute(summary_query)
+                    summary = cursor.fetchone() or {}
+
+                    cursor.execute(breakdown_query)
+                    rows = cursor.fetchall()
+                    breakdown = {
+                        r['tipo_insumo'] or 'Sin tipo': r['apu_count']
+                        for r in rows
+                    }
+
+                    return {
+                        'total_apus': summary.get('total_apus', 0),
+                        'total_projects': summary.get('total_projects', 0),
+                        'total_cities': summary.get('total_cities', 0),
+                        'precision_ia': round(summary.get('precision_ia') or 0.0, 1),
+                        'apus_por_tipo_insumo': breakdown,
+                    }
         except DatabaseError:
             log.exception("Database error in get_dashboard_stats")
             raise

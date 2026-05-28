@@ -4,6 +4,7 @@ requests==2.32.3
 twilio==9.2.3
 python-dotenv==1.0.1
 python-multipart==0.0.9
+python-magic
 psycopg2-binary
 chardet
 pypdf==4.2.0

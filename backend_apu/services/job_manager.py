@@ -163,7 +163,7 @@ class JobManager:
             job.progress["current_batch"] = current
             job.progress["total_batches"] = total
             job.progress["phase"] = phase
-            job.progress["percent"] = int((current / total) * 100) if total > 0 else 0
+            job.progress["percent"] = int((current / total) * 100) if total and total > 0 else 0
             job.updated_at = time.time()
             job.progress_version += 1
 

@@ -9,7 +9,7 @@ import unicodedata
 from decimal import Decimal
 from typing import List, Dict, Any, Generator, Tuple, TypedDict
 from psycopg2 import DatabaseError
-from psycopg2.extras import execute_values
+from psycopg2.extras import execute_values, RealDictCursor
 from db_config import get_db_connection
 
 log = logging.getLogger("mapus.extractor.db")
@@ -85,7 +85,6 @@ def insert_apus_batch(apus_list: List[Dict[str, Any]]) -> Dict[str, Any]:
             observacion, link_documento
         )
         VALUES %s
-        ON CONFLICT (numero_contrato, item, codigo_insumo, link_documento) DO NOTHING
         RETURNING 1;
     """
     
@@ -143,7 +142,13 @@ def insert_apus_batch(apus_list: List[Dict[str, Any]]) -> Dict[str, Any]:
         inserted_count = 0
         db_errors = [error_msg]
         
-        # En el fallback row-by-row no requerimos RETURNING 1 porque rowcount es directo y seguro
+        use_conflict = True
+        if "no unique or exclusion constraint matching the ON CONFLICT specification" in str(e).lower():
+            use_conflict = False
+            log.warning(
+                "Missing unique constraint for ON CONFLICT on apus, falling back to plain INSERT for each row."
+            )
+
         single_sql = """
             INSERT INTO apus (
                 fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad, contratista, 
@@ -153,26 +158,24 @@ def insert_apus_batch(apus_list: List[Dict[str, Any]]) -> Dict[str, Any]:
                 precio_parcial_apu, observacion, link_documento
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (numero_contrato, item, codigo_insumo, link_documento) DO NOTHING;
         """
-        
+        if use_conflict:
+            single_sql += "\nON CONFLICT (numero_contrato, item, codigo_insumo, link_documento) DO NOTHING;"
+        else:
+            single_sql += ";"
+
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
                     for i, row in enumerate(tuple_data):
                         try:
-                            # CORRECCIÓN: Estilo limpio sin puntos y comas innecesarios
                             cursor.execute("SAVEPOINT apu_insert_sp")
                             cursor.execute(single_sql, row)
-                            
-                            # OPTIMIZACIÓN DE MEMORIA: rowcount evita instanciar arrays pesados en RAM
                             inserted_count += cursor.rowcount
-                            
                         except DatabaseError as re:
                             cursor.execute("ROLLBACK TO SAVEPOINT apu_insert_sp")
                             if len(db_errors) < MAX_ERRORS_RETAINED:
                                 db_errors.append(f"Row {i} (Project: {row[6]}, Item: {row[8]}): {re}")
-                    
                     conn.commit()
         except Exception as conn_err:
             log.exception("Critical infrastructure loss during savepoint processing")
@@ -197,6 +200,172 @@ def insert_apus_batch(apus_list: List[Dict[str, Any]]) -> Dict[str, Any]:
             "duplicates": duplicates_count,
             "errors": db_errors
         }
+
+
+# ==========================================================
+# QUERY FUNCTIONS (re-exported for backward compatibility)
+# ==========================================================
+
+def get_unique_projects() -> List[str]:
+    """Recupera la lista única de proyectos."""
+    query = "SELECT DISTINCT nombre_proyecto FROM apus WHERE nombre_proyecto IS NOT NULL ORDER BY nombre_proyecto"
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(query)
+                return [r['nombre_proyecto'] for r in cursor.fetchall()]
+    except DatabaseError:
+        log.exception("Database error in get_unique_projects")
+        raise
+
+
+def get_filter_options() -> Dict[str, List[str]]:
+    """Recupera las opciones únicas de filtros para el frontend."""
+    query = """
+        SELECT 
+            COALESCE(json_agg(DISTINCT ciudad) FILTER (WHERE ciudad IS NOT NULL), '[]') as ciudad,
+            COALESCE(json_agg(DISTINCT entidad) FILTER (WHERE entidad IS NOT NULL), '[]') as entidad,
+            COALESCE(json_agg(DISTINCT contratista) FILTER (WHERE contratista IS NOT NULL), '[]') as contratista,
+            COALESCE(json_agg(DISTINCT tipo_insumo) FILTER (WHERE tipo_insumo IS NOT NULL), '[]') as tipo_insumo,
+            COALESCE(json_agg(DISTINCT pais) FILTER (WHERE pais IS NOT NULL), '[]') as pais
+        FROM apus;
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(query)
+                row = cursor.fetchone()
+                return {
+                    "ciudad": sorted(row["ciudad"]) if row else [],
+                    "entidad": sorted(row["entidad"]) if row else [],
+                    "contratista": sorted(row["contratista"]) if row else [],
+                    "tipo_insumo": sorted(row["tipo_insumo"]) if row else [],
+                    "pais": sorted(row["pais"]) if row else [],
+                }
+    except DatabaseError:
+        log.exception("Database error in get_filter_options")
+        raise
+
+
+def get_apus(
+    filters: Dict[str, Any],
+    limit: int = 50,
+    offset: int = 0,
+    sort_by: str | None = None,
+    sort_order: str = "asc",
+    search: str | None = None,
+) -> Dict[str, Any]:
+    """Consulta paginada, ordenada y filtrada dinámicamente."""
+    limit = min(max(1, limit), 500)
+    offset = max(0, offset)
+
+    where_clauses = []
+    params = []
+
+    text_filters = [
+        'nombre_proyecto', 'ciudad', 'items_descripcion', 'insumo_descripcion',
+        'tipo_insumo', 'contratista', 'entidad', 'codigo_insumo', 'item',
+        'item_unidad', 'insumo_unidad', 'pais', 'numero_contrato',
+    ]
+
+    for field in text_filters:
+        value = filters.get(field)
+        if value:
+            where_clauses.append(f"{field} ILIKE %s")
+            params.append(f"%{str(value).strip()}%")
+
+    if search:
+        search_value = f"%{search.strip()}%"
+        search_clause = (
+            "(nombre_proyecto ILIKE %s OR "
+            "items_descripcion ILIKE %s OR "
+            "insumo_descripcion ILIKE %s OR "
+            "contratista ILIKE %s)"
+        )
+        where_clauses.append(search_clause)
+        params.extend([search_value] * 4)
+
+    where_str = " AND ".join(where_clauses)
+    where_str = f"WHERE {where_str}" if where_str else ""
+
+    allowed_sort = {
+        "id", "nombre_proyecto", "ciudad", "precio_unitario",
+        "contratista", "entidad", "fecha_aprobacion_apu", "precio_parcial_apu",
+    }
+    sort_column = "id"
+    if sort_by:
+        normalized = sort_by.strip().lower()
+        if normalized in allowed_sort:
+            sort_column = normalized
+    order_direction = "DESC" if str(sort_order).lower() == "desc" else "ASC"
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                count_query = f"SELECT COUNT(*) FROM apus {where_str}"
+                cursor.execute(count_query, params)
+                total = cursor.fetchone()['count']
+
+                query = f"""
+                    SELECT * FROM apus
+                    {where_str}
+                    ORDER BY {sort_column} {order_direction}
+                    LIMIT %s OFFSET %s
+                """
+                cursor.execute(query, params + [limit, offset])
+                results = cursor.fetchall()
+
+                return {
+                    "success": True,
+                    "count": len(results),
+                    "total": total,
+                    "limit": limit,
+                    "offset": offset,
+                    "data": results,
+                }
+    except DatabaseError:
+        log.exception("Database error in get_apus")
+        raise
+
+
+def get_dashboard_stats() -> Dict[str, Any]:
+    """Obtiene métricas para el dashboard."""
+    query = """
+        SELECT
+            COUNT(*) as total_apus,
+            COUNT(DISTINCT nombre_proyecto) as total_projects,
+            COUNT(DISTINCT ciudad) as total_cities,
+            AVG(precio_unitario) as avg_precio_unitario
+        FROM apus
+        WHERE precio_unitario IS NOT NULL
+    """
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(query)
+                return cursor.fetchone()
+    except DatabaseError:
+        log.exception("Database error in get_dashboard_stats")
+        raise
+
+
+def delete_project_apus(nombre_proyecto: str) -> Dict[str, Any]:
+    """Elimina todos los APUs de un proyecto."""
+    query = "DELETE FROM apus WHERE nombre_proyecto = %s"
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(query, (nombre_proyecto,))
+                count = cursor.rowcount
+                conn.commit()
+                return {
+                    "success": True,
+                    "deleted": count,
+                    "message": f"Se eliminaron {count} APUs de {nombre_proyecto}.",
+                }
+    except DatabaseError:
+        log.exception("Database error deleting project: %s", nombre_proyecto)
+        raise
 
 
 def insert_apus_stream(

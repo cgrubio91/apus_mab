@@ -14,7 +14,8 @@ export class DashboardApus implements OnInit {
     totalApus: 0,
     totalProyectos: 0,
     totalCiudades: 0,
-    ultimoMes: 0,
+    precisionIA: 0,
+    apusPorTipoInsumo: {} as Record<string, number>,
   };
   isLoading = true;
 
@@ -28,9 +29,10 @@ export class DashboardApus implements OnInit {
     this.apuService.getDashboard().subscribe({
       next: (data: any) => {
         this.stats.totalApus = data.total_apus || 0;
-        this.stats.totalProyectos = data.total_proyectos || 0;
-        this.stats.totalCiudades = data.total_ciudades || 0;
-        this.stats.ultimoMes = data.ultimo_mes || 0;
+        this.stats.totalProyectos = data.total_projects || 0;
+        this.stats.totalCiudades = data.total_cities || 0;
+        this.stats.precisionIA = data.precision_ia || 0;
+        this.stats.apusPorTipoInsumo = data.apus_por_tipo_insumo || {};
         this.isLoading = false;
       },
       error: () => {

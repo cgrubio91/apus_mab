@@ -248,16 +248,14 @@ async def stream_job_progress(job_id: str):
 
 
 @router.post("/save-extracted")
-async def save_extracted(payload: list[InsumoItem] = Body(...)):
+async def save_extracted(payload: list[dict[str, Any]] = Body(...)):
     if not payload:
         raise HTTPException(status_code=400, detail="No hay datos para guardar.")
-
-    raw_payload = [item.model_dump() for item in payload]
 
     async def stream():
         count = 0
         try:
-            for update in insert_apus_stream(raw_payload):
+            for update in insert_apus_stream(payload):
                 yield json.dumps(update) + "\n"
                 count += 1
         except asyncio.CancelledError:

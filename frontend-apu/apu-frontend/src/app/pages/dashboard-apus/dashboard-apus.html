@@ -43,134 +43,78 @@
 
       <!-- Card 3 -->
       <div class="stat-card">
-        <span class="card-label">COSTO DIRECTO ACUM.</span>
-        <h2 class="card-value">$4.21 M</h2>
-        <div class="trend-badge success">
+        <span class="card-label">CIUDADES</span>
+        <h2 class="card-value">{{ stats.totalCiudades }}</h2>
+        <div class="trend-badge info">
           <span class="trend-icon">↗</span>
-          <span class="trend-text">+8.4% vs mes anterior</span>
+          <span class="trend-text">Total de ciudades en la base</span>
         </div>
       </div>
 
       <!-- Card 4 -->
       <div class="stat-card">
         <span class="card-label">PRECISIÓN IA PROMEDIO</span>
-        <h2 class="card-value">98.4%</h2>
-        <div class="trend-badge danger">
-          <span class="trend-icon">↘</span>
-          <span class="trend-text">-0.2% vs mes anterior</span>
+        <h2 class="card-value">{{ stats.precisionIA }}%</h2>
+        <div class="trend-badge success">
+          <span class="trend-icon">✓</span>
+          <span class="trend-text">Campos clave completos</span>
         </div>
       </div>
     </div>
 
     <!-- Main Grid Section -->
     <div class="main-grid">
-      <!-- Proyectos Recientes Section -->
+      <!-- APUs por Tipo de Insumo -->
       <div class="grid-card project-list-card">
         <div class="card-header">
-          <h3>Proyectos Recientes</h3>
-          <span class="header-count">4 de {{ stats.totalProyectos }}</span>
+          <h3>APUs por Tipo de Insumo</h3>
+          <span class="header-count">{{ stats.totalApus }} APUs totales</span>
         </div>
 
         <div class="table-responsive">
           <table class="premium-table">
             <thead>
               <tr>
-                <th>CÓDIGO</th>
-                <th>PROYECTO</th>
-                <th>CAP.</th>
-                <th>COSTO DIRECTO</th>
-                <th>ESTADO</th>
+                <th>TIPO DE INSUMO</th>
+                <th>CANTIDAD DE APUS</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td class="code-col">NP-336</td>
-                <td class="name-col">Edificio Residencial Terraza Sur</td>
-                <td>14</td>
-                <td class="price-col">$ 432,109,540</td>
-                <td><span class="status-pill active">En curso</span></td>
-              </tr>
-              <tr>
-                <td class="code-col">NP-329</td>
-                <td class="name-col">Tramo Vial A24 — Andén Norte</td>
-                <td>9</td>
-                <td class="price-col">$ 281,450,000</td>
-                <td><span class="status-pill warning">Revisión</span></td>
-              </tr>
-              <tr>
-                <td class="code-col">NP-312</td>
-                <td class="name-col">Reforzamiento Estructural Sede B</td>
-                <td>7</td>
-                <td class="price-col">$ 124,800,200</td>
-                <td><span class="status-pill success">Aprobado</span></td>
-              </tr>
-              <tr>
-                <td class="code-col">NP-298</td>
-                <td class="name-col">Plaza Cubierta Polideportiva</td>
-                <td>11</td>
-                <td class="price-col">$ 198,772,000</td>
-                <td><span class="status-pill active">En curso</span></td>
+              <tr *ngFor="let tipo of stats.apusPorTipoInsumo | keyvalue">
+                <td>{{ tipo.key }}</td>
+                <td>{{ tipo.value }}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Distribución por Capítulo Section -->
+      <!-- Data Quality / IA Precision Section -->
       <div class="grid-card distribution-card">
         <div class="card-header">
-          <h3>Distribución por Capítulo</h3>
-          <span class="header-desc">Participación del costo directo total</span>
+          <h3>Calidad de Extracción</h3>
+          <span class="header-desc">Campos clave completados en el banco de APUs</span>
         </div>
 
         <div class="distribution-list">
           <div class="dist-item">
             <div class="dist-info">
-              <span class="dist-name">Cimentación</span>
-              <span class="dist-value">$ 928 M</span>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar" style="width: 72%"></div>
+              <span class="dist-name">Proyectos distintos</span>
+              <span class="dist-value">{{ stats.totalProyectos }}</span>
             </div>
           </div>
 
           <div class="dist-item">
             <div class="dist-info">
-              <span class="dist-name">Estructura</span>
-              <span class="dist-value">$ 1.60 B</span>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar" style="width: 85%"></div>
+              <span class="dist-name">Ciudades distintas</span>
+              <span class="dist-value">{{ stats.totalCiudades }}</span>
             </div>
           </div>
 
           <div class="dist-item">
             <div class="dist-info">
-              <span class="dist-name">Mampostería</span>
-              <span class="dist-value">$ 598 M</span>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar" style="width: 45%"></div>
-            </div>
-          </div>
-
-          <div class="dist-item">
-            <div class="dist-info">
-              <span class="dist-name">Acabados</span>
-              <span class="dist-value">$ 757 M</span>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar" style="width: 60%"></div>
-            </div>
-          </div>
-
-          <div class="dist-item">
-            <div class="dist-info">
-              <span class="dist-name">Instalaciones</span>
-              <span class="dist-value">$ 336 M</span>
-            </div>
-            <div class="progress-bar-container">
-              <div class="progress-bar" style="width: 30%"></div>
+              <span class="dist-name">Precisión IA</span>
+              <span class="dist-value">{{ stats.precisionIA }}%</span>
             </div>
           </div>
         </div>

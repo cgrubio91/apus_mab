@@ -251,6 +251,10 @@ def startup():
             fetch=False,
         )
         execute_query(
+            """CREATE UNIQUE INDEX IF NOT EXISTS idx_apus_unique_conflict ON apus (numero_contrato, item, codigo_insumo, link_documento)""",
+            fetch=False,
+        )
+        execute_query(
             """CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
                 telefono VARCHAR(50) NOT NULL UNIQUE,

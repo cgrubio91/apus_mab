@@ -217,7 +217,7 @@ def get_response_schema() -> Dict[str, Any]:
                         "precio_unitario": {"type": "NUMBER", "description": "Precio unitario total del ítem con AIU"},
                         "precio_unitario_sin_aiu": {"type": "NUMBER", "description": "Precio unitario del ítem sin AIU"},
                         "codigo_insumo": {"type": "STRING", "description": "Código identificador del insumo"},
-                        "tipo_insumo": {"type": "STRING", "description": "Categoría de insumo (Materiales, Mano de Obra, Equipos, Transporte, etc.)"},
+                        "tipo_insumo": {"type": "STRING", "description": "Categoría de insumo: Equipos, Herramienta, Materiales, Mano de obra, Transporte, o Indirectos"},
                         "insumo_descripcion": {"type": "STRING", "description": "Nombre detallado del insumo"},
                         "insumo_unidad": {"type": "STRING", "description": "Unidad de medida del insumo (ej. H-G, Bto, M3)"},
                         "rendimiento_insumo": {"type": "NUMBER", "description": "Rendimiento del insumo para este ítem"},
@@ -390,6 +390,65 @@ def extract_apus_from_pdf_batched(pdf_path: str, filename: str = None, progress_
 # POST PROCESSING & ETLS
 # ==========================================================
 
+def _classify_tipo_insumo(insumos: list) -> None:
+    """
+    Clasifica el 'tipo_insumo' de cada insumo usando la IA en lotes,
+    según las categorías: Equipos, Herramienta, Materiales, Mano de obra, Transporte, Indirectos.
+    Se basa en 'insumo_descripcion' para determinar la categoría.
+    """
+    from apu_extractor.ai_provider import generate_text
+
+    descriptions = []
+    index_map = []
+    for i, item in enumerate(insumos):
+        desc = (item.get("insumo_descripcion") or "").strip()
+        if desc and desc != "–":
+            descriptions.append(desc)
+            index_map.append(i)
+
+    if not descriptions:
+        return
+
+    CATEGORIES = ["Equipos", "Herramienta", "Materiales", "Mano de obra", "Transporte", "Indirectos"]
+    BATCH_SIZE = 80
+
+    for batch_start in range(0, len(descriptions), BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, len(descriptions))
+        batch_descs = descriptions[batch_start:batch_end]
+        batch_indices = index_map[batch_start:batch_end]
+
+        prompt = (
+            f"Clasifica cada insumo de construcción en EXACTAMENTE una de estas {len(CATEGORIES)} categorías:\n"
+            + "\n".join(f"{i+1}. {c}" for i, c in enumerate(CATEGORIES))
+            + "\n\nResponde SOLO con un objeto JSON donde cada clave es el número de orden "
+            "y el valor es la categoría asignada.\n\n"
+            "Lista de insumos:\n"
+        )
+        for idx, desc in enumerate(batch_descs, start=1):
+            prompt += f"{idx}. {desc}\n"
+
+        prompt += (
+            '\n\nEjemplo de respuesta:\n'
+            '{"1": "Materiales", "2": "Mano de obra", "3": "Equipos"}\n'
+            'NO agregues explicaciones, solo el JSON.'
+        )
+
+        try:
+            raw = generate_text(prompt, timeout=120)
+            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1]
+                raw = raw.rsplit("```", 1)[0].strip()
+            import json as _json
+            result = _json.loads(raw)
+            for str_idx, categoria in result.items():
+                i = int(str_idx) - 1
+                if 0 <= i < len(batch_indices):
+                    insumos[batch_indices[i]]["tipo_insumo"] = categoria.strip()
+        except Exception:
+            log.warning("Fallback: clasificación por IA no disponible, se usan valores originales")
+
+
 def post_process_extracted_data(insumos: list, filename: str = None) -> List[Dict[str, Any]]:
     """CORRECCIÓN: Tipado fino list[dict] para optimizar la indexación, autocompletado y linters."""
     cleaned_list = []
@@ -435,6 +494,7 @@ def post_process_extracted_data(insumos: list, filename: str = None) -> List[Dic
 
         cleaned_list.append(cleaned)
         
+    _classify_tipo_insumo(cleaned_list)
     return cleaned_list
 
 

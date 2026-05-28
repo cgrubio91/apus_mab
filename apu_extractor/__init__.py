@@ -44,6 +44,7 @@ __all__ = [
     'insert_apus_batch',
     'insert_apus_stream',
     'get_unique_projects',
+    'get_filter_options',
     'get_apus',
     'get_dashboard_stats',
     'delete_project_apus'
