@@ -3,6 +3,7 @@ import { DashboardApus } from './pages/dashboard-apus/dashboard-apus';
 import { ConsultaApus } from './pages/consulta-apus/consulta-apus';
 import { NuevosApuIa } from './pages/nuevos-apu-ia/nuevos-apu-ia';
 import { ChatApus } from './pages/chat-apus/chat-apus';
+import { AnalisisApu } from './pages/analisis-apu/analisis-apu';
 
 export const routes: Routes = [
   { path: '', redirectTo: '/dashboard-apus', pathMatch: 'full' },
@@ -10,4 +11,5 @@ export const routes: Routes = [
   { path: 'nuevos-apu-ia', component: NuevosApuIa },
   { path: 'consulta-apus', component: ConsultaApus },
   { path: 'chat-apus', component: ChatApus },
+  { path: 'analisis-apu', component: AnalisisApu },
 ];

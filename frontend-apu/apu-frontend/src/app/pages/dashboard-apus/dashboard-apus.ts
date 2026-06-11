@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ApuService } from '../../services/apu';
 
@@ -19,7 +19,10 @@ export class DashboardApus implements OnInit {
   };
   isLoading = true;
 
-  constructor(private apuService: ApuService) {}
+  constructor(
+    private apuService: ApuService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadStats();
@@ -34,9 +37,11 @@ export class DashboardApus implements OnInit {
         this.stats.precisionIA = data.precision_ia || 0;
         this.stats.apusPorTipoInsumo = data.apus_por_tipo_insumo || {};
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
     });
   }

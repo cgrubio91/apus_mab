@@ -34,6 +34,7 @@ from apu_extractor import (
 from apu_extractor.ai_provider import generate_text as ai_generate
 from apu_extractor.db_service import get_filter_options
 from backend_apu.controllers.job_manager import JobStatus, job_manager
+from backend_apu.controllers.analisis_apu_controller import router as analisis_apu_router
 
 from twilio.rest import Client
 from twilio.request_validator import RequestValidator
@@ -65,6 +66,7 @@ twilio_validator = RequestValidator(AUTH_TOKEN) if AUTH_TOKEN else None
 
 # ── FastAPI app ──────────────────────────────────────────────────────
 app = FastAPI(title="MAPUS API", version="2.1.0")
+app.include_router(analisis_apu_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -281,6 +283,94 @@ def startup():
                ON historial_conversaciones (telefono, timestamp DESC)""",
             fetch=False,
         )
+
+        # ── Análisis APU tables ──────────────────────────────────────────
+        execute_query(
+            """CREATE TABLE IF NOT EXISTS solicitudes_apu (
+                id SERIAL PRIMARY KEY,
+                link_documento TEXT,
+                contratista VARCHAR(200),
+                nombre_proyecto VARCHAR(200),
+                fecha_solicitud DATE DEFAULT CURRENT_DATE,
+                fecha_limite_respuesta DATE,
+                fecha_limite_aprobacion DATE,
+                estado VARCHAR(50) DEFAULT 'pendiente_analisis',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            fetch=False,
+        )
+        execute_query(
+            """CREATE TABLE IF NOT EXISTS solicitud_insumos (
+                id SERIAL PRIMARY KEY,
+                solicitud_id INTEGER REFERENCES solicitudes_apu(id) ON DELETE CASCADE,
+                grupo_cotizacion INTEGER DEFAULT 1,
+                nombre_archivo TEXT,
+                item TEXT,
+                items_descripcion TEXT,
+                item_unidad VARCHAR(20),
+                precio_unitario NUMERIC(30,10),
+                codigo_insumo TEXT,
+                insumo_descripcion TEXT,
+                insumo_unidad VARCHAR(20),
+                rendimiento_insumo NUMERIC(30,10),
+                tipo_insumo VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            fetch=False,
+        )
+        execute_query(
+            """CREATE TABLE IF NOT EXISTS analisis_apu (
+                id SERIAL PRIMARY KEY,
+                solicitud_id INTEGER REFERENCES solicitudes_apu(id) ON DELETE CASCADE UNIQUE,
+                analisis_json JSONB,
+                resumen TEXT,
+                recomendacion VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            fetch=False,
+        )
+        execute_query(
+            """CREATE TABLE IF NOT EXISTS historial_aprobaciones (
+                id SERIAL PRIMARY KEY,
+                solicitud_id INTEGER REFERENCES solicitudes_apu(id) ON DELETE CASCADE,
+                accion VARCHAR(50),
+                responsable_rol VARCHAR(100),
+                responsable_nombre VARCHAR(200),
+                motivo TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            fetch=False,
+        )
+        execute_query(
+            """CREATE TABLE IF NOT EXISTS aprendizaje_rechazos (
+                id SERIAL PRIMARY KEY,
+                analisis_id INTEGER REFERENCES analisis_apu(id),
+                motivo_rechazo TEXT,
+                contexto TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""",
+            fetch=False,
+        )
+        try:
+            execute_query(
+                """ALTER TABLE solicitud_insumos ADD COLUMN IF NOT EXISTS grupo_cotizacion INTEGER DEFAULT 1""",
+                fetch=False,
+            )
+            execute_query(
+                """ALTER TABLE solicitud_insumos ADD COLUMN IF NOT EXISTS nombre_archivo TEXT""",
+                fetch=False,
+            )
+            execute_query(
+                """ALTER TABLE solicitud_insumos ALTER COLUMN item TYPE TEXT""",
+                fetch=False,
+            )
+            execute_query(
+                """ALTER TABLE solicitud_insumos ALTER COLUMN codigo_insumo TYPE TEXT""",
+                fetch=False,
+            )
+        except Exception:
+            pass
         log.info("Database schema verified — all tables active")
     except Exception as e:
         log.warning("Startup schema setup warning: %s", e)

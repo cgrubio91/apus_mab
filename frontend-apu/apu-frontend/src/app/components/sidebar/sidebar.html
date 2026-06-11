@@ -30,6 +30,13 @@
     </li>
 
     <li class="nav-item">
+      <a class="nav-link" routerLink="/analisis-apu" routerLinkActive="active">
+        <span class="icon">📋</span>
+        <span class="text" *ngIf="!isCollapsed">Análisis APU</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
       <a class="nav-link" routerLink="/chat-apus" routerLinkActive="active">
         <span class="icon">💬</span>
         <span class="text" *ngIf="!isCollapsed">Consulta</span>

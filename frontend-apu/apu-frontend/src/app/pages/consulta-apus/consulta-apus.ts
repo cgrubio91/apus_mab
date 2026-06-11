@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApuService, ApuRecord, FilterOptions } from '../../services/apu';
@@ -63,7 +63,10 @@ export class ConsultaApus implements OnInit, OnDestroy {
   filterSearchText: Record<string, string> = {};
   filteredOptionLists: Record<string, string[]> = {};
 
-  constructor(private apuService: ApuService) {}
+  constructor(
+    private apuService: ApuService,
+    private cdr: ChangeDetectorRef
+  ) {}
 
   ngOnInit(): void {
     this.loadFilterOptions();
@@ -92,8 +95,11 @@ export class ConsultaApus implements OnInit, OnDestroy {
           this.filteredOptionLists[proyKey]?.push(this.filters[proyKey]);
           this.filteredOptionLists[proyKey]?.sort();
         }
+        this.cdr.markForCheck();
       },
-      error: () => {},
+      error: () => {
+        this.cdr.markForCheck();
+      },
     });
   }
 
@@ -131,9 +137,11 @@ export class ConsultaApus implements OnInit, OnDestroy {
         this.total = response.total || 0;
         this.totalPages = Math.ceil(this.total / this.pageSize);
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
       error: () => {
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
     });
   }

@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApuService } from '../../services/apu';
@@ -23,7 +23,10 @@ export class ChatApus {
 
   private static readonly STORAGE_KEY = 'mapus_chat_history';
 
-  constructor(private apuService: ApuService) {
+  constructor(
+    private apuService: ApuService,
+    private cdr: ChangeDetectorRef
+  ) {
     this.loadHistory();
   }
 
@@ -67,12 +70,14 @@ export class ChatApus {
     this.messages.push({ text, isUser: true, timestamp: new Date() });
     this.userInput = '';
     this.isLoading = true;
+    this.cdr.markForCheck();
 
     this.apuService.chatAssistant(text).subscribe({
       next: (res: any) => {
         this.messages.push({ text: res.reply, isUser: false, timestamp: new Date() });
         this.isLoading = false;
         this.saveHistory();
+        this.cdr.markForCheck();
       },
       error: () => {
         this.messages.push({
@@ -81,6 +86,7 @@ export class ChatApus {
           timestamp: new Date(),
         });
         this.isLoading = false;
+        this.cdr.markForCheck();
       },
     });
   }

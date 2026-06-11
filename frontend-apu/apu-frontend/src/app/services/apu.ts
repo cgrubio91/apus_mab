@@ -238,6 +238,59 @@ export class ApuService {
       nombre: 'Usuario Web',
     });
   }
+
+  uploadCotizaciones(files: File[]): Observable<any> {
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
+    return this.http.post(`${this.baseUrl}/analisis-apu/upload`, formData);
+  }
+
+  analizarSolicitud(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/analizar`, {});
+  }
+
+  getAnalisisApuList(estado?: string): Observable<any> {
+    const params: any = {};
+    if (estado) params.estado = estado;
+    return this.http.get(`${this.baseUrl}/analisis-apu`, { params });
+  }
+
+  getAnalisisApuDetail(solicitudId: number): Observable<any> {
+    return this.http.get(`${this.baseUrl}/analisis-apu/${solicitudId}`);
+  }
+
+  preaprobarApu(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/preaprobar`, {
+      responsable_rol: responsableRol,
+      responsable_nombre: responsableNombre,
+    });
+  }
+
+  rechazarApu(solicitudId: number, responsableRol: string, responsableNombre: string, motivo: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/rechazar`, {
+      responsable_rol: responsableRol,
+      responsable_nombre: responsableNombre,
+      motivo,
+    });
+  }
+
+  nuevasCotizaciones(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/nuevas-cotizaciones`, {});
+  }
+
+  aprobarSubgerente(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/aprobar-subgerente`, {
+      responsable_rol: responsableRol,
+      responsable_nombre: responsableNombre,
+    });
+  }
+
+  firmarLegal(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/firmar-legal`, {
+      responsable_rol: responsableRol,
+      responsable_nombre: responsableNombre,
+    });
+  }
 }
 
 export default ApuService;
