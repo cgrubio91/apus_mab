@@ -1,10 +1,15 @@
 """
-Backend APU Module - MAPUS API
-Organización modular del backend para Análisis de Precios Unitarios
+Backend APU Module — Compatibility Wrapper
+All logic now lives in src/
 """
 
-from .app import create_app
-from .models.apu import ApuRecord
-from .services.apu_service import ApuService
+import os
+import sys
 
-__all__ = ['create_app', 'ApuRecord', 'ApuService']
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from src.presentation.main import create_app
+from src.domain.entities.apu import ApuRecord
+from src.infrastructure.database.repositories.apu_repository import ApuPostgresRepository as ApuService
+
+__all__ = ["create_app", "ApuRecord", "ApuService"]

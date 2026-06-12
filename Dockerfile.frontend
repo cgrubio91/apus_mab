@@ -3,12 +3,12 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-COPY frontend-apu/apu-frontend/package.json ./
-COPY frontend-apu/apu-frontend/package-lock.json ./
+COPY frontend/package.json ./
+COPY frontend/package-lock.json ./
 
 RUN npm ci
 
-COPY frontend-apu/apu-frontend/ ./
+COPY frontend/ ./
 RUN npm run build -- --output-path=dist
 
 # ── Serve stage ──────────────────────────────────────────────

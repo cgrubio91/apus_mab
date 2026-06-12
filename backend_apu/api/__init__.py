@@ -1,12 +1,13 @@
-from fastapi import APIRouter
-from ..controllers.apus_controller import router as apus_router
-from ..controllers.extractor_controller import router as extractor_router
-from ..controllers.chat_controller import router as chat_router
-from ..controllers.analisis_apu_controller import router as analisis_apu_router
+"""
+Backend APU API Router — Compatibility Wrapper
+All logic now lives in src/presentation/routers/__init__.py
+"""
 
-api_router = APIRouter()
+import os
+import sys
 
-api_router.include_router(apus_router)
-api_router.include_router(extractor_router)
-api_router.include_router(chat_router)
-api_router.include_router(analisis_apu_router)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from src.presentation.routers import api_router
+
+__all__ = ["api_router"]

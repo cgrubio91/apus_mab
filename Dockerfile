@@ -9,4 +9,4 @@ COPY . .
 
 EXPOSE 10000
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}
+CMD uvicorn src.presentation.main:app --host 0.0.0.0 --port ${PORT:-10000}
