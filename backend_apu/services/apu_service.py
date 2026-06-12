@@ -3,10 +3,11 @@ APU Service - Lógica de negocio robusta, optimizada y segura para Análisis de 
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Optional
 from db_config import get_db_connection
 from psycopg2.extras import RealDictCursor
 from psycopg2 import Error as DatabaseError
+from psycopg2.sql import SQL, Identifier
 
 log = logging.getLogger("mapus.backend.services.apu")
 
@@ -19,7 +20,7 @@ class ApuService:
         }
         self._max_limit = 500
 
-    def get_unique_projects(self) -> List[str]:
+    def get_unique_projects(self) -> list[str]:
         """Recupera la lista única de proyectos."""
         query = "SELECT DISTINCT nombre_proyecto FROM apus WHERE nombre_proyecto IS NOT NULL ORDER BY nombre_proyecto"
         
@@ -35,13 +36,13 @@ class ApuService:
 
     def get_apus(
         self, 
-        filters: Dict[str, Any], 
+        filters: dict, 
         limit: int = 50, 
         offset: int = 0,
         sort_by: Optional[str] = None,
         sort_order: str = "asc",
         search: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> dict:
         """Consulta paginada, ordenada y filtrada dinámicamente."""
         
         # Refuerzo de límites (defense in depth)
@@ -96,12 +97,16 @@ class ApuService:
                     total = cursor.fetchone()['count']
 
                     # SELECT paginado
-                    query = f"""
-                        SELECT * FROM apus 
+                    query = SQL("""
+                        SELECT fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad, contratista, nombre_proyecto, numero_contrato, item, items_descripcion, item_unidad, precio_unitario, precio_unitario_sin_aiu, codigo_insumo, tipo_insumo, insumo_descripcion, insumo_unidad, rendimiento_insumo, precio_unitario_apu, precio_parcial_apu, observacion, link_documento FROM apus 
                         {where_str}
                         ORDER BY {sort_column} {order_direction}
                         LIMIT %s OFFSET %s
-                    """
+                    """).format(
+                        where_str=SQL(where_str) if where_str else SQL(''),
+                        sort_column=Identifier(sort_column),
+                        order_direction=SQL(order_direction),
+                    )
                     cursor.execute(query, params + [limit, offset])
                     results = cursor.fetchall()
 
@@ -126,7 +131,7 @@ class ApuService:
             log.exception("Database error in get_apus")
             raise
 
-    def delete_project_apus(self, nombre_proyecto: str) -> Dict[str, Any]:
+    def delete_project_apus(self, nombre_proyecto: str) -> dict:
         """Elimina todos los APUs de un proyecto en una transacción."""
         query = "DELETE FROM apus WHERE nombre_proyecto = %s"
         
@@ -147,7 +152,7 @@ class ApuService:
             log.exception("Database error deleting project: %s", nombre_proyecto)
             raise
 
-    def get_dashboard_stats(self) -> Dict[str, Any]:
+    def get_dashboard_stats(self) -> dict:
         """Obtiene métricas reales del banco de APUs para el dashboard."""
         summary_query = """
             SELECT
@@ -156,7 +161,7 @@ class ApuService:
                 COUNT(DISTINCT ciudad) as total_cities,
                 SUM(CASE WHEN item IS NOT NULL AND items_descripcion IS NOT NULL
                          AND codigo_insumo IS NOT NULL AND precio_unitario IS NOT NULL
-                    THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as precision_ia
+                    THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as completitud_datos
             FROM apus
         """
         breakdown_query = """
@@ -182,14 +187,14 @@ class ApuService:
                         'total_apus': summary.get('total_apus', 0),
                         'total_projects': summary.get('total_projects', 0),
                         'total_cities': summary.get('total_cities', 0),
-                        'precision_ia': round(summary.get('precision_ia') or 0.0, 1),
+                        'completitud_datos': round(summary.get('completitud_datos') or 0.0, 1),
                         'apus_por_tipo_insumo': breakdown,
                     }
         except DatabaseError:
             log.exception("Database error in get_dashboard_stats")
             raise
 
-    def get_filter_options(self) -> Dict[str, List[str]]:
+    def get_filter_options(self) -> dict[str, list[str]]:
         """
         OPTIMIZACIÓN CRÍTICA (Opción B): Obtiene todas las opciones únicas de catálogo 
         en una ÚNICA llamada unificada a PostgreSQL para optimizar el round-trip por red.

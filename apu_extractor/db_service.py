@@ -203,48 +203,22 @@ def insert_apus_batch(apus_list: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ==========================================================
-# QUERY FUNCTIONS (re-exported for backward compatibility)
+# QUERY FUNCTIONS (delegated to backend_apu.services.apu_service)
 # ==========================================================
 
+def _get_apu_service():
+    # Lazy import to break circular dependency:
+    #   apu_extractor → backend_apu.services → db_config → apu_extractor
+    from backend_apu.services.apu_service import apu_service
+    return apu_service
+
+
 def get_unique_projects() -> List[str]:
-    """Recupera la lista única de proyectos."""
-    query = "SELECT DISTINCT nombre_proyecto FROM apus WHERE nombre_proyecto IS NOT NULL ORDER BY nombre_proyecto"
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(query)
-                return [r['nombre_proyecto'] for r in cursor.fetchall()]
-    except DatabaseError:
-        log.exception("Database error in get_unique_projects")
-        raise
+    return _get_apu_service().get_unique_projects()
 
 
 def get_filter_options() -> Dict[str, List[str]]:
-    """Recupera las opciones únicas de filtros para el frontend."""
-    query = """
-        SELECT 
-            COALESCE(json_agg(DISTINCT ciudad) FILTER (WHERE ciudad IS NOT NULL), '[]') as ciudad,
-            COALESCE(json_agg(DISTINCT entidad) FILTER (WHERE entidad IS NOT NULL), '[]') as entidad,
-            COALESCE(json_agg(DISTINCT contratista) FILTER (WHERE contratista IS NOT NULL), '[]') as contratista,
-            COALESCE(json_agg(DISTINCT tipo_insumo) FILTER (WHERE tipo_insumo IS NOT NULL), '[]') as tipo_insumo,
-            COALESCE(json_agg(DISTINCT pais) FILTER (WHERE pais IS NOT NULL), '[]') as pais
-        FROM apus;
-    """
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(query)
-                row = cursor.fetchone()
-                return {
-                    "ciudad": sorted(row["ciudad"]) if row else [],
-                    "entidad": sorted(row["entidad"]) if row else [],
-                    "contratista": sorted(row["contratista"]) if row else [],
-                    "tipo_insumo": sorted(row["tipo_insumo"]) if row else [],
-                    "pais": sorted(row["pais"]) if row else [],
-                }
-    except DatabaseError:
-        log.exception("Database error in get_filter_options")
-        raise
+    return _get_apu_service().get_filter_options()
 
 
 def get_apus(
@@ -255,117 +229,17 @@ def get_apus(
     sort_order: str = "asc",
     search: str | None = None,
 ) -> Dict[str, Any]:
-    """Consulta paginada, ordenada y filtrada dinámicamente."""
-    limit = min(max(1, limit), 500)
-    offset = max(0, offset)
-
-    where_clauses = []
-    params = []
-
-    text_filters = [
-        'nombre_proyecto', 'ciudad', 'items_descripcion', 'insumo_descripcion',
-        'tipo_insumo', 'contratista', 'entidad', 'codigo_insumo', 'item',
-        'item_unidad', 'insumo_unidad', 'pais', 'numero_contrato',
-    ]
-
-    for field in text_filters:
-        value = filters.get(field)
-        if value:
-            where_clauses.append(f"{field} ILIKE %s")
-            params.append(f"%{str(value).strip()}%")
-
-    if search:
-        search_value = f"%{search.strip()}%"
-        search_clause = (
-            "(nombre_proyecto ILIKE %s OR "
-            "items_descripcion ILIKE %s OR "
-            "insumo_descripcion ILIKE %s OR "
-            "contratista ILIKE %s)"
-        )
-        where_clauses.append(search_clause)
-        params.extend([search_value] * 4)
-
-    where_str = " AND ".join(where_clauses)
-    where_str = f"WHERE {where_str}" if where_str else ""
-
-    allowed_sort = {
-        "id", "nombre_proyecto", "ciudad", "precio_unitario",
-        "contratista", "entidad", "fecha_aprobacion_apu", "precio_parcial_apu",
-    }
-    sort_column = "id"
-    if sort_by:
-        normalized = sort_by.strip().lower()
-        if normalized in allowed_sort:
-            sort_column = normalized
-    order_direction = "DESC" if str(sort_order).lower() == "desc" else "ASC"
-
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                count_query = f"SELECT COUNT(*) FROM apus {where_str}"
-                cursor.execute(count_query, params)
-                total = cursor.fetchone()['count']
-
-                query = f"""
-                    SELECT * FROM apus
-                    {where_str}
-                    ORDER BY {sort_column} {order_direction}
-                    LIMIT %s OFFSET %s
-                """
-                cursor.execute(query, params + [limit, offset])
-                results = cursor.fetchall()
-
-                return {
-                    "success": True,
-                    "count": len(results),
-                    "total": total,
-                    "limit": limit,
-                    "offset": offset,
-                    "data": results,
-                }
-    except DatabaseError:
-        log.exception("Database error in get_apus")
-        raise
+    return _get_apu_service().get_apus(filters, limit, offset, sort_by=sort_by, sort_order=sort_order, search=search)
 
 
 def get_dashboard_stats() -> Dict[str, Any]:
-    """Obtiene métricas para el dashboard."""
-    query = """
-        SELECT
-            COUNT(*) as total_apus,
-            COUNT(DISTINCT nombre_proyecto) as total_projects,
-            COUNT(DISTINCT ciudad) as total_cities,
-            AVG(precio_unitario) as avg_precio_unitario
-        FROM apus
-        WHERE precio_unitario IS NOT NULL
-    """
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(query)
-                return cursor.fetchone()
-    except DatabaseError:
-        log.exception("Database error in get_dashboard_stats")
-        raise
+    return _get_apu_service().get_dashboard_stats()
 
 
 def delete_project_apus(nombre_proyecto: str) -> Dict[str, Any]:
-    """Elimina todos los APUs de un proyecto."""
-    query = "DELETE FROM apus WHERE nombre_proyecto = %s"
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute(query, (nombre_proyecto,))
-                count = cursor.rowcount
-                conn.commit()
-                return {
-                    "success": True,
-                    "deleted": count,
-                    "message": f"Se eliminaron {count} APUs de {nombre_proyecto}.",
-                }
-    except DatabaseError:
-        log.exception("Database error deleting project: %s", nombre_proyecto)
-        raise
+    # Delegates to backend_apu's ApuService to avoid duplicating business logic.
+    # The public facade in db_service provides a single-entry point for apu_extractor consumers.
+    return _get_apu_service().delete_project_apus(nombre_proyecto)
 
 
 def insert_apus_stream(

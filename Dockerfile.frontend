@@ -1,0 +1,20 @@
+# ── Build stage ──────────────────────────────────────────────
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY frontend-apu/apu-frontend/package.json ./
+COPY frontend-apu/apu-frontend/package-lock.json ./
+
+RUN npm ci
+
+COPY frontend-apu/apu-frontend/ ./
+RUN npm run build -- --output-path=dist
+
+# ── Serve stage ──────────────────────────────────────────────
+FROM nginx:alpine
+
+COPY --from=build /app/dist/browser /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

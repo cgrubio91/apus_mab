@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..services.job_manager import job_manager
+from ..controllers.job_manager import job_manager
 from apu_extractor import (
     extract_apus_from_excel,
     extract_apus_from_pdf_batched,
@@ -111,7 +111,7 @@ def _process_file(
 # Endpoints
 # ---------------------------------------------------------------------------
 @router.post("/extract-file")
-async def extract_file(file: UploadFile = File(...)):
+async def extract_file(file: UploadFile = File(...)) -> dict:
     filename = file.filename or "unknown"
     ext      = os.path.splitext(filename)[1].lower()
 
@@ -175,13 +175,13 @@ async def extract_file(file: UploadFile = File(...)):
 
 
 @router.get("/jobs")
-async def get_jobs():
-    jobs = job_manager.get_all_jobs()
+async def get_jobs() -> dict:
+    jobs = job_manager.list_jobs(limit=1000)
     return {"jobs": [j.to_dict() for j in jobs]}
 
 
 @router.get("/jobs/{job_id}")
-async def get_job_status(job_id: str):
+async def get_job_status(job_id: str) -> dict:
     job = job_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Trabajo no encontrado")

@@ -4,7 +4,6 @@ Análisis APU Controller
 API endpoints for the APU analysis approval workflow.
 """
 
-import json
 import logging
 
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form
@@ -22,14 +21,10 @@ log = logging.getLogger("mapus.backend.analisis")
 router = APIRouter()
 
 
-class ErrorResponse(BaseModel):
-    detail: str
-
-
 @router.post("/analisis-apu/upload", tags=["Análisis APU"])
 async def upload_cotizacion(
     files: List[UploadFile] = File(...),
-):
+) -> dict:
     """Upload one or more cotización files. Extracts contratista/proyecto from documents.
     Each file becomes a 'Cotización N' group."""
     try:
@@ -115,7 +110,7 @@ async def upload_cotizacion(
 
 
 @router.post("/analisis-apu/crear", tags=["Análisis APU"])
-async def crear_solicitud_manual(payload: AnalisisApuCreate):
+async def crear_solicitud_manual(payload: AnalisisApuCreate) -> dict:
     """Create a solicitud manually (without file upload)."""
     try:
         grupo = {
@@ -131,7 +126,7 @@ async def crear_solicitud_manual(payload: AnalisisApuCreate):
 
 
 @router.post("/analisis-apu/{solicitud_id}/analizar", tags=["Análisis APU"])
-async def analizar_solicitud(solicitud_id: int):
+async def analizar_solicitud(solicitud_id: int) -> dict:
     """Run AI analysis on a solicitud, comparing with the APU bank."""
     try:
         resultado = analisis_apu_service.realizar_analisis(solicitud_id)
@@ -144,7 +139,7 @@ async def analizar_solicitud(solicitud_id: int):
 
 
 @router.get("/analisis-apu", tags=["Análisis APU"])
-async def listar_solicitudes(estado: Optional[str] = None):
+async def listar_solicitudes(estado: Optional[str] = None) -> dict:
     """List all solicitudes, optionally filtered by estado."""
     try:
         solicitudes = analisis_apu_service.get_solicitudes(estado)
@@ -159,7 +154,7 @@ async def listar_solicitudes(estado: Optional[str] = None):
 
 
 @router.get("/analisis-apu/{solicitud_id}", tags=["Análisis APU"])
-async def obtener_solicitud(solicitud_id: int):
+async def obtener_solicitud(solicitud_id: int) -> dict:
     """Get full details of a solicitud including insumos, analysis, and history."""
     try:
         solicitud = analisis_apu_service.get_solicitud(solicitud_id)
@@ -187,7 +182,7 @@ async def obtener_solicitud(solicitud_id: int):
 
 
 @router.post("/analisis-apu/{solicitud_id}/preaprobar", tags=["Análisis APU"])
-async def preaprobar_apu(solicitud_id: int, payload: AprobarRequest):
+async def preaprobar_apu(solicitud_id: int, payload: AprobarRequest) -> dict:
     """User approves the pre-analysis. Sends to subgerente técnico."""
     try:
         resultado = analisis_apu_service.preaprobar(
@@ -202,7 +197,7 @@ async def preaprobar_apu(solicitud_id: int, payload: AprobarRequest):
 
 
 @router.post("/analisis-apu/{solicitud_id}/rechazar", tags=["Análisis APU"])
-async def rechazar_apu(solicitud_id: int, payload: RechazarRequest):
+async def rechazar_apu(solicitud_id: int, payload: RechazarRequest) -> dict:
     """User rejects the analysis with explanation. AI learns from this."""
     try:
         resultado = analisis_apu_service.rechazar(
@@ -217,7 +212,7 @@ async def rechazar_apu(solicitud_id: int, payload: RechazarRequest):
 
 
 @router.post("/analisis-apu/{solicitud_id}/nuevas-cotizaciones", tags=["Análisis APU"])
-async def nuevas_cotizaciones(solicitud_id: int):
+async def nuevas_cotizaciones(solicitud_id: int) -> dict:
     """Register that new quotes were received after rejection."""
     try:
         resultado = analisis_apu_service.nuevas_cotizaciones_recibidas(solicitud_id)
@@ -230,7 +225,7 @@ async def nuevas_cotizaciones(solicitud_id: int):
 
 
 @router.post("/analisis-apu/{solicitud_id}/aprobar-subgerente", tags=["Análisis APU"])
-async def aprobar_subgerente(solicitud_id: int, payload: AprobarRequest):
+async def aprobar_subgerente(solicitud_id: int, payload: AprobarRequest) -> dict:
     """Subgerente técnico approves. Sends to legal representative."""
     try:
         resultado = analisis_apu_service.aprobar_subgerente(
@@ -245,7 +240,7 @@ async def aprobar_subgerente(solicitud_id: int, payload: AprobarRequest):
 
 
 @router.post("/analisis-apu/{solicitud_id}/firmar-legal", tags=["Análisis APU"])
-async def firmar_legal(solicitud_id: int, payload: AprobarRequest):
+async def firmar_legal(solicitud_id: int, payload: AprobarRequest) -> dict:
     """Professional support signs as legal representative."""
     try:
         resultado = analisis_apu_service.firmar_legal(
@@ -260,7 +255,7 @@ async def firmar_legal(solicitud_id: int, payload: AprobarRequest):
 
 
 @router.get("/analisis-apu/aprendizaje/rechazos", tags=["Análisis APU"])
-async def obtener_aprendizaje(limit: int = 20):
+async def obtener_aprendizaje(limit: int = 20) -> dict:
     """Get rejection history for AI learning."""
     try:
         data = analisis_apu_service.get_aprendizaje_rechazos(limit)

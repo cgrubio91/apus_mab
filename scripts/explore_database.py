@@ -8,6 +8,15 @@ from psycopg2.extras import RealDictCursor
 import json
 from datetime import datetime
 
+from db_schema import INSUMO_CATEGORIES
+
+ALLOWED_EXPLORE_TABLES = {"apus", "usuarios", "historial_conversaciones", "solicitudes_apu", "solicitud_insumos", "analisis_apu", "historial_aprobaciones", "aprendizaje_rechazos"}
+
+def _validate_table_name(table_name: str) -> str:
+    if table_name not in ALLOWED_EXPLORE_TABLES:
+        raise ValueError(f"Tabla no permitida: {table_name}")
+    return table_name
+
 
 def list_all_tables():
     """Lista todas las tablas en el esquema público."""
@@ -77,14 +86,15 @@ def describe_table(table_name):
 def query_table_content(table_name, limit=10):
     """Consulta y muestra el contenido de una tabla."""
     try:
+        _validate_table_name(table_name)
         # Primero, obtener el conteo total
-        count_query = f"SELECT COUNT(*) as total FROM {table_name};"
-        count_result = execute_query(count_query, dict_cursor=True)
+        count_query = "SELECT COUNT(*) as total FROM {};"
+        count_result = execute_query(count_query.format(table_name), dict_cursor=True)
         total_rows = count_result[0]['total']
         
         # Luego, obtener los primeros registros
-        query = f"SELECT * FROM {table_name} LIMIT %s;"
-        rows = execute_query(query, params=(limit,), dict_cursor=True)
+        query = "SELECT * FROM {} LIMIT %s;"
+        rows = execute_query(query.format(table_name), params=(limit,), dict_cursor=True)
         
         print("\n" + "="*60)
         print(f"📊 CONTENIDO DE LA TABLA: {table_name}")
@@ -110,8 +120,9 @@ def query_table_content(table_name, limit=10):
 def export_table_to_json(table_name, output_file=None):
     """Exporta el contenido completo de una tabla a JSON."""
     try:
-        query = f"SELECT * FROM {table_name};"
-        rows = execute_query(query, dict_cursor=True)
+        _validate_table_name(table_name)
+        query = "SELECT * FROM {};"
+        rows = execute_query(query.format(table_name), dict_cursor=True)
         
         # Convertir datetime y otros tipos no serializables
         def json_serial(obj):
@@ -208,8 +219,4 @@ def interactive_menu():
 
 
 if __name__ == "__main__":
-    # Opción 1: Menú interactivo
     interactive_menu()
-    
-    # Opción 2: Exploración automática (comenta la línea anterior y descomenta esta)
-    # explore_all_tables(show_content=True, content_limit=5)

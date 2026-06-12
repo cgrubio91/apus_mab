@@ -27,7 +27,7 @@ def gemini_generate(prompt: str) -> str:
         return f"Error: {e}"
 
 
-def test_prompt_sql(mensaje_usuario: str) -> str:
+def build_prompt_sql(mensaje_usuario: str) -> str:
     """Prueba el prompt SQL mejorado con un mensaje del usuario."""
     
     prompt_sql = f"""
@@ -130,7 +130,7 @@ if __name__ == "__main__":
         print(f"📝 CASO {i}: {caso}")
         print(f"{'─'*80}")
         
-        sql_generado = test_prompt_sql(caso)
+        sql_generado = build_prompt_sql(caso)
         
         # Limpiar el SQL de posibles marcadores markdown
         import re

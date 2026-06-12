@@ -1,8 +1,8 @@
-import json
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 from typing import Optional, List
 from datetime import date
 from decimal import Decimal
+from db_schema import INSUMO_CATEGORIES
 
 # ==========================================================
 # APU RECORD MODEL
@@ -54,7 +54,7 @@ class ApuRecord(BaseModel):
             return v
         
         # Como usamos str_strip_whitespace, v ya viene sin espacios vacíos alrededor
-        allowed = {"Material", "Mano de Obra", "Equipo", "Transporte"}
+        allowed = set(INSUMO_CATEGORIES)
         
         # Estrategia tolerante en lectura: si viene algo fuera del catálogo de la BD, 
         # lo catalogamos como 'Otros' o lo dejamos pasar con un warning en lugar de romper el backend

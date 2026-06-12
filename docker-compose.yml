@@ -12,6 +12,45 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mapus-api
+    restart: unless-stopped
+    ports:
+      - "10000:10000"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: apus-mab
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSLMODE: prefer
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: gemini-2.5-flash
+      CORS_ORIGINS: http://localhost:4200
+      ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: mapus-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
 
 volumes:
   pgdata:

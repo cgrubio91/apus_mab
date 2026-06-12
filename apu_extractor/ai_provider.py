@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Optional
 
 import requests
@@ -33,22 +34,23 @@ def get_gemini_model() -> str:
     return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 
-# ── Fail-Fast Environment Validation ─────────────────────────────────
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if get_ai_provider() == "gemini" and not GEMINI_API_KEY:
-    raise RuntimeError("Configuración Inválida: GEMINI_API_KEY no configurada en las variables de entorno.")
-
-
 # ── Reutilización Eficiente de Conexiones (HTTP Keep-Alive) ──────────
 SESSION = requests.Session()
 
 
+def _get_gemini_api_key() -> str:
+    key = os.getenv("GEMINI_API_KEY")
+    if get_ai_provider() == "gemini" and not key:
+        raise RuntimeError("Configuración Inválida: GEMINI_API_KEY no configurada en las variables de entorno.")
+    return key
+
+
 def _call_gemini(payload: dict, timeout: int = 300) -> dict:
     """Send a request to Gemini API reusing connection pool sockets."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{get_gemini_model()}:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{get_gemini_model()}:generateContent"
     resp = SESSION.post(
         url, 
-        headers={"Content-Type": "application/json"}, 
+        headers={"Content-Type": "application/json", "X-Goog-Api-Key": _get_gemini_api_key()}, 
         json=payload, 
         timeout=(30, timeout)
     )
@@ -88,43 +90,42 @@ def _safe_extract_gemini_text(data: dict) -> Optional[str]:
 
 
 def generate_text(prompt: str, system: Optional[str] = None, timeout: int = 120) -> str:
-    """Generate text using the configured AI provider, raising errors on failure."""
+    """Generate text using the configured AI provider with retry + exponential backoff."""
     provider = get_ai_provider()
+    max_attempts = 3
     
-    if provider == "ollama":
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
-
-        payload = {
-            "model": get_ollama_model(),
-            "messages": messages,
-            "stream": False,
-            "options": {"temperature": 0.1},
-        }
+    for attempt in range(max_attempts):
         try:
-            data = _call_ollama(payload, timeout)
-            return data.get("message", {}).get("content", "").strip()
+            if provider == "ollama":
+                messages = []
+                if system:
+                    messages.append({"role": "system", "content": system})
+                messages.append({"role": "user", "content": prompt})
+
+                payload = {
+                    "model": get_ollama_model(),
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": 0.1},
+                }
+                data = _call_ollama(payload, timeout)
+                return data.get("message", {}).get("content", "").strip()
+
+            # Default: Gemini
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            if system:
+                payload["systemInstruction"] = {"parts": [{"text": system}]}
+
+            data = _call_gemini(payload, timeout)
+            text = _safe_extract_gemini_text(data)
+            if text is None:
+                raise RuntimeError("Gemini devolvió una estructura sin fragmentos de texto válidos.")
+            return text
         except Exception:
-            # CORRECCIÓN: log.exception preserva el stack trace completo para monitoreo
-            log.exception("Ollama text generation failed")
-            raise
-
-    # Default: Gemini
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    if system:
-        payload["systemInstruction"] = {"parts": [{"text": system}]}
-
-    try:
-        data = _call_gemini(payload, timeout)
-        text = _safe_extract_gemini_text(data)
-        if text is None:
-            raise RuntimeError("Gemini devolvió una estructura sin fragmentos de texto válidos.")
-        return text
-    except Exception:
-        log.exception("Gemini text generation failed")
-        raise
+            log.exception("Text generation attempt %d/%d failed", attempt + 1, max_attempts)
+            if attempt == max_attempts - 1:
+                raise
+            time.sleep(2 ** attempt)
 
 
 def _repair_json(raw: str) -> str:

@@ -3,15 +3,12 @@ import json
 import re
 import asyncio
 
-from datetime import datetime, date
-from decimal import Decimal
-
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from psycopg2.extras import RealDictCursor
 
-from db_config import get_db_connection, execute_query
+from db_config import get_db_connection, execute_query, DBEncoder
 from apu_extractor.ai_provider import generate_text as ai_generate
+from ..sql_validator import validate_readonly_query
 
 # ==========================================================
 # CONFIG
@@ -22,29 +19,6 @@ router = APIRouter()
 
 MAX_RESULTS_FOR_SUMMARY = 15
 MAX_FIELD_LENGTH = 300
-MAX_LIMIT_ALLOWED = 20
-
-_ALLOWED_TABLES = {"apus"}
-
-# Soporta consultas avanzadas con CTEs (WITH ...)
-_ALLOWED_SQL = re.compile(
-    r"^\s*(select|with)\b",
-    re.IGNORECASE
-)
-
-# CORRECCIÓN: Keywords estrictas con límites de palabra (\b) mediante VERBOSE.
-# Se eliminó 'comment' para evitar falsos positivos con la palabra 'comentario'.
-_DANGEROUS_SQL = re.compile(
-    r"""
-    \b(
-    drop|truncate|delete|insert|update|
-    alter|create|execute|exec|
-    grant|revoke|copy|
-    vacuum|analyze|merge
-    )\b
-    """,
-    re.IGNORECASE | re.VERBOSE
-)
 
 
 # ==========================================================
@@ -68,21 +42,6 @@ class ChatRequest(BaseModel):
         default="Usuario Web",
         description="Nombre del usuario"
     )
-
-
-# ==========================================================
-# JSON ENCODER
-# ==========================================================
-
-class DBTypeEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, (datetime, date)):
-            return obj.strftime("%Y-%m-%d")
-
-        if isinstance(obj, Decimal):
-            return float(obj)
-
-        return super().default(obj)
 
 
 # ==========================================================
@@ -134,107 +93,19 @@ def truncate_large_fields(
     return cleaned
 
 
-def validate_readonly_query(
-    sql: str
-) -> tuple[bool, str]:
-
-    if not sql:
-        return False, "SQL vacío"
-
-    sql = sql.strip()
-
-    # No multi-statements
-    if ";" in sql:
-        return False, "No se permiten múltiples queries"
-
-    # Debe iniciar por SELECT o WITH
-    if not _ALLOWED_SQL.match(sql):
-        return False, "Solo se permiten consultas SELECT o WITH"
-
-    # Bloquear keywords peligrosas aisladas por límites de palabra
-    if _DANGEROUS_SQL.search(sql):
-        return False, "SQL peligroso detectado"
-
-    # CORRECCIÓN: Detectar múltiples nombres de CTEs soportando encadenamiento por comas
-    cte_names = set(
-        match.lower()
-        for match in re.findall(
-            r"(?:with|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+as",
-            sql,
-            re.IGNORECASE
-        )
-    )
-
-    # Detectar todas las tablas o alias usados en las cláusulas FROM y JOIN
-    tables = re.findall(
-        r"(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        sql,
-        re.IGNORECASE
-    )
-
-    # Validar tablas físicas permitidas o CTEs internos válidos
-    for table in tables:
-        table_lower = table.lower()
-        if (
-            table_lower not in _ALLOWED_TABLES
-            and table_lower not in cte_names
-        ):
-            return False, f"Tabla no autorizada: {table}"
-
-    # CORRECCIÓN: Permite SELECT * sobre CTEs intermedios pero lo bloquea estrictamente sobre la tabla real
-    select_star_matches = re.findall(
-        r"select\s+\*\s+from\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        sql,
-        re.IGNORECASE
-    )
-
-    for table in select_star_matches:
-        if table.lower() in _ALLOWED_TABLES:
-            return False, "SELECT * no permitido sobre tablas reales"
-
-    # Forzar LIMIT de seguridad si pasó los filtros previos
-    has_limit = re.search(
-        r"\blimit\s+(\d+)",
-        sql,
-        re.IGNORECASE
-    )
-
-    if has_limit:
-        limit_value = int(has_limit.group(1))
-        if limit_value > MAX_LIMIT_ALLOWED:
-            sql = re.sub(
-                r"\blimit\s+\d+",
-                f"LIMIT {MAX_LIMIT_ALLOWED}",
-                sql,
-                flags=re.IGNORECASE
-            )
-    else:
-        sql += f" LIMIT {MAX_LIMIT_ALLOWED}"
-
-    return True, sql
-
-
 # ==========================================================
 # DATABASE
 # ==========================================================
 
 def ejecutar_sql(query: str) -> list[dict]:
-    conn = None
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor(
-            cursor_factory=RealDictCursor
-        )
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        cursor.close()
-        return rows
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(query)
+                return cursor.fetchall()
     except Exception:
         log.exception("SQL execution error")
         return [{"error": "Error interno en la ejecución de la consulta SQL"}]
-    finally:
-        if conn:
-            conn.close()
 
 
 # ==========================================================
@@ -299,7 +170,7 @@ def guardar_conversacion(
 @router.post("/chat-assistant")
 async def chat_assistant(
     payload: ChatRequest
-):
+) -> dict:
     message = sanitize_input(payload.message)
     telefono = sanitize_phone(payload.telefono.strip())
     nombre = sanitize_input(payload.nombre)

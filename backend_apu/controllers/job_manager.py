@@ -1,104 +1,12 @@
-import json
-import time
 import threading
 import logging
-import secrets
 
-from concurrent.futures import ThreadPoolExecutor, Future
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Optional, Any, Callable
+from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Callable
+
+from .job_types import Job, JobStatus, JobCancelled
 
 log = logging.getLogger("mapus.jobs")
-
-
-# ======================================================
-# EXCEPTIONS
-# ======================================================
-
-class JobCancelled(Exception):
-    """Excepción controlada para detener jobs cancelados."""
-    pass
-
-
-# ======================================================
-# ENUMS
-# ======================================================
-
-class JobStatus(str, Enum):
-    QUEUED = "QUEUED"
-    EXTRACTING = "EXTRACTING"
-    POST_PROCESSING = "POST_PROCESSING"
-    DONE = "DONE"
-    ERROR = "ERROR"
-    CANCELLED = "CANCELLED"
-
-
-# ======================================================
-# MODEL
-# ======================================================
-
-@dataclass
-class Job:
-    id: str
-    filename: str
-
-    status: JobStatus = JobStatus.QUEUED
-
-    progress: dict = field(default_factory=lambda: {
-        "phase": "En cola...",
-        "current_batch": 0,
-        "total_batches": 0,
-        "current_page": 0,
-        "total_pages": 0,
-        "pct": 0,
-    })
-
-    result: Optional[dict] = None
-    errors: list[str] = field(default_factory=list)
-
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
-    completed_at: Optional[float] = None
-
-    progress_version: int = 0
-
-    # Evita serialización accidental del Future
-    future: Optional[Future] = field(default=None, repr=False)
-
-    @property
-    def elapsed(self) -> float:
-        return time.time() - self.created_at
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "filename": self.filename,
-            "status": self.status.value,
-
-            # Defensive copy
-            "progress": dict(self.progress),
-            "errors": list(self.errors),
-
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-            "completed_at": self.completed_at,
-            "elapsed": round(self.elapsed, 1),
-
-            "result": (
-                self.result.copy()
-                if isinstance(self.result, dict)
-                else self.result
-            ),
-        }
-
-    def to_json(self) -> str:
-        """Seguro para SSE / serialización JSON."""
-        return json.dumps(
-            self.to_dict(),
-            default=str,
-            ensure_ascii=False
-        )
 
 
 # ======================================================
@@ -422,6 +330,36 @@ class JobManager:
 
             job = self._get_job(job_id)
 
+            if job:
+                job.future = future
+
+        return future
+
+    def submit_job(
+        self,
+        job_id: str,
+        fn: Callable,
+        *args,
+    ):
+        """
+        Versión simple de submit sin callback de progreso ni manejo de resultado.
+        La función recibe (job_id, *args) y debe gestionar su propio estado.
+        """
+
+        def _run():
+            try:
+                fn(job_id, *args)
+            except Exception:
+                log.exception("Job %s falló en submit_job.", job_id)
+                self.set_error(
+                    job_id,
+                    "Error interno durante la ejecución"
+                )
+
+        future = self._executor.submit(_run)
+
+        with self._lock:
+            job = self._get_job(job_id)
             if job:
                 job.future = future
 

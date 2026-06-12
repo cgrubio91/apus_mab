@@ -16,7 +16,6 @@ router = APIRouter()
 ALLOWED_SORT_FIELDS = sorted(apu_service._allowed_sort_fields)
 MAX_LIMIT = apu_service._max_limit
 get_apus = apu_service.get_apus
-ApuResponse = None  # used as response_model but we handle it differently
 
 
 class ApuQueryFilters(BaseModel):
@@ -43,7 +42,7 @@ async def get_apus_endpoint(
     sort_order: str = Query("asc", pattern="^(asc|desc)$"),
     limit: int = Query(50, ge=1, le=MAX_LIMIT),
     offset: int = Query(0, ge=0),
-):
+) -> dict:
     try:
         filters = {k: v for k, v in filters_params.model_dump().items() if v is not None}
 
@@ -82,7 +81,7 @@ async def get_apus_endpoint(
 
 
 @router.get("/apus/filter-options", tags=["APUs"])
-async def get_apus_filter_options():
+async def get_apus_filter_options() -> dict:
     try:
         return apu_service.get_filter_options()
     except DatabaseError as dbe:
@@ -94,7 +93,7 @@ async def get_apus_filter_options():
 
 
 @router.get("/dashboard", tags=["APUs"])
-async def get_dashboard_stats_endpoint():
+async def get_dashboard_stats_endpoint() -> dict:
     try:
         return apu_service.get_dashboard_stats()
     except DatabaseError as dbe:
@@ -106,7 +105,7 @@ async def get_dashboard_stats_endpoint():
 
 
 @router.get("/projects", tags=["APUs"])
-async def get_projects():
+async def get_projects() -> dict:
     try:
         return {"projects": apu_service.get_unique_projects()}
     except DatabaseError as dbe:
@@ -114,4 +113,20 @@ async def get_projects():
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error al cargar la lista de proyectos.",
+        )
+
+
+@router.delete("/projects", tags=["APUs"])
+async def delete_projects(nombre_proyecto: str = Query(..., min_length=1)) -> dict:
+    try:
+        def _del():
+            from apu_extractor import delete_project_apus
+            return delete_project_apus(nombre_proyecto)
+        log.warning("Deleting project: %s", nombre_proyecto)
+        return await asyncio.to_thread(_del)
+    except DatabaseError as dbe:
+        log.error("Database error in delete_projects: %s", dbe)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al eliminar el proyecto.",
         )
