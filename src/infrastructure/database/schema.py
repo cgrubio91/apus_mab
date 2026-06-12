@@ -44,6 +44,7 @@ SCHEMA_STATEMENTS = [
         fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """,
+    "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
     "CREATE INDEX IF NOT EXISTS idx_usuarios_telefono ON usuarios (telefono)",
 
     """

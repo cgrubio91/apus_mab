@@ -52,8 +52,16 @@
   </ul>
 
 
-  <div class="sidebar-footer" *ngIf="!isCollapsed">
-    <div class="engine-indicator">
+  <div class="sidebar-footer">
+    <div class="user-section" *ngIf="isLoggedIn && !isCollapsed">
+      <span class="user-name">{{ currentUser?.nombre }}</span>
+      <span class="user-rol">{{ currentUser?.rol }}</span>
+      <button class="logout-btn" (click)="logout()">Cerrar Sesión</button>
+    </div>
+    <div class="login-link" *ngIf="!isLoggedIn && !isCollapsed">
+      <a routerLink="/login" class="nav-link">🔐 Iniciar Sesión</a>
+    </div>
+    <div class="engine-indicator" *ngIf="!isCollapsed">
       <span class="indicator-dot"></span>
       <span class="indicator-text">Gemini · Activo</span>
     </div>

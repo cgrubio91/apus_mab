@@ -259,37 +259,24 @@ export class ApuService {
     return this.http.get(`${this.baseUrl}/analisis-apu/${solicitudId}`);
   }
 
-  preaprobarApu(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/preaprobar`, {
-      responsable_rol: responsableRol,
-      responsable_nombre: responsableNombre,
-    });
+  preaprobarApu(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/preaprobar`, {});
   }
 
-  rechazarApu(solicitudId: number, responsableRol: string, responsableNombre: string, motivo: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/rechazar`, {
-      responsable_rol: responsableRol,
-      responsable_nombre: responsableNombre,
-      motivo,
-    });
+  rechazarApu(solicitudId: number, motivo: string): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/rechazar`, { motivo });
   }
 
   nuevasCotizaciones(solicitudId: number): Observable<any> {
     return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/nuevas-cotizaciones`, {});
   }
 
-  aprobarSubgerente(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/aprobar-subgerente`, {
-      responsable_rol: responsableRol,
-      responsable_nombre: responsableNombre,
-    });
+  aprobarSubgerente(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/aprobar-subgerente`, {});
   }
 
-  firmarLegal(solicitudId: number, responsableRol: string, responsableNombre: string): Observable<any> {
-    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/firmar-legal`, {
-      responsable_rol: responsableRol,
-      responsable_nombre: responsableNombre,
-    });
+  firmarLegal(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/firmar-legal`, {});
   }
 }
 

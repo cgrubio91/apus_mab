@@ -1,29 +1,26 @@
-"""
-Infrastructure: SQL Read-Only Validator
-Ensures only SELECT/WITH queries against authorized tables.
-"""
-
 import re
 import logging
 from typing import Tuple
 
 log = logging.getLogger("mapus.infrastructure.sql")
 
-ALLOWED_TABLES = {"apus"}
+try:
+    import sqlparse
+    from sqlparse.sql import Identifier, IdentifierList, TokenList
+    from sqlparse.tokens import DDL, DML, Keyword
+    HAS_SQLPARSE = True
+except ImportError:
+    HAS_SQLPARSE = False
+    log.info("sqlparse no disponible, usando validación regex")
 
-ALLOWED_COLUMNS = {
-    "fecha_aprobacion_apu", "fecha_analisis_apu", "ciudad", "pais", "entidad",
-    "contratista", "nombre_proyecto", "numero_contrato", "item", "items_descripcion",
-    "item_unidad", "precio_unitario", "precio_unitario_sin_aiu", "codigo_insumo",
-    "tipo_insumo", "insumo_descripcion", "insumo_unidad", "rendimiento_insumo",
-    "precio_unitario_apu", "precio_parcial_apu", "observacion", "link_documento",
-}
+ALLOWED_TABLES = {"apus"}
 
 DANGEROUS_FUNCTIONS = re.compile(
     r"\b(pg_sleep|pg_read_file|pg_ls_dir|pg_stat_file|"
     r"pg_get_keywords|current_setting|set_config|"
     r"lo_import|lo_export|copy|pg_terminate_backend|"
-    r"pg_cancel_backend|dblink|pg_write_file)\s*\(",
+    r"pg_cancel_backend|dblink|pg_write_file|"
+    r"pg_execute|xp_cmdshell|exec|execute\s*\()",
     re.IGNORECASE,
 )
 
@@ -49,23 +46,23 @@ SELECT_STAR_FROM_REAL = re.compile(
 MAX_LIMIT = 20
 
 
-def validate_readonly_query(sql: str) -> Tuple[bool, str]:
-    if not sql or not sql.strip():
-        return False, "SQL vacío"
+def _adjust_limit(sql: str) -> str:
+    match = re.search(r"\blimit\s+(\d+)", sql, re.IGNORECASE)
+    if match:
+        limit_value = int(match.group(1))
+        if limit_value > MAX_LIMIT:
+            sql = re.sub(r"\blimit\s+\d+", f"LIMIT {MAX_LIMIT}", sql, flags=re.IGNORECASE)
+    else:
+        sql += f" LIMIT {MAX_LIMIT}"
+    return sql
 
-    sql = sql.strip()
 
-    if ";" in sql.rstrip(";"):
-        return False, "No se permiten múltiples statements"
-
+def _regex_validate(sql: str) -> Tuple[bool, str]:
     if not ALLOWED_SQL_START.match(sql):
         return False, "Solo se permiten consultas SELECT o WITH"
 
     if DANGEROUS_SQL.search(sql):
         return False, "SQL peligroso detectado"
-
-    if DANGEROUS_FUNCTIONS.search(sql):
-        return False, "Funciones peligrosas no permitidas"
 
     cte_names = set(
         match.lower()
@@ -91,12 +88,84 @@ def validate_readonly_query(sql: str) -> Tuple[bool, str]:
         if table.lower() in ALLOWED_TABLES:
             return False, "SELECT * no permitido sobre tablas reales"
 
-    has_limit = re.search(r"\blimit\s+(\d+)", sql, re.IGNORECASE)
-    if has_limit:
-        limit_value = int(has_limit.group(1))
-        if limit_value > MAX_LIMIT:
-            sql = re.sub(r"\blimit\s+\d+", f"LIMIT {MAX_LIMIT}", sql, flags=re.IGNORECASE)
-    else:
-        sql += f" LIMIT {MAX_LIMIT}"
+    return True, _adjust_limit(sql)
 
-    return True, sql
+
+def _sqlparse_validate(sql: str) -> Tuple[bool, str]:
+    parsed = sqlparse.parse(sql)
+    if not parsed:
+        return False, "SQL no pudo ser parseado"
+
+    stmt = parsed[0]
+    stmt_type = stmt.get_type()
+
+    if stmt_type == "SELECT":
+        has_limit = False
+        for token in stmt.tokens:
+            if token.ttype is Keyword and token.value.upper() == "LIMIT":
+                has_limit = True
+                break
+        return True, _adjust_limit(sql)
+    
+    for token in stmt.tokens:
+        if token.ttype in (DDL, DML):
+            return False, f"Solo se permiten consultas SELECT. Detectado: {token.value.upper()}"
+        if token.ttype is Keyword and token.value.upper() in (
+            "INSERT", "UPDATE", "DELETE", "DROP", "TRUNCATE", "CREATE",
+            "ALTER", "EXECUTE", "EXEC", "GRANT", "REVOKE", "MERGE", "COPY",
+            "VACUUM", "ANALYZE", "NOTIFY", "LISTEN", "CALL",
+        ):
+            return False, f"Solo se permiten consultas SELECT. Detectado: {token.value.upper()}"
+
+    return True, _adjust_limit(sql)
+
+
+def validate_readonly_query(sql: str) -> Tuple[bool, str]:
+    if not sql or not sql.strip():
+        return False, "SQL vacío"
+
+    sql = sql.strip()
+
+    if ";" in sql.rstrip(";"):
+        return False, "No se permiten múltiples statements"
+
+    if DANGEROUS_FUNCTIONS.search(sql):
+        return False, "Funciones peligrosas no permitidas"
+
+    if HAS_SQLPARSE:
+        valid, result = _sqlparse_validate(sql)
+    else:
+        valid, result = _regex_validate(sql)
+
+    if not valid:
+        return valid, result
+
+    cte_names = set(
+        match.lower()
+        for match in re.findall(
+            r"(?:with|,)\s*([a-zA-Z_][a-zA-Z0-9_]*)\s+as",
+            sql,
+            re.IGNORECASE,
+        )
+    )
+
+    tables = re.findall(
+        r"(?:from|join)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        sql,
+        re.IGNORECASE,
+    )
+
+    for table in tables:
+        table_lower = table.lower()
+        if table_lower not in ALLOWED_TABLES and table_lower not in cte_names:
+            return False, f"Tabla no autorizada: {table}"
+
+    has_star = re.search(
+        r"select\s+\*\s+from\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        sql,
+        re.IGNORECASE,
+    )
+    if has_star and has_star.group(1).lower() in ALLOWED_TABLES:
+        return False, "SELECT * no permitido sobre tablas reales"
+
+    return True, result

@@ -6,8 +6,8 @@ Approval workflow endpoints.
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, status, UploadFile, File
-from src.domain.entities.analisis import AnalisisApuCreate, AprobarRequest, RechazarRequest
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Depends
+from src.domain.entities.analisis import AnalisisApuCreate, RechazarRequest
 from src.application.use_cases.manage_analisis import (
     crear_solicitud,
     get_solicitudes,
@@ -20,6 +20,7 @@ from src.application.use_cases.manage_analisis import (
     firmar_legal,
     get_aprendizaje_rechazos,
 )
+from src.presentation.auth import get_current_user, require_role, get_optional_user
 
 log = logging.getLogger("mapus.presentation.analisis")
 router = APIRouter()
@@ -167,9 +168,9 @@ async def obtener_solicitud(solicitud_id: int) -> dict:
 
 
 @router.post("/analisis-apu/{solicitud_id}/preaprobar", tags=["Análisis APU"])
-async def preaprobar_apu(solicitud_id: int, payload: AprobarRequest) -> dict:
+async def preaprobar_apu(solicitud_id: int, user: dict = Depends(require_role("analista"))) -> dict:
     try:
-        return preaprobar(solicitud_id, payload.responsable_rol, payload.responsable_nombre)
+        return preaprobar(solicitud_id, user["rol"], user["nombre"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -178,9 +179,9 @@ async def preaprobar_apu(solicitud_id: int, payload: AprobarRequest) -> dict:
 
 
 @router.post("/analisis-apu/{solicitud_id}/rechazar", tags=["Análisis APU"])
-async def rechazar_apu(solicitud_id: int, payload: RechazarRequest) -> dict:
+async def rechazar_apu(solicitud_id: int, payload: RechazarRequest, user: dict = Depends(require_role("analista"))) -> dict:
     try:
-        return rechazar(solicitud_id, payload.responsable_rol, payload.responsable_nombre, payload.motivo)
+        return rechazar(solicitud_id, user["rol"], user["nombre"], payload.motivo)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -200,9 +201,9 @@ async def nuevas_cotizaciones(solicitud_id: int) -> dict:
 
 
 @router.post("/analisis-apu/{solicitud_id}/aprobar-subgerente", tags=["Análisis APU"])
-async def aprobar_subgerente_endpoint(solicitud_id: int, payload: AprobarRequest) -> dict:
+async def aprobar_subgerente_endpoint(solicitud_id: int, user: dict = Depends(require_role("subgerente"))) -> dict:
     try:
-        return aprobar_subgerente(solicitud_id, payload.responsable_rol, payload.responsable_nombre)
+        return aprobar_subgerente(solicitud_id, user["rol"], user["nombre"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -211,9 +212,9 @@ async def aprobar_subgerente_endpoint(solicitud_id: int, payload: AprobarRequest
 
 
 @router.post("/analisis-apu/{solicitud_id}/firmar-legal", tags=["Análisis APU"])
-async def firmar_legal_endpoint(solicitud_id: int, payload: AprobarRequest) -> dict:
+async def firmar_legal_endpoint(solicitud_id: int, user: dict = Depends(require_role("legal"))) -> dict:
     try:
-        return firmar_legal(solicitud_id, payload.responsable_rol, payload.responsable_nombre)
+        return firmar_legal(solicitud_id, user["rol"], user["nombre"])
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

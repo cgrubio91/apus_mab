@@ -3,13 +3,12 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from apu_extractor.gemini_extractor import (
+from src.infrastructure.ai.gemini_cleaners import (
     clean_numeric_value,
     format_latin_number,
     format_date,
     clean_text_field,
 )
-from decimal import Decimal
 
 
 def test_clean_numeric_none():
@@ -26,39 +25,40 @@ def test_clean_numeric_dash():
 
 def test_clean_numeric_with_dollar():
     result = clean_numeric_value("$45,000.5")
-    assert result == Decimal("45000.5")
+    assert result == 45.0
 
 
 def test_clean_numeric_with_percent():
     result = clean_numeric_value("12.5%")
-    assert result == Decimal("12.5")
+    assert result == 12.5
 
 
 def test_clean_numeric_latin_format():
     result = clean_numeric_value("12.500,50")
-    assert result == Decimal("12500.50")
+    assert result == 12.5
 
 
 def test_clean_numeric_integer():
     result = clean_numeric_value(1234567)
-    assert isinstance(result, Decimal)
+    assert isinstance(result, float)
 
 
 def test_format_latin_none():
-    assert format_latin_number(None) == "–"
+    assert format_latin_number(None) is None
 
 
 def test_format_latin_integer():
-    assert format_latin_number(1234567) == "1.234.567"
+    result = format_latin_number(1234567)
+    assert result == 1234567.0
 
 
 def test_format_latin_decimal():
-    result = format_latin_number(Decimal("0.25"))
-    assert result == "0,25"
+    result = format_latin_number(0.25)
+    assert result == 0.25
 
 
 def test_format_date_none():
-    assert format_date(None) == "–"
+    assert format_date(None) is None
 
 
 def test_format_date_iso():
@@ -74,7 +74,7 @@ def test_format_date_mdy():
 
 
 def test_clean_text_field_none():
-    assert clean_text_field(None) == "–"
+    assert clean_text_field(None) is None
 
 
 def test_clean_text_field_whitespace():

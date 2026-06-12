@@ -1,12 +1,29 @@
-import { Component, ChangeDetectorRef } from '@angular/core';
+import { Component, ChangeDetectorRef, ViewChild, ElementRef, AfterViewChecked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ApuService } from '../../services/apu';
+
+interface ChatStage {
+  phase: string;
+  duration_ms: number;
+}
 
 interface ChatMessage {
   text: string;
+  html?: SafeHtml;
   isUser: boolean;
   timestamp: Date;
+  sqlQuery?: string;
+  showSql?: boolean;
+  stages?: ChatStage[];
+  chartData?: ChartData | null;
+}
+
+interface ChartData {
+  labels: string[];
+  values: number[];
+  label: string;
 }
 
 @Component({
@@ -16,18 +33,33 @@ interface ChatMessage {
   templateUrl: './chat-apus.html',
   styleUrl: './chat-apus.scss',
 })
-export class ChatApus {
+export class ChatApus implements AfterViewChecked {
+  @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
+
   messages: ChatMessage[] = [];
   userInput = '';
   isLoading = false;
+  currentStages: ChatStage[] = [];
+  currentSqlQuery = '';
 
   private static readonly STORAGE_KEY = 'mapus_chat_history';
 
   constructor(
     private apuService: ApuService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private sanitizer: DomSanitizer,
   ) {
     this.loadHistory();
+  }
+
+  ngAfterViewChecked(): void {
+    this.scrollToBottom();
+  }
+
+  private scrollToBottom(): void {
+    try {
+      this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
+    } catch { }
   }
 
   private loadHistory(): void {
@@ -35,11 +67,13 @@ export class ChatApus {
       const saved = sessionStorage.getItem(ChatApus.STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        this.messages = parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        this.messages = parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp),
+          html: m.html ? this.sanitizer.bypassSecurityTrustHtml(m.html) : undefined,
+        }));
       }
-    } catch {
-      // ignore
-    }
+    } catch { }
     if (this.messages.length === 0) {
       this.messages.push({
         text: 'Hola! Soy tu asistente de APUs. Pregúntame sobre proyectos, precios, insumos o lo que necesites.',
@@ -51,11 +85,43 @@ export class ChatApus {
 
   private saveHistory(): void {
     try {
-      const toSave = this.messages.slice(-50);
+      const toSave = this.messages.slice(-50).map(m => ({
+        text: m.text,
+        html: m.html ? String(m.html) : undefined,
+        isUser: m.isUser,
+        timestamp: m.timestamp,
+        sqlQuery: m.sqlQuery,
+        showSql: m.showSql,
+        stages: m.stages,
+        chartData: m.chartData,
+      }));
       sessionStorage.setItem(ChatApus.STORAGE_KEY, JSON.stringify(toSave));
-    } catch {
-      // ignore
+    } catch { }
+  }
+
+  private processText(text: string): { text: string; html?: SafeHtml } {
+    if (text.includes('<table') || text.includes('<tr') || text.includes('<td')) {
+      return { text, html: this.sanitizer.bypassSecurityTrustHtml(text) };
     }
+    return { text };
+  }
+
+  private detectChartData(text: string, results: any[]): ChartData | null {
+    if (!results || results.length < 2) return null;
+    const keys = Object.keys(results[0] || {});
+    if (keys.length < 2) return null;
+
+    const labelKey = keys.find(k => typeof results[0][k] === 'string' || typeof results[0][k] === 'number');
+    const valueKey = keys.find(k =>
+      k !== labelKey && typeof results[0][k] === 'number' && !k.includes('id') && !k.includes('ID')
+    );
+    if (!labelKey || !valueKey) return null;
+
+    const labels = results.map(r => String(r[labelKey] ?? '').slice(0, 30));
+    const values = results.map(r => Number(r[valueKey] ?? 0));
+    if (values.some(v => isNaN(v))) return null;
+
+    return { labels, values, label: valueKey.replace(/_/g, ' ') };
   }
 
   selectSuggestion(suggestion: string): void {
@@ -70,12 +136,28 @@ export class ChatApus {
     this.messages.push({ text, isUser: true, timestamp: new Date() });
     this.userInput = '';
     this.isLoading = true;
+    this.currentStages = [];
+    this.currentSqlQuery = '';
     this.cdr.markForCheck();
 
     this.apuService.chatAssistant(text).subscribe({
       next: (res: any) => {
-        this.messages.push({ text: res.reply, isUser: false, timestamp: new Date() });
+        const processed = this.processText(res.reply);
+        const chartData = this.detectChartData(res.reply, res.results || []);
+        const msg: ChatMessage = {
+          text: processed.text,
+          html: processed.html,
+          isUser: false,
+          timestamp: new Date(),
+          sqlQuery: res.sql_query || undefined,
+          showSql: false,
+          stages: res.stages || [],
+          chartData,
+        };
+        this.messages.push(msg);
         this.isLoading = false;
+        this.currentStages = [];
+        this.currentSqlQuery = '';
         this.saveHistory();
         this.cdr.markForCheck();
       },
@@ -86,9 +168,15 @@ export class ChatApus {
           timestamp: new Date(),
         });
         this.isLoading = false;
+        this.currentStages = [];
         this.cdr.markForCheck();
       },
     });
+  }
+
+  toggleSql(msg: ChatMessage): void {
+    msg.showSql = !msg.showSql;
+    this.saveHistory();
   }
 
   clearChat(): void {
@@ -100,5 +188,27 @@ export class ChatApus {
       },
     ];
     sessionStorage.removeItem(ChatApus.STORAGE_KEY);
+  }
+
+  totalTime(stages?: ChatStage[]): string {
+    if (!stages?.length) return '';
+    const total = stages.reduce((s, st) => s + st.duration_ms, 0);
+    return (total / 1000).toFixed(1);
+  }
+
+  stageIcon(phase: string): string {
+    if (phase.includes('SQL')) return '💡';
+    if (phase.includes('Valid')) return '✅';
+    if (phase.includes('Consult') || phase.includes('base')) return '📊';
+    if (phase.includes('Redact')) return '✍️';
+    return '⚙️';
+  }
+
+  maxChartValue(values: number[]): number {
+    return Math.max(...values, 1);
+  }
+
+  trackById(index: number): number {
+    return index;
   }
 }

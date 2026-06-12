@@ -118,20 +118,12 @@ class PoolConnection:
 
 def get_db_connection():
     global _connection_pool
-    if _connection_pool is not None:
-        try:
-            return PoolConnection(_get_pool().getconn())
-        except Exception as e:
-            log.error("Failed to get connection from pool: %s", e)
-            raise
-
-    db_config.validate()
-    params = db_config.get_connection_params()
+    if _connection_pool is None:
+        _get_pool()
     try:
-        conn = psycopg2.connect(**params)
-        return conn
-    except psycopg2.Error as e:
-        log.error("Database connection failed: %s", e)
+        return PoolConnection(_get_pool().getconn())
+    except Exception as e:
+        log.error("Failed to get connection from pool: %s", e)
         raise
 
 

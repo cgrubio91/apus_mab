@@ -123,8 +123,11 @@ class AnalisisPostgresRepository:
 
                 return solicitud
 
-    def guardar_analisis(self, solicitud_id: int, analisis_json: str, resumen: str, recomendacion: str):
-        with get_db_connection() as conn:
+    def guardar_analisis(self, solicitud_id: int, analisis_json: str, resumen: str, recomendacion: str, conn=None):
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO analisis_apu (solicitud_id, analisis_json, resumen, recomendacion)
@@ -135,20 +138,34 @@ class AnalisisPostgresRepository:
                                      recomendacion = EXCLUDED.recomendacion""",
                     (solicitud_id, analisis_json, resumen, recomendacion),
                 )
-                conn.commit()
+                if owns_conn:
+                    conn.commit()
+        finally:
+            if owns_conn and conn:
+                conn.close()
 
-    def actualizar_estado(self, solicitud_id: int, estado: str, extra_where: str = "") -> bool:
-        with get_db_connection() as conn:
+    def actualizar_estado(self, solicitud_id: int, estado: str, extra_where: str = "", conn=None) -> bool:
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     f"UPDATE solicitudes_apu SET estado = %s, updated_at = NOW() WHERE id = %s {extra_where}",
                     (estado, solicitud_id),
                 )
-                conn.commit()
+                if owns_conn:
+                    conn.commit()
                 return cursor.rowcount > 0
+        finally:
+            if owns_conn and conn:
+                conn.close()
 
-    def insertar_historial(self, solicitud_id: int, accion: str, rol: str, nombre: str, motivo: Optional[str] = None):
-        with get_db_connection() as conn:
+    def insertar_historial(self, solicitud_id: int, accion: str, rol: str, nombre: str, motivo: Optional[str] = None, conn=None):
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO historial_aprobaciones
@@ -156,17 +173,28 @@ class AnalisisPostgresRepository:
                        VALUES (%s, %s, %s, %s, %s)""",
                     (solicitud_id, accion, rol, nombre, motivo),
                 )
-                conn.commit()
+                if owns_conn:
+                    conn.commit()
+        finally:
+            if owns_conn and conn:
+                conn.close()
 
-    def insertar_aprendizaje(self, analisis_id: int, motivo: str, contexto: str):
-        with get_db_connection() as conn:
+    def insertar_aprendizaje(self, analisis_id: int, motivo: str, contexto: str, conn=None):
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
             with conn.cursor() as cursor:
                 cursor.execute(
                     """INSERT INTO aprendizaje_rechazos (analisis_id, motivo_rechazo, contexto)
                        VALUES (%s, %s, %s)""",
                     (analisis_id, motivo, contexto),
                 )
-                conn.commit()
+                if owns_conn:
+                    conn.commit()
+        finally:
+            if owns_conn and conn:
+                conn.close()
 
     def get_aprendizaje_rechazos(self, limit: int = 20) -> list:
         try:

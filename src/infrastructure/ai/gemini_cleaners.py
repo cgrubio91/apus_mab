@@ -39,7 +39,7 @@ def format_date(value) -> str | None:
     if not s or s in ("–", "—", "-", "", "N/A", "n/a"):
         return None
     for fmt in [
-        "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y",
+        "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y",
         "%Y/%m/%d", "%d.%m.%Y", "%Y.%m.%d",
         "%d %b %Y", "%d %B %Y", "%b %d %Y",
     ]:

@@ -3,7 +3,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
-from backend_apu.sql_validator import validate_readonly_query
+from src.infrastructure.sql_validator import validate_readonly_query
 
 
 def test_valid_select():

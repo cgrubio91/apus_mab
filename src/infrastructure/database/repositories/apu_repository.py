@@ -361,7 +361,7 @@ class ApuPostgresRepository:
 
 apu_repo = ApuPostgresRepository()
 
-# Module-level convenience functions (backward-compatible with old apu_extractor.db_service API)
+# Module-level convenience functions
 def insert_apus_batch(apus_list): return apu_repo.insert_apus_batch(apus_list)
 def insert_apus_stream(apus_list): return apu_repo.insert_apus_stream(apus_list)
 def get_unique_projects(): return apu_repo.get_unique_projects()

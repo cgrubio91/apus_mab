@@ -7,18 +7,13 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Ensure root directory is on PATH for imports
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv()
 
-# Import the module
-try:
-    import apu_extractor
-    print("✅ Módulo 'apu_extractor' importado correctamente.")
-except ImportError as err:
-    print(f"❌ Error al importar 'apu_extractor': {err}")
-    sys.exit(1)
+from src.infrastructure.ai.gemini_cleaners import format_latin_number, format_date
+from src.infrastructure.ai.gemini_extractor import generate_copy_paste_table
+from src.infrastructure.database.repositories.apu_repository import get_unique_projects, get_apus
 
 def test_formatting():
     print("\n--- 🧪 PROBANDO FORMATEADORES ---")
@@ -35,7 +30,7 @@ def test_formatting():
     ]
     
     for val, expected in test_numbers:
-        res = apu_extractor.format_latin_number(val)
+        res = format_latin_number(val)
         print(f"   format_latin_number({val}) -> '{res}' (Esperado: '{expected}')")
         
     # Test date formatting
@@ -49,7 +44,7 @@ def test_formatting():
     ]
     
     for val, expected in test_dates:
-        res = apu_extractor.format_date(val)
+        res = format_date(val)
         print(f"   format_date({val}) -> '{res}' (Esperado: '{expected}')")
 
 def test_tsv_generation():
@@ -105,7 +100,7 @@ def test_tsv_generation():
         }
     ]
     
-    table_str = apu_extractor.generate_copy_paste_table(mock_insumos, include_proyecto_col=True)
+    table_str = generate_copy_paste_table(mock_insumos)
     print("📋 Vista previa de la tabla tabulada (Google Sheets):")
     print("-" * 80)
     print(table_str)
@@ -119,7 +114,7 @@ def test_database_connection():
         print(f"🔌 Conexión DB: {db_res['status']} ({db_res.get('message')})")
         
         if db_res['status'] == "success":
-            projects = apu_extractor.get_unique_projects()
+            projects = get_unique_projects()
             print(f"📊 Proyectos únicos encontrados en DB: {len(projects)}")
             for idx, p in enumerate(projects[:5], 1):
                 print(f"   {idx}. {p}")
@@ -127,7 +122,7 @@ def test_database_connection():
                 print("   ...")
                 
             # Test getting APUs
-            apus_res = apu_extractor.get_apus(limit=2)
+            apus_res = get_apus(limit=2)
             print(f"📊 Registros APUs totales en DB: {apus_res['total']}")
             print(f"   Registros obtenidos en prueba: {len(apus_res['data'])}")
     except Exception as e:

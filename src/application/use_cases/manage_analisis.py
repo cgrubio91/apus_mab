@@ -217,11 +217,20 @@ Responde SOLO con un JSON:
 
 
 def preaprobar(solicitud_id: int, usuario_rol: str, usuario_nombre: str) -> dict:
-    if not analisis_repo.actualizar_estado(solicitud_id, "preaprobado", "AND estado = 'analizado'"):
-        raise ValueError("La solicitud no está en estado 'analizado'")
-    analisis_repo.insertar_historial(solicitud_id, "preaprobado", usuario_rol, usuario_nombre)
-    analisis_repo.insertar_historial(solicitud_id, "pendiente_aprobacion_subgerente", usuario_rol, usuario_nombre)
-    return {"success": True, "mensaje": "APU preaprobado. Enviado a subgerente técnico."}
+    from src.infrastructure.database.connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        if not analisis_repo.actualizar_estado(solicitud_id, "preaprobado", "AND estado = 'analizado'", conn=conn):
+            raise ValueError("La solicitud no está en estado 'analizado'")
+        analisis_repo.insertar_historial(solicitud_id, "preaprobado", usuario_rol, usuario_nombre, conn=conn)
+        analisis_repo.insertar_historial(solicitud_id, "pendiente_aprobacion_subgerente", usuario_rol, usuario_nombre, conn=conn)
+        conn.commit()
+        return {"success": True, "mensaje": "APU preaprobado. Enviado a subgerente técnico."}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def rechazar(solicitud_id: int, usuario_rol: str, usuario_nombre: str, motivo: str) -> dict:
@@ -232,15 +241,24 @@ def rechazar(solicitud_id: int, usuario_rol: str, usuario_nombre: str, motivo: s
     if estado_actual not in ("analizado", "nuevas_cotizaciones"):
         raise ValueError(f"No se puede rechazar en estado '{estado_actual}'")
 
-    fecha_limite = date.today() + timedelta(days=5)
-    analisis_repo.actualizar_estado(solicitud_id, "nuevas_cotizaciones")
-    analisis_repo.insertar_historial(solicitud_id, "rechazado", usuario_rol, usuario_nombre, motivo)
+    from src.infrastructure.database.connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        fecha_limite = date.today() + timedelta(days=5)
+        analisis_repo.actualizar_estado(solicitud_id, "nuevas_cotizaciones", conn=conn)
+        analisis_repo.insertar_historial(solicitud_id, "rechazado", usuario_rol, usuario_nombre, motivo, conn=conn)
 
-    analisis = solicitud.get("analisis", {})
-    if analisis and analisis.get("id"):
-        analisis_repo.insertar_aprendizaje(analisis["id"], motivo, f"Rechazado por {usuario_rol}: {usuario_nombre}")
+        analisis = solicitud.get("analisis", {})
+        if analisis and analisis.get("id"):
+            analisis_repo.insertar_aprendizaje(analisis["id"], motivo, f"Rechazado por {usuario_rol}: {usuario_nombre}", conn=conn)
 
-    return {"success": True, "mensaje": f"APU rechazado. Se solicitarán nuevas cotizaciones (límite: {fecha_limite}).", "fecha_limite": str(fecha_limite)}
+        conn.commit()
+        return {"success": True, "mensaje": f"APU rechazado. Se solicitarán nuevas cotizaciones (límite: {fecha_limite}).", "fecha_limite": str(fecha_limite)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def nuevas_cotizaciones_recibidas(solicitud_id: int) -> dict:
@@ -252,18 +270,36 @@ def nuevas_cotizaciones_recibidas(solicitud_id: int) -> dict:
 
 
 def aprobar_subgerente(solicitud_id: int, usuario_rol: str, usuario_nombre: str) -> dict:
-    if not analisis_repo.actualizar_estado(solicitud_id, "aprobado_subgerente", "AND estado = 'preaprobado'"):
-        raise ValueError("La solicitud no está en estado 'preaprobado'")
-    analisis_repo.insertar_historial(solicitud_id, "aprobado_subgerente", usuario_rol, usuario_nombre)
-    analisis_repo.insertar_historial(solicitud_id, "pendiente_firma_legal", "sistema", "Sistema")
-    return {"success": True, "mensaje": "Aprobado por subgerente técnico. Enviado para firma legal."}
+    from src.infrastructure.database.connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        if not analisis_repo.actualizar_estado(solicitud_id, "aprobado_subgerente", "AND estado = 'preaprobado'", conn=conn):
+            raise ValueError("La solicitud no está en estado 'preaprobado'")
+        analisis_repo.insertar_historial(solicitud_id, "aprobado_subgerente", usuario_rol, usuario_nombre, conn=conn)
+        analisis_repo.insertar_historial(solicitud_id, "pendiente_firma_legal", "sistema", "Sistema", conn=conn)
+        conn.commit()
+        return {"success": True, "mensaje": "Aprobado por subgerente técnico. Enviado para firma legal."}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def firmar_legal(solicitud_id: int, usuario_rol: str, usuario_nombre: str) -> dict:
-    if not analisis_repo.actualizar_estado(solicitud_id, "aprobado_legal", "AND estado = 'aprobado_subgerente'"):
-        raise ValueError("La solicitud no está en estado 'aprobado_subgerente'")
-    analisis_repo.insertar_historial(solicitud_id, "aprobado_legal", usuario_rol, usuario_nombre)
-    return {"success": True, "mensaje": "APU aprobado y firmado legalmente. Incorporado al banco de APUs."}
+    from src.infrastructure.database.connection import get_db_connection
+    conn = get_db_connection()
+    try:
+        if not analisis_repo.actualizar_estado(solicitud_id, "aprobado_legal", "AND estado = 'aprobado_subgerente'", conn=conn):
+            raise ValueError("La solicitud no está en estado 'aprobado_subgerente'")
+        analisis_repo.insertar_historial(solicitud_id, "aprobado_legal", usuario_rol, usuario_nombre, conn=conn)
+        conn.commit()
+        return {"success": True, "mensaje": "APU aprobado y firmado legalmente. Incorporado al banco de APUs."}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_aprendizaje_rechazos(limit: int = 20) -> list:

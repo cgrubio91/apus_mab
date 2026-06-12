@@ -19,6 +19,7 @@ from src.application.use_cases.query_apus import (
     ALLOWED_SORT_FIELDS,
     MAX_LIMIT,
 )
+from src.presentation.auth import require_role
 
 log = logging.getLogger("mapus.presentation.apus")
 router = APIRouter()
@@ -89,9 +90,9 @@ async def get_projects() -> dict:
 
 
 @router.delete("/projects", tags=["APUs"])
-async def delete_projects(nombre_proyecto: str = Query(..., min_length=1)) -> dict:
+async def delete_projects(nombre_proyecto: str = Query(..., min_length=1), user: dict = Depends(require_role("admin"))) -> dict:
     try:
-        log.warning("Deleting project: %s", nombre_proyecto)
+        log.warning("Project deletion by %s (%s): %s", user["nombre"], user["rol"], nombre_proyecto)
         return await asyncio.to_thread(delete_project, nombre_proyecto)
     except DatabaseError:
         log.exception("Database error in delete_projects")

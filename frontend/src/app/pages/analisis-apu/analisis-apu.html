@@ -128,17 +128,10 @@
 
           <ng-container *ngSwitchCase="'analizado'">
             <div class="approval-section" *ngIf="!showRechazoForm">
-              <div class="form-group">
-                <label>Tu Nombre</label>
-                <input type="text" [(ngModel)]="aprobacionNombre" placeholder="Nombre del responsable" />
-              </div>
-              <div class="form-group">
-                <label>Tu Rol</label>
-                <input type="text" [(ngModel)]="aprobacionRol" placeholder="Ej: Analista, Ingeniero" />
-              </div>
+              <p class="info-text">El análisis fue completado. Puedes preaprobar o rechazar esta solicitud.</p>
               <div class="btn-group">
                 <button class="action-btn primary" (click)="preaprobar(selectedSolicitud.id!)">
-                  ✓ Aprobar Pre-Análisis
+                  ✓ Preaprobar
                 </button>
                 <button class="action-btn danger" (click)="showRechazoForm = true">
                   ✕ Rechazar
@@ -175,14 +168,6 @@
 
           <ng-container *ngSwitchCase="'preaprobado'">
             <p class="info-text">Esperando aprobación del subgerente técnico de la interventoría.</p>
-            <div class="form-group">
-              <label>Nombre del Subgerente Técnico</label>
-              <input type="text" [(ngModel)]="aprobacionNombre" placeholder="Nombre del subgerente técnico" />
-            </div>
-            <div class="form-group">
-              <label>Rol</label>
-              <input type="text" [(ngModel)]="aprobacionRol" placeholder="subgerente_tecnico" />
-            </div>
             <button class="action-btn primary" (click)="aprobarSubgerente(selectedSolicitud.id!)">
               ✓ Aprobar como Subgerente Técnico
             </button>
@@ -190,14 +175,6 @@
 
           <ng-container *ngSwitchCase="'aprobado_subgerente'">
             <p class="info-text">Esperando firma del representante legal de la interventoría.</p>
-            <div class="form-group">
-              <label>Nombre del Profesional de Apoyo</label>
-              <input type="text" [(ngModel)]="aprobacionNombre" placeholder="Nombre del profesional" />
-            </div>
-            <div class="form-group">
-              <label>Rol</label>
-              <input type="text" [(ngModel)]="aprobacionRol" placeholder="profesional_apoyo" />
-            </div>
             <button class="action-btn primary" (click)="firmarLegal(selectedSolicitud.id!)">
               ✍️ Firmar como Representante Legal
             </button>

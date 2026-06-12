@@ -275,3 +275,166 @@
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+.message-content ::ng-deep table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5rem 0;
+  font-size: 0.8rem;
+
+  th, td {
+    border: 1px solid var(--border-color);
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+
+  th {
+    background: #f1f5f9;
+    font-weight: 700;
+    color: var(--text-main);
+  }
+
+  td {
+    color: var(--text-muted);
+  }
+}
+
+.message-content ::ng-deep table + p {
+  margin-top: 0.5rem;
+}
+
+/* ── SQL expandible ── */
+.sql-section {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.5rem;
+}
+
+.sql-toggle {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.6rem;
+  font-size: 0.72rem;
+  font-family: var(--font-family-body);
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s;
+
+  &:hover {
+    background: #f1f5f9;
+    color: var(--text-main);
+  }
+
+  .sql-icon { font-size: 0.8rem; }
+  .sql-arrow { font-size: 0.6rem; }
+}
+
+.sql-block {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  font-family: 'Courier New', monospace;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+/* ── Stages timeline ── */
+.stages-timeline {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 0.4rem;
+}
+
+.stage-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.65rem;
+  color: var(--text-light);
+  background: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 0.1rem 0.4rem;
+
+  .stage-icon { font-size: 0.7rem; }
+  .stage-name { font-weight: 500; }
+  .stage-duration {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.stage-total {
+  font-size: 0.65rem;
+  color: var(--text-light);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Simple bar chart ── */
+.chart-wrapper {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.chart-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.3rem;
+  height: 80px;
+}
+
+.chart-bar-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.chart-bar {
+  width: 100%;
+  min-width: 20px;
+  max-width: 50px;
+  background: linear-gradient(to top, #3b82f6, #60a5fa);
+  border-radius: 3px 3px 0 0;
+  transition: height 0.3s ease;
+}
+
+.chart-bar-label {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+  text-align: center;
+  word-break: break-all;
+  max-width: 60px;
+  line-height: 1.1;
+}
+
+.chart-bar-value {
+  font-size: 0.55rem;
+  color: var(--text-light);
+  margin-bottom: 0.1rem;
+  font-variant-numeric: tabular-nums;
+}

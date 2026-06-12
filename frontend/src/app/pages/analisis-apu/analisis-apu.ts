@@ -1,7 +1,8 @@
-import { Component, OnInit, ChangeDetectorRef, NgZone } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, NgZone, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApuService } from '../../services/apu';
+import { AuthService } from '../../services/auth.service';
 
 export interface SolicitudInsumo {
   id?: number;
@@ -100,8 +101,7 @@ export class AnalisisApu implements OnInit {
   rechazoMotivo = '';
   showRechazoForm = false;
 
-  aprobacionNombre = '';
-  aprobacionRol = '';
+  auth = inject(AuthService);
 
   ngOnInit(): void {
     this.loadSolicitudes();
@@ -163,8 +163,6 @@ export class AnalisisApu implements OnInit {
     this.selectedSolicitud = null;
     this.showRechazoForm = false;
     this.rechazoMotivo = '';
-    this.aprobacionNombre = '';
-    this.aprobacionRol = '';
     this.loadSolicitudes();
   }
 
@@ -266,12 +264,8 @@ export class AnalisisApu implements OnInit {
   }
 
   preaprobar(id: number): void {
-    if (!this.aprobacionNombre || !this.aprobacionRol) {
-      this.error = 'Complete los datos del responsable';
-      return;
-    }
     this.loading = true;
-    this.apuService.preaprobarApu(id, this.aprobacionRol, this.aprobacionNombre).subscribe({
+    this.apuService.preaprobarApu(id).subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
           this.successMsg = res.mensaje;
@@ -291,12 +285,12 @@ export class AnalisisApu implements OnInit {
   }
 
   rechazar(id: number): void {
-    if (!this.rechazoMotivo || !this.aprobacionNombre || !this.aprobacionRol) {
-      this.error = 'Complete el motivo y datos del responsable';
+    if (!this.rechazoMotivo) {
+      this.error = 'Complete el motivo del rechazo';
       return;
     }
     this.loading = true;
-    this.apuService.rechazarApu(id, this.aprobacionRol, this.aprobacionNombre, this.rechazoMotivo).subscribe({
+    this.apuService.rechazarApu(id, this.rechazoMotivo).subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
           this.successMsg = res.mensaje;
@@ -339,12 +333,8 @@ export class AnalisisApu implements OnInit {
   }
 
   aprobarSubgerente(id: number): void {
-    if (!this.aprobacionNombre || !this.aprobacionRol) {
-      this.error = 'Complete los datos del responsable';
-      return;
-    }
     this.loading = true;
-    this.apuService.aprobarSubgerente(id, this.aprobacionRol, this.aprobacionNombre).subscribe({
+    this.apuService.aprobarSubgerente(id).subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
           this.successMsg = res.mensaje;
@@ -364,12 +354,8 @@ export class AnalisisApu implements OnInit {
   }
 
   firmarLegal(id: number): void {
-    if (!this.aprobacionNombre || !this.aprobacionRol) {
-      this.error = 'Complete los datos del responsable';
-      return;
-    }
     this.loading = true;
-    this.apuService.firmarLegal(id, this.aprobacionRol, this.aprobacionNombre).subscribe({
+    this.apuService.firmarLegal(id).subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
           this.successMsg = res.mensaje;
