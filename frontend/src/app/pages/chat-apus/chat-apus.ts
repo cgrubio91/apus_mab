@@ -18,6 +18,7 @@ interface ChatMessage {
   showSql?: boolean;
   stages?: ChatStage[];
   chartData?: ChartData | null;
+  suggestedFollowups?: string[];
 }
 
 interface ChartData {
@@ -94,6 +95,7 @@ export class ChatApus implements AfterViewChecked {
         showSql: m.showSql,
         stages: m.stages,
         chartData: m.chartData,
+        suggestedFollowups: m.suggestedFollowups,
       }));
       sessionStorage.setItem(ChatApus.STORAGE_KEY, JSON.stringify(toSave));
     } catch { }
@@ -153,6 +155,7 @@ export class ChatApus implements AfterViewChecked {
           showSql: false,
           stages: res.stages || [],
           chartData,
+          suggestedFollowups: res.suggested_followups || [],
         };
         this.messages.push(msg);
         this.isLoading = false;

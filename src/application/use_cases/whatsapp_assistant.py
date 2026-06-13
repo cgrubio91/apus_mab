@@ -86,9 +86,9 @@ CADA FILA = un insumo. Un mismo ítem APU aparece en VARIAS filas.
 
 Columnas:
 - item, items_descripcion, item_unidad → datos del ÍTEM
-- precio_unitario → precio del INSUMO (NO del ítem)
-- precio_unitario_apu → PRECIO DEL ÍTEM APU (lo que pide el usuario)
-- precio_parcial_apu → precio parcial del ítem
+- precio_unitario → PRECIO DEL ÍTEM APU (lo que pide el usuario). Es CONSTANTE para todas las filas de un mismo ítem.
+- precio_unitario_apu → precio del INSUMO (NO del ítem). Varía por cada insumo dentro de un mismo ítem.
+- precio_parcial_apu → precio parcial del insumo (rendimiento_insumo × precio_unitario_apu)
 - codigo_insumo, insumo_descripcion, tipo_insumo, rendimiento_insumo → datos del INSUMO
 - fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad
 - contratista, nombre_proyecto, numero_contrato
@@ -97,10 +97,11 @@ Columnas:
 REGLAS:
 1. Siempre ILIKE con % (nunca = para textos).
 2. Mapea lenguaje natural a columnas.
-3. Si pide "precio" o "valor unitario" del ítem, usa precio_unitario_apu.
+3. Si pide "precio" o "valor unitario" del ítem, usa precio_unitario.
 4. Si lista ítems, usa DISTINCT ON (item, nombre_proyecto) para evitar duplicados.
 5. LIMIT 20 salvo que pida otra cantidad.
 6. Solo SELECT. Sin Markdown. Sin ```sql```.
+7. Para desglose de insumos, usa DISTINCT ON (item, codigo_insumo) o GROUP BY para evitar duplicados del mismo insumo.
 {ctx}
 Usuario: "{message_body}"
 SQL:"""

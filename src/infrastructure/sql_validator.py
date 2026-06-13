@@ -1,5 +1,6 @@
 import re
 import logging
+import unicodedata
 from typing import Tuple
 
 log = logging.getLogger("mapus.infrastructure.sql")
@@ -44,6 +45,26 @@ SELECT_STAR_FROM_REAL = re.compile(
 )
 
 MAX_LIMIT = 20
+
+
+def normalize_accents(text: str) -> str:
+    """Strip diacritics/accents from text for accent-insensitive ILIKE matching.
+    Ej: 'diámetro' -> 'diametro', 'épocas' -> 'epocas', 'CAÑO' -> 'CANO'
+    """
+    nfkd = unicodedata.normalize('NFKD', text)
+    return nfkd.encode('ascii', 'ignore').decode('ascii')
+
+
+def _normalize_sql_accents(sql: str) -> str:
+    """Remove accents from string literals in SQL for accent-insensitive matching.
+    Only affects content inside single quotes (ILIKE patterns), not SQL keywords.
+    """
+    def _replace_literal(match):
+        quote = match.group(1)  # opening quote
+        content = match.group(2)  # content between quotes
+        return quote + normalize_accents(content) + quote
+
+    return re.sub(r"(')([^']*)(')", _replace_literal, sql)
 
 
 def _adjust_limit(sql: str) -> str:
@@ -125,6 +146,7 @@ def validate_readonly_query(sql: str) -> Tuple[bool, str]:
         return False, "SQL vacío"
 
     sql = sql.strip()
+    sql = _normalize_sql_accents(sql)
 
     if ";" in sql.rstrip(";"):
         return False, "No se permiten múltiples statements"

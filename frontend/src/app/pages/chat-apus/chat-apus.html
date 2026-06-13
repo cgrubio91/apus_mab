@@ -59,6 +59,14 @@
           <div class="stage-total">Total: {{ totalTime(msg.stages) }}s</div>
         </div>
 
+        <div class="followup-chips" *ngIf="msg.suggestedFollowups?.length">
+          <button
+            class="followup-chip"
+            *ngFor="let f of msg.suggestedFollowups"
+            (click)="selectSuggestion(f)"
+          >{{ f }}</button>
+        </div>
+
         <div class="message-time">{{ msg.timestamp | date:'HH:mm' }}</div>
       </div>
     </div>

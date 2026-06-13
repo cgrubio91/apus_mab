@@ -18,7 +18,7 @@ from psycopg2.extras import RealDictCursor
 
 log = logging.getLogger("mapus.application.chat")
 
-MAX_RESULTS_FOR_SUMMARY = 15
+MAX_RESULTS_FOR_SUMMARY = 40
 MAX_FIELD_LENGTH = 300
 CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_ENTRIES = 500
@@ -168,10 +168,10 @@ COLUMNAS CLAVE (con semántica):
 - item → código del ítem APU (ej: "APU-001")
 - items_descripcion → descripción del ítem APU
 - item_unidad → unidad del ítem (m3, kg, gl, etc.)
-- precio_unitario → precio del INSUMO (no del ítem)
-- precio_unitario_apu → PRECIO UNITARIO DEL ÍTEM APU (lo que normalmente pide el usuario)
-- precio_parcial_apu → precio parcial del ítem
-- precio_unitario_sin_aiu → precio sin AIU
+- precio_unitario → PRECIO UNITARIO TOTAL DEL ÍTEM APU (lo que normalmente pide el usuario). Es CONSTANTE para todas las filas de un mismo ítem.
+- precio_unitario_apu → precio unitario del INSUMO (no del ítem). Varía para cada insumo dentro de un mismo ítem.
+- precio_parcial_apu → precio parcial del insumo (rendimiento_insumo × precio_unitario_apu)
+- precio_unitario_sin_aiu → precio del ítem sin AIU
 - rendimiento_insumo → rendimiento del insumo
 - codigo_insumo → código del insumo
 - insumo_descripcion → descripción del insumo
@@ -191,9 +191,11 @@ REGLAS ABSOLUTAS:
 7. Si no se puede responder usando SELECT sobre apus, responde únicamente: INVALID_QUERY
 8. Nunca uses SELECT * sobre la tabla real
 9. Selecciona únicamente las columnas estrictamente necesarias
-10. Si el usuario pide "precio del ítem" o "valor unitario", usa precio_unitario_apu
+10. Si el usuario pide "precio del ítem" o "valor unitario", usa precio_unitario
 11. Si el usuario pide listar ítems, usa SELECT DISTINCT ON (item, nombre_proyecto) para evitar duplicados
 12. Si el usuario refina una consulta anterior, modifica el SQL previo en lugar de generar uno nuevo
+13. Si el usuario pide desglose/breakdown de insumos de ítems específicos, usa DISTINCT ON (item, codigo_insumo) o GROUP BY para evitar filas duplicadas del mismo insumo en distintos proyectos
+14. Si hay resultados numerosos, sugiere al usuario formas de acotar (por tipo de insumo, rango de precio, etc.)
 
 {ctx}
 
@@ -256,6 +258,9 @@ INSTUCCIONES DE FORMATO:
 - Números: formatea con separador de miles (ej: $1,234,567).
 - Si hay datos duplicados, agrupa y muestra valores únicos.
 - No repitas la misma información.
+- Si los datos contienen un desglose de insumos por ítem (múltiples filas por ítem), PRESENTA TODOS los insumos de CADA ítem. No omitas ninguno. Agrupa por ítem y muestra cada insumo con su tipo, descripción y precio parcial.
+- Al final de tu respuesta, sugiere 2-3 preguntas de seguimiento útiles y naturales, separadas por "|". Ejemplo: "PREGUNTAS:¿Cuál es el precio unitario de cada uno?|Compara los costos entre estos dos proyectos|Muéstrame solo los insumos de tipo Equipos"
+  Si no hay datos suficientes para sugerencias útiles, omite esta sección.
 
 Pregunta del usuario:
 "{message}"
@@ -271,6 +276,14 @@ Respuesta:
             reply = _gemini_generate(prompt_respuesta)
         stages.append({"phase": "Redactando respuesta", "duration_ms": _total_seconds() - t3})
 
+        suggested_followups = []
+        preguntas_match = re.search(r"PREGUNTAS:(.+)", reply, re.DOTALL)
+        if preguntas_match:
+            suggested_followups = [
+                q.strip() for q in preguntas_match.group(1).split("|") if q.strip()
+            ]
+            reply = reply[:preguntas_match.start()].strip()
+
         _guardar_conversacion(telefono, message, sql_to_save, reply)
 
         result = {
@@ -280,6 +293,7 @@ Respuesta:
             "stages": stages,
             "cached": False,
             "tiene_contexto": tiene_contexto,
+            "suggested_followups": suggested_followups,
         }
 
         _chat_cache.set(cache_key, result)
