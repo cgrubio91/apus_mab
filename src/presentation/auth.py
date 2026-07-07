@@ -1,24 +1,20 @@
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
 import jwt
-from dotenv import load_dotenv
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import PyJWTError
 
+from src.config.settings import settings
 from src.infrastructure.database.connection import execute_query
-
-load_dotenv()
 
 log = logging.getLogger("mapus.presentation.auth")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", "480"))
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.JWT_EXPIRE_MINUTES
 
 security = HTTPBearer(auto_error=False)
 
@@ -33,10 +29,12 @@ ROLES_HIERARCHY = {
 
 
 def _get_secret() -> str:
-    key = os.getenv("JWT_SECRET_KEY")
-    if not key or key == "change-me-in-production":
-        log.warning("JWT_SECRET_KEY no configurada o es el valor por defecto. Cambiar en producción.")
-    return key or "change-me-in-production"
+    # En producción settings.py ya falló al arranque si no hay clave;
+    # el fallback solo aplica en desarrollo local.
+    key = settings.JWT_SECRET_KEY
+    if not key:
+        log.warning("JWT_SECRET_KEY no configurada; usando clave de desarrollo insegura.")
+    return key or "dev-only-insecure-key"
 
 
 def hash_password(password: str) -> str:
@@ -76,6 +74,19 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
     if not rows or not rows[0].get("activo"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado o inactivo")
     return rows[0]
+
+
+async def get_current_user_flexible(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    token: Optional[str] = Query(default=None, include_in_schema=False),
+):
+    """Como get_current_user, pero acepta también el token por query param.
+
+    Necesario para EventSource (SSE), que no permite enviar headers.
+    """
+    if credentials is None and token:
+        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+    return await get_current_user(credentials)
 
 
 async def get_optional_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):

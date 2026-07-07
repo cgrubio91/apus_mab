@@ -1,19 +1,20 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.0
     container_name: mapus-db
     restart: unless-stopped
     ports:
-      - "5433:5432"
+      - "3307:3306"
     environment:
-      POSTGRES_DB: apus-mab
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      MYSQL_ROOT_PASSWORD: postgres
+      MYSQL_DATABASE: apus_mab
+      MYSQL_USER: postgres
+      MYSQL_PASSWORD: postgres
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - mysqldata:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,18 +28,17 @@ services:
     ports:
       - "10000:10000"
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: apus-mab
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: apus_mab
       DB_USER: postgres
       DB_PASSWORD: postgres
-      DB_SSLMODE: prefer
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: gemini-2.5-flash
       CORS_ORIGINS: http://localhost:4200
       ENV: production
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
 
   frontend:
@@ -53,4 +53,4 @@ services:
       - api
 
 volumes:
-  pgdata:
+  mysqldata:

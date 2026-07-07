@@ -59,6 +59,8 @@ export class ConsultaApus implements OnInit, OnDestroy {
   ];
 
   filters: Record<string, string> = {};
+  errorMessage = '';
+  isExporting = false;
   activeFilterCol: string | null = null;
   filterSearchText: Record<string, string> = {};
   filteredOptionLists: Record<string, string[]> = {};
@@ -120,6 +122,7 @@ export class ConsultaApus implements OnInit, OnDestroy {
 
   loadApus(): void {
     this.isLoading = true;
+    this.errorMessage = '';
     const cleanFilters: any = { limit: this.pageSize, offset: (this.currentPage - 1) * this.pageSize };
     for (const [key, val] of Object.entries(this.filters)) {
       if (val) cleanFilters[key] = val;
@@ -140,10 +143,30 @@ export class ConsultaApus implements OnInit, OnDestroy {
         this.cdr.markForCheck();
       },
       error: () => {
+        this.errorMessage = 'No se pudieron cargar los APUs. Verifica tu conexión e intenta de nuevo.';
         this.isLoading = false;
         this.cdr.markForCheck();
       },
     });
+  }
+
+  async exportar(formato: 'xlsx' | 'csv'): Promise<void> {
+    this.isExporting = true;
+    this.errorMessage = '';
+    const filtros: any = { ...this.filters };
+    if (this.searchText) filtros.search = this.searchText;
+    if (this.sortBy) {
+      filtros.sort_by = this.sortBy;
+      filtros.sort_order = this.sortOrder;
+    }
+    try {
+      await this.apuService.exportApus(filtros, formato);
+    } catch {
+      this.errorMessage = 'No se pudo exportar. Intenta de nuevo.';
+    } finally {
+      this.isExporting = false;
+      this.cdr.markForCheck();
+    }
   }
 
   sortByColumn(col: ColumnDef): void {

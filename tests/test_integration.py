@@ -1,6 +1,6 @@
 """
 Integration tests for MAPUS API endpoints.
-Requires a running PostgreSQL database (set TEST_DB_* env vars).
+Requires a running MySQL database (set TEST_DB_* env vars).
 Automatically skipped when no database is available.
 """
 
@@ -51,7 +51,7 @@ class TestApusEndpoints:
         resp = client.get("/api/apus?sort_by=precio_unitario&sort_order=desc")
         assert resp.status_code == 200
         data = resp.json()
-        prices = [apu["precio_unitario"] for apu in data["data"] if apu["precio_unitario"]]
+        prices = [float(apu["precio_unitario"]) for apu in data["data"] if apu["precio_unitario"]]
         assert prices == sorted(prices, reverse=True)
 
     def test_get_apus_search(self, client: TestClient):
@@ -78,8 +78,7 @@ class TestApusV1Endpoints:
         resp = client.get("/api/v1/projects")
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
-        project_names = [p["nombre_proyecto"] for p in data]
+        project_names = data["projects"]
         assert "Proyecto Test Alpha" in project_names
         assert "Proyecto Test Gamma" in project_names
 
@@ -115,7 +114,7 @@ class TestJobEndpoints:
         resp = client.get("/api/jobs")
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
+        assert isinstance(data["jobs"], list)
 
     def test_get_job_not_found(self, client: TestClient):
         resp = client.get("/api/jobs/nonexistent-job-id")
@@ -124,11 +123,11 @@ class TestJobEndpoints:
 
 class TestAnalisisEndpoints:
     def test_list_solicitudes(self, client: TestClient):
-        resp = client.get("/api/analisis-apu/solicitudes")
+        resp = client.get("/api/analisis-apu")
         assert resp.status_code == 200
         data = resp.json()
-        assert isinstance(data, list)
+        assert isinstance(data["data"], list)
 
     def test_get_solicitud_not_found(self, client: TestClient):
-        resp = client.get("/api/analisis-apu/solicitudes/99999")
+        resp = client.get("/api/analisis-apu/99999")
         assert resp.status_code == 404

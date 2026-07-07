@@ -13,7 +13,7 @@ def test_valid_select():
 
 def test_valid_select_specific_columns():
     is_valid, sql = validate_readonly_query(
-        "SELECT nombre_proyecto, ciudad FROM apus WHERE ciudad ILIKE '%bogota%'"
+        "SELECT nombre_proyecto, ciudad FROM apus WHERE ciudad LIKE '%bogota%'"
     )
     assert is_valid
     assert "LIMIT 20" in sql or "limit 20" in sql
@@ -71,7 +71,7 @@ def test_blocked_unauthorized_table():
 
 def test_limit_enforcement():
     is_valid, sql = validate_readonly_query(
-        "SELECT nombre_proyecto FROM apus WHERE ciudad ILIKE '%test%'"
+        "SELECT nombre_proyecto FROM apus WHERE ciudad LIKE '%test%'"
     )
     assert is_valid
     assert "LIMIT 20" in sql.upper() or "limit 20" in sql

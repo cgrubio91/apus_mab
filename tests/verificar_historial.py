@@ -3,14 +3,13 @@ Verificar que los datos se guardaron en la tabla historial_conversaciones
 """
 
 from db_config import get_db_connection
-from psycopg2.extras import RealDictCursor
 
 def verificar_datos():
     """Verifica los datos en la tabla historial_conversaciones."""
     conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor(dictionary=True)
         
         # Contar total de registros
         cursor.execute("SELECT COUNT(*) as total FROM historial_conversaciones")

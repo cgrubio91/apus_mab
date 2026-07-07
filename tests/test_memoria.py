@@ -3,7 +3,6 @@ Script de prueba para el sistema de memoria conversacional
 """
 
 from db_config import get_db_connection
-from psycopg2.extras import RealDictCursor
 
 def guardar_conversacion(telefono: str, mensaje_usuario: str, sql_generado: str, respuesta_bot: str):
     """Guarda una interacción en el historial de conversaciones."""
@@ -32,7 +31,7 @@ def obtener_historial(telefono: str, limite: int = 5):
     conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor = conn.cursor(dictionary=True)
         cursor.execute("""
             SELECT mensaje_usuario, sql_generado, respuesta_bot, timestamp
             FROM historial_conversaciones

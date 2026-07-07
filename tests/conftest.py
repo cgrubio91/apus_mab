@@ -1,6 +1,6 @@
 """
 Pytest configuration and fixtures for MAPUS integration tests.
-Requires a PostgreSQL database specified by TEST_DB_* environment variables.
+Requires a MySQL database specified by TEST_DB_* environment variables.
 Tests are automatically skipped when no database is available.
 """
 
@@ -21,24 +21,23 @@ os.environ.setdefault("GEMINI_API_KEY", "test-key")
 
 TEST_DB_CONFIG = {
     "host": os.getenv("TEST_DB_HOST") or os.getenv("DB_HOST", "localhost"),
-    "port": int(os.getenv("TEST_DB_PORT") or os.getenv("DB_PORT", "5432")),
+    "port": int(os.getenv("TEST_DB_PORT") or os.getenv("DB_PORT", "3306")),
     "user": os.getenv("TEST_DB_USER") or os.getenv("DB_USER", "postgres"),
     "password": os.getenv("TEST_DB_PASSWORD") or os.getenv("DB_PASSWORD", "postgres"),
-    "dbname": os.getenv("TEST_DB_NAME") or f"test_{os.getenv('DB_NAME', 'mapus')}",
+    "dbname": os.getenv("TEST_DB_NAME") or f"test_{os.getenv('DB_NAME', 'apus_mab')}",
 }
 
+_ENV_KEY_MAP = {"host": "DB_HOST", "port": "DB_PORT", "user": "DB_USER", "password": "DB_PASSWORD", "dbname": "DB_NAME"}
 for key, val in TEST_DB_CONFIG.items():
-    env_key = f"DB_{key.upper()}"
-    os.environ.setdefault(env_key, str(val))
-
-os.environ.setdefault("DB_SSLMODE", "disable")
+    # Forzar (no setdefault): los tests NUNCA deben conectarse a la BD del .env.
+    os.environ[_ENV_KEY_MAP[key]] = str(val)
 
 
 def db_available() -> bool:
     """Check if the test database is reachable."""
     try:
-        import psycopg2
-        conn = psycopg2.connect(**TEST_DB_CONFIG, connect_timeout=3)
+        import mysql.connector
+        conn = mysql.connector.connect(host=TEST_DB_CONFIG["host"], port=TEST_DB_CONFIG["port"], user=TEST_DB_CONFIG["user"], password=TEST_DB_CONFIG["password"], database=TEST_DB_CONFIG["dbname"], connect_timeout=3)
         conn.close()
         return True
     except Exception:
@@ -55,7 +54,7 @@ def _init_test_db():
 def test_db():
     """Initialize test database schema once per session."""
     if not db_available():
-        pytest.skip("PostgreSQL test database not available")
+        pytest.skip("MySQL test database not available")
     _init_test_db()
     yield
 
@@ -73,12 +72,12 @@ def seed_data(test_db):
             "entidad": "IDU",
             "contratista": "Constructora Beta",
             "item": "1.1",
-            "items_descripcion": "Excavación manual",
+            "items_descripcion": "Excavacion manual",
             "item_unidad": "M3",
             "precio_unitario": 85000.00,
             "codigo_insumo": "EXC-001",
             "tipo_insumo": "Mano de obra",
-            "insumo_descripcion": "Excavación manual en terreno común",
+            "insumo_descripcion": "Excavacion manual en terreno comun",
             "insumo_unidad": "M3",
             "rendimiento_insumo": 1.00,
             "precio_unitario_apu": 85000.00,
@@ -129,14 +128,18 @@ def seed_data(test_db):
         },
     ]
 
-    columns = list(sample_rows[0].keys())
-    placeholders = ", ".join(f"%({k})s" for k in columns)
-    col_names = ", ".join(columns)
+    # Limpieza previa: si una corrida anterior falló a mitad del setup, el
+    # teardown nunca corrió y quedarían filas que rompen el índice único.
+    execute_query("DELETE FROM apus", fetch=False)
 
+    # Cada fila puede tener columnas distintas: el INSERT se arma por fila.
     for row in sample_rows:
+        columns = list(row.keys())
+        placeholders = ", ".join("%s" for _ in columns)
+        col_names = ", ".join(columns)
         execute_query(
             f"INSERT INTO apus ({col_names}) VALUES ({placeholders})",
-            row,
+            tuple(row.values()),
             fetch=False,
         )
 
@@ -146,9 +149,35 @@ def seed_data(test_db):
 
 
 @pytest.fixture
-def client(seed_data):
-    """FastAPI TestClient with seeded data."""
+def auth_token(test_db):
+    """Crea un usuario admin de prueba y devuelve un JWT válido."""
+    from db_config import execute_query
+    from src.presentation.auth import create_access_token, hash_password
+
+    telefono = "test-admin-000"
+    execute_query("DELETE FROM usuarios WHERE telefono = %s", (telefono,), fetch=False)
+    execute_query(
+        "INSERT INTO usuarios (telefono, nombre, rol, activo, password_hash) VALUES (%s, %s, %s, %s, %s)",
+        (telefono, "Admin Test", "admin", True, hash_password("test-password")),
+        fetch=False,
+    )
+    rows = execute_query("SELECT id, telefono, rol, nombre FROM usuarios WHERE telefono = %s", (telefono,))
+    user = rows[0]
+    token = create_access_token({
+        "sub": str(user["id"]),
+        "telefono": user["telefono"],
+        "rol": user["rol"],
+        "nombre": user["nombre"],
+    })
+    yield token
+    execute_query("DELETE FROM usuarios WHERE telefono = %s", (telefono,), fetch=False)
+
+
+@pytest.fixture
+def client(seed_data, auth_token):
+    """FastAPI TestClient with seeded data and an authenticated admin session."""
     from fastapi.testclient import TestClient
     from main import app
     with TestClient(app) as c:
+        c.headers.update({"Authorization": f"Bearer {auth_token}"})
         yield c

@@ -12,9 +12,13 @@ class Settings(BaseSettings):
     OLLAMA_HOST: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "qwen2.5-coder:7b"
 
-    # Database
+    # Auth
+    JWT_SECRET_KEY: Optional[str] = None
+    JWT_EXPIRE_MINUTES: int = 480
+
+    # Database (MySQL)
     DB_HOST: Optional[str] = None
-    DB_PORT: int = 5432
+    DB_PORT: int = 3306
     DB_NAME: Optional[str] = None
     DB_USER: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
@@ -41,3 +45,6 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if settings.ENV.lower() == "production" and not settings.JWT_SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY es obligatoria en producción. Defínela en el entorno o .env.")

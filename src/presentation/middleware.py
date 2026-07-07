@@ -40,12 +40,35 @@ class RateStore:
 
 _rate_store = RateStore()
 
+# Límites por IP: (clave, máx solicitudes, ventana en segundos).
+# Los endpoints que consumen IA (chat, extracción, análisis) tienen límites
+# más estrictos porque cada llamada cuesta cuota de Gemini.
+_RATE_RULES: list[tuple[str, str, int, float]] = [
+    ("/chat-assistant", "chat", 30, 60),
+    ("/extract-file", "extract", 10, 60),
+    ("/extract-file-async", "extract", 10, 60),
+    ("/save-extracted", "save", 20, 60),
+    ("/analisis-apu/upload", "analisis", 10, 60),
+]
+
+
+def _match_rate_rule(path: str) -> tuple[str, int, float] | None:
+    for suffix, bucket, max_req, window in _RATE_RULES:
+        if path.endswith(suffix):
+            return bucket, max_req, window
+    if path.endswith("/analizar") and "/analisis-apu/" in path:
+        return "analisis", 10, 60
+    return None
+
 
 async def log_and_rate_limit(request: Request, call_next):
     ip = request.client.host if request.client else "unknown"
-    if request.url.path.endswith("/chat-assistant"):
-        if not _rate_store.check(f"chat:{ip}", 30, 60):
-            return JSONResponse(status_code=429, content={"detail": "Demasiadas solicitudes. Espera un momento."})
+    if request.method == "POST":
+        rule = _match_rate_rule(request.url.path)
+        if rule:
+            bucket, max_req, window = rule
+            if not _rate_store.check(f"{bucket}:{ip}", max_req, window):
+                return JSONResponse(status_code=429, content={"detail": "Demasiadas solicitudes. Espera un momento."})
     start = time.time()
     response = await call_next(request)
     elapsed = time.time() - start

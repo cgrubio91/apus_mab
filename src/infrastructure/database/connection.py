@@ -1,35 +1,30 @@
 """
 Infrastructure: Database Connection Pool
-Centralizes PostgreSQL connection logic with production-grade pooling.
+Centralizes MySQL connection logic with production-grade pooling.
 """
 
 import json
 import logging
-import os
 from datetime import datetime, date
 from decimal import Decimal
 
-import psycopg2
-from dotenv import load_dotenv
-from psycopg2.extras import RealDictCursor
-from psycopg2 import pool as pgpool
+import mysql.connector
+from mysql.connector import pooling as mysql_pool
 
-load_dotenv()
+from src.config.settings import settings
 
 log = logging.getLogger("mapus.db")
 
 
 class DatabaseConfig:
     def __init__(self):
-        self.host = os.getenv("DB_HOST")
-        self.port = int(os.getenv("DB_PORT", 5432))
-        self.name = os.getenv("DB_NAME")
-        self.user = os.getenv("DB_USER")
-        self.password = os.getenv("DB_PASSWORD")
-        self.sslmode = os.getenv("DB_SSLMODE", "prefer")
-        self.cloud_sql_connection_name = os.getenv("CLOUD_SQL_CONNECTION_NAME")
-        self.pool_min = int(os.getenv("DB_POOL_MIN", 1))
-        self.pool_max = int(os.getenv("DB_POOL_MAX", 10))
+        self.host = settings.DB_HOST
+        self.port = settings.DB_PORT
+        self.name = settings.DB_NAME
+        self.user = settings.DB_USER
+        self.password = settings.DB_PASSWORD
+        self.pool_min = settings.DB_POOL_MIN
+        self.pool_max = settings.DB_POOL_MAX
 
     def validate(self):
         required = {
@@ -46,20 +41,12 @@ class DatabaseConfig:
             )
 
     def get_connection_params(self):
-        if self.cloud_sql_connection_name:
-            return {
-                "user": self.user,
-                "password": self.password,
-                "dbname": self.name,
-                "host": f"/cloudsql/{self.cloud_sql_connection_name}",
-            }
         return {
             "host": self.host,
             "port": self.port,
-            "dbname": self.name,
+            "database": self.name,
             "user": self.user,
             "password": self.password,
-            "sslmode": self.sslmode,
             "connect_timeout": 30,
         }
 
@@ -85,12 +72,15 @@ def _get_pool():
         db_config.validate()
         params = db_config.get_connection_params()
         try:
-            _connection_pool = pgpool.ThreadedConnectionPool(
-                db_config.pool_min, db_config.pool_max, **params
+            _connection_pool = mysql_pool.MySQLConnectionPool(
+                pool_name="mapus_pool",
+                pool_size=db_config.pool_max,
+                pool_reset_session=True,
+                **params,
             )
             log.info(
-                "Connection pool created (min=%d, max=%d)",
-                db_config.pool_min, db_config.pool_max,
+                "Connection pool created (size=%d)",
+                db_config.pool_max,
             )
         except Exception as e:
             log.error("Failed to create connection pool: %s", e)
@@ -121,7 +111,7 @@ def get_db_connection():
     if _connection_pool is None:
         _get_pool()
     try:
-        return PoolConnection(_get_pool().getconn())
+        return PoolConnection(_get_pool().get_connection())
     except Exception as e:
         log.error("Failed to get connection from pool: %s", e)
         raise
@@ -131,13 +121,8 @@ def put_connection(conn):
     global _connection_pool
     if _connection_pool is not None and conn:
         try:
-            _get_pool().putconn(conn)
-            return
-        except Exception:
-            pass
-    if conn:
-        try:
             conn.close()
+            return
         except Exception:
             pass
 
@@ -146,7 +131,7 @@ def execute_query(query, params=None, fetch=True, dict_cursor=True):
     conn = None
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor if dict_cursor else None)
+        cursor = conn.cursor(dictionary=dict_cursor)
         cursor.execute(query, params)
 
         if fetch:
@@ -172,7 +157,7 @@ def test_connection():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT version();")
+        cursor.execute("SELECT VERSION()")
         version = cursor.fetchone()[0]
         cursor.close()
         put_connection(conn)
@@ -184,6 +169,5 @@ def test_connection():
 def close_pool():
     global _connection_pool
     if _connection_pool is not None:
-        _get_pool().closeall()
         _connection_pool = None
         log.info("Connection pool closed")

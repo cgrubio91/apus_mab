@@ -1,10 +1,16 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from src.infrastructure.database.connection import execute_query
-from src.presentation.auth import create_access_token, verify_password, hash_password
+from src.presentation.auth import (
+    ROLES_HIERARCHY,
+    create_access_token,
+    hash_password,
+    require_role,
+    verify_password,
+)
 
 log = logging.getLogger("mapus.presentation.auth_router")
 router = APIRouter()
@@ -19,7 +25,18 @@ class RegisterRequest(BaseModel):
     telefono: str
     nombre: str
     password: str
+
+
+class AdminCreateUserRequest(BaseModel):
+    telefono: str
+    nombre: str
+    password: str
     rol: str = "user"
+
+
+class AdminUpdateUserRequest(BaseModel):
+    rol: str | None = None
+    activo: bool | None = None
 
 
 @router.post("/auth/login", tags=["Auth"])
@@ -55,20 +72,66 @@ async def login(payload: LoginRequest) -> dict:
     }
 
 
-@router.post("/auth/register", tags=["Auth"])
-async def register(payload: RegisterRequest) -> dict:
-    if len(payload.password) < 6:
+def _crear_usuario(telefono: str, nombre: str, password: str, rol: str) -> None:
+    if len(password) < 6:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
 
-    existing = execute_query("SELECT id FROM usuarios WHERE telefono = %s", (payload.telefono,))
+    existing = execute_query("SELECT id FROM usuarios WHERE telefono = %s", (telefono,))
     if existing:
         raise HTTPException(status_code=409, detail="El teléfono ya está registrado")
 
-    password_hash = hash_password(payload.password)
+    password_hash = hash_password(password)
     execute_query(
         "INSERT INTO usuarios (telefono, nombre, rol, password_hash) VALUES (%s, %s, %s, %s)",
-        (payload.telefono, payload.nombre, payload.rol, password_hash),
+        (telefono, nombre, rol, password_hash),
         fetch=False,
     )
-    log.info("Usuario registrado: %s (%s)", payload.telefono, payload.rol)
+    log.info("Usuario registrado: %s (%s)", telefono, rol)
+
+
+@router.post("/auth/register", tags=["Auth"])
+async def register(payload: RegisterRequest) -> dict:
+    # El registro público siempre crea usuarios con el rol mínimo; los roles
+    # superiores solo se asignan desde los endpoints de administración.
+    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol="user")
     return {"success": True, "mensaje": "Usuario registrado exitosamente"}
+
+
+@router.get("/auth/users", tags=["Auth"])
+async def list_users(_admin: dict = Depends(require_role("admin"))) -> dict:
+    rows = execute_query(
+        "SELECT id, telefono, nombre, rol, activo, fecha_registro FROM usuarios ORDER BY id"
+    )
+    return {"users": rows or []}
+
+
+@router.post("/auth/users", tags=["Auth"])
+async def admin_create_user(
+    payload: AdminCreateUserRequest, _admin: dict = Depends(require_role("admin"))
+) -> dict:
+    if payload.rol not in ROLES_HIERARCHY:
+        raise HTTPException(status_code=400, detail=f"Rol inválido. Roles válidos: {sorted(ROLES_HIERARCHY)}")
+    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol=payload.rol)
+    return {"success": True, "mensaje": "Usuario creado exitosamente"}
+
+
+@router.patch("/auth/users/{user_id}", tags=["Auth"])
+async def admin_update_user(
+    user_id: int, payload: AdminUpdateUserRequest, admin: dict = Depends(require_role("admin"))
+) -> dict:
+    rows = execute_query("SELECT id FROM usuarios WHERE id = %s", (user_id,))
+    if not rows:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if payload.rol is not None:
+        if payload.rol not in ROLES_HIERARCHY:
+            raise HTTPException(status_code=400, detail=f"Rol inválido. Roles válidos: {sorted(ROLES_HIERARCHY)}")
+        execute_query("UPDATE usuarios SET rol = %s WHERE id = %s", (payload.rol, user_id), fetch=False)
+
+    if payload.activo is not None:
+        if user_id == admin.get("id") and not payload.activo:
+            raise HTTPException(status_code=400, detail="No puedes desactivar tu propia cuenta")
+        execute_query("UPDATE usuarios SET activo = %s WHERE id = %s", (payload.activo, user_id), fetch=False)
+
+    log.info("Usuario %s actualizado por admin %s", user_id, admin.get("telefono"))
+    return {"success": True, "mensaje": "Usuario actualizado"}

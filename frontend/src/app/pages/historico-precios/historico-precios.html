@@ -1,0 +1,101 @@
+<div class="historico-container">
+  <header class="page-header">
+    <div>
+      <span class="breadcrumb">MAPUS · WORKSPACE</span>
+      <h1>Histórico de Precios</h1>
+      <p>Evolución mensual del precio de un insumo en el banco de APUs.</p>
+    </div>
+  </header>
+
+  <div class="search-card">
+    <div class="search-fields">
+      <div class="field">
+        <label for="insumo">Insumo</label>
+        <input id="insumo" type="text" [(ngModel)]="insumo" placeholder="Ej: concreto 3000 psi, acero, excavación..."
+               (keyup.enter)="buscar()" />
+      </div>
+      <div class="field">
+        <label for="ciudad">Ciudad (opcional)</label>
+        <select id="ciudad" [(ngModel)]="ciudad">
+          <option value="">Todas</option>
+          <option *ngFor="let c of ciudades" [value]="c">{{ c }}</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="proyecto">Proyecto (opcional)</label>
+        <select id="proyecto" [(ngModel)]="proyecto">
+          <option value="">Todos</option>
+          <option *ngFor="let p of proyectos" [value]="p">{{ p }}</option>
+        </select>
+      </div>
+      <button class="search-btn" (click)="buscar()" [disabled]="isLoading">
+        {{ isLoading ? 'Buscando...' : '🔍 Buscar' }}
+      </button>
+    </div>
+    <div class="error-msg" *ngIf="errorMessage" role="alert">⚠️ {{ errorMessage }}</div>
+  </div>
+
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Consultando histórico...</p>
+  </div>
+
+  <div class="results" *ngIf="!isLoading && buscado">
+    <div class="empty-state" *ngIf="puntos.length === 0">
+      No hay datos de precios para ese insumo con los filtros seleccionados.
+    </div>
+
+    <ng-container *ngIf="puntos.length > 0">
+      <div class="summary-row">
+        <div class="summary-card">
+          <span class="summary-label">PERÍODOS</span>
+          <span class="summary-value">{{ puntos.length }}</span>
+        </div>
+        <div class="summary-card">
+          <span class="summary-label">ÚLTIMO PROMEDIO</span>
+          <span class="summary-value">{{ formatCOP(puntos[puntos.length - 1].precio_promedio) }}</span>
+        </div>
+        <div class="summary-card" *ngIf="variacionTotal() !== null">
+          <span class="summary-label">VARIACIÓN TOTAL</span>
+          <span class="summary-value" [class.up]="variacionTotal()! > 0" [class.down]="variacionTotal()! < 0">
+            {{ variacionTotal()! > 0 ? '▲' : '▼' }} {{ variacionTotal()! | number:'1.1-1' }}%
+          </span>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Precio promedio por mes</h3>
+        <div class="chart">
+          <div class="chart-bar-wrap" *ngFor="let p of puntos; trackBy: trackByPeriodo"
+               [title]="p.periodo + ' · Promedio: ' + formatCOP(p.precio_promedio) + ' · Mín: ' + formatCOP(p.precio_minimo) + ' · Máx: ' + formatCOP(p.precio_maximo) + ' · ' + p.registros + ' registros'">
+            <div class="chart-bar" [style.height.%]="barHeight(p)"></div>
+            <span class="chart-label">{{ p.periodo }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>PERÍODO</th>
+              <th>PROMEDIO</th>
+              <th>MÍNIMO</th>
+              <th>MÁXIMO</th>
+              <th>REGISTROS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let p of puntos; trackBy: trackByPeriodo">
+              <td>{{ p.periodo }}</td>
+              <td>{{ formatCOP(p.precio_promedio) }}</td>
+              <td>{{ formatCOP(p.precio_minimo) }}</td>
+              <td>{{ formatCOP(p.precio_maximo) }}</td>
+              <td>{{ p.registros }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </ng-container>
+  </div>
+</div>

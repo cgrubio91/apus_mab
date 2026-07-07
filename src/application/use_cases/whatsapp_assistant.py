@@ -1,19 +1,26 @@
 import json
 import logging
-import re
 
-from psycopg2.extras import RealDictCursor
-
-from src.infrastructure.database.connection import get_db_connection, execute_query
+from src.application.use_cases.assistant_common import (
+    ejecutar_sql,
+    gemini_generate,
+    guardar_conversacion,  # noqa: F401 — re-exportado para el router de WhatsApp
+    normalize_sql_for_mysql as _normalize_sql_for_mysql,
+    obtener_historial,
+    strip_sql_markdown,
+)
+from src.infrastructure.database.connection import execute_query
 from src.infrastructure.sql_validator import validate_readonly_query
-from src.infrastructure.ai.provider import ai_provider
 
 log = logging.getLogger("mapus.application.whatsapp")
 
+WHATSAPP_SYSTEM_PROMPT = (
+    "Eres un asistente experto en bases de datos MySQL y en análisis de precios unitarios (APU) de obras civiles."
+)
+
 
 def _gemini_generate(prompt: str) -> str:
-    system = "Eres un asistente experto en bases de datos PostgreSQL y en análisis de precios unitarios (APU) de obras civiles."
-    return ai_provider.generate_text(prompt, system=system, timeout=300)
+    return gemini_generate(prompt, system=WHATSAPP_SYSTEM_PROMPT)
 
 
 def usuario_autorizado(telefono: str):
@@ -23,49 +30,6 @@ def usuario_autorizado(telefono: str):
     except Exception as e:
         log.error("Error checking user %s: %s", telefono, e)
         return None
-
-
-def guardar_conversacion(telefono: str, mensaje: str, sql_: str, respuesta: str):
-    try:
-        execute_query(
-            """INSERT INTO historial_conversaciones (telefono, mensaje_usuario, sql_generado, respuesta_bot)
-               VALUES (%s, %s, %s, %s)""",
-            (telefono, mensaje, sql_, respuesta),
-            fetch=False,
-        )
-    except Exception as e:
-        log.error("Failed to store conversation for %s: %s", telefono, e)
-
-
-def obtener_historial(telefono: str, limite: int = 5):
-    try:
-        rows = execute_query(
-            """SELECT mensaje_usuario, sql_generado, respuesta_bot, timestamp
-               FROM historial_conversaciones
-               WHERE telefono = %s ORDER BY timestamp DESC LIMIT %s""",
-            (telefono, limite),
-        )
-        return list(reversed(rows)) if rows else []
-    except Exception as e:
-        log.error("Error retrieving history for %s: %s", telefono, e)
-        return []
-
-
-def ejecutar_sql(query: str) -> list:
-    conn = None
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        cursor.close()
-        return rows
-    except Exception as e:
-        log.error("SQL execution error: %s", e)
-        return [{"error": str(e)}]
-    finally:
-        if conn:
-            conn.close()
 
 
 def process_message(telefono: str, message_body: str, user: dict) -> str:
@@ -79,7 +43,7 @@ def process_message(telefono: str, message_body: str, user: dict) -> str:
                 ctx += f"SQL: {c['sql_generado'][:100]}...\n"
         ctx += "\nUsa el contexto para referencias.\n"
 
-    prompt_sql = f"""Actúa como un experto en PostgreSQL y APUs.
+    prompt_sql = f"""Actúa como un experto en MySQL y APUs.
 
 Tabla: apus
 CADA FILA = un insumo. Un mismo ítem APU aparece en VARIAS filas.
@@ -94,19 +58,21 @@ Columnas:
 - contratista, nombre_proyecto, numero_contrato
 - observacion, link_documento
 
-REGLAS:
-1. Siempre ILIKE con % (nunca = para textos).
+REGLAS (MySQL 8.0):
+1. Siempre LIKE con %.
 2. Mapea lenguaje natural a columnas.
 3. Si pide "precio" o "valor unitario" del ítem, usa precio_unitario.
-4. Si lista ítems, usa DISTINCT ON (item, nombre_proyecto) para evitar duplicados.
+4. Para listar ítems sin duplicados usa SELECT DISTINCT.
 5. LIMIT 20 salvo que pida otra cantidad.
 6. Solo SELECT. Sin Markdown. Sin ```sql```.
-7. Para desglose de insumos, usa DISTINCT ON (item, codigo_insumo) o GROUP BY para evitar duplicados del mismo insumo.
+7. Para desglose de insumos usa GROUP BY.
+8. Esta es MySQL 8.0. Usa LIKE, DISTINCT (sin ON), y CAST() si es necesario.
 {ctx}
 Usuario: "{message_body}"
 SQL:"""
     sql_query = _gemini_generate(prompt_sql)
-    sql_query = re.sub(r"```sql|```", "", sql_query).strip()
+    sql_query = strip_sql_markdown(sql_query)
+    sql_query = _normalize_sql_for_mysql(sql_query)
     log.info("WhatsApp SQL: %s", sql_query[:200])
 
     is_valid, validated_sql = validate_readonly_query(sql_query)

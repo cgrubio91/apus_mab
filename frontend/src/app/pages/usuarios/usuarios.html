@@ -1,0 +1,97 @@
+<div class="usuarios-container">
+  <header class="page-header">
+    <div>
+      <span class="breadcrumb">MAPUS · ADMINISTRACIÓN</span>
+      <h1>Gestión de Usuarios</h1>
+      <p>Crea usuarios, asigna roles del flujo de aprobación y activa o desactiva cuentas.</p>
+    </div>
+    <button class="primary-btn" (click)="showCreateForm = !showCreateForm">
+      {{ showCreateForm ? 'Cancelar' : '➕ Nuevo usuario' }}
+    </button>
+  </header>
+
+  <div class="alert error" *ngIf="errorMessage" role="alert">
+    ⚠️ {{ errorMessage }}
+    <button class="alert-close" (click)="errorMessage = ''">✕</button>
+  </div>
+  <div class="alert success" *ngIf="successMessage" role="status">
+    ✅ {{ successMessage }}
+    <button class="alert-close" (click)="successMessage = ''">✕</button>
+  </div>
+
+  <div class="create-card" *ngIf="showCreateForm">
+    <h3>Nuevo usuario</h3>
+    <div class="create-fields">
+      <div class="field">
+        <label for="nuevo-telefono">Teléfono / usuario</label>
+        <input id="nuevo-telefono" type="text" [(ngModel)]="nuevo.telefono" placeholder="Ej: +573001234567" />
+      </div>
+      <div class="field">
+        <label for="nuevo-nombre">Nombre</label>
+        <input id="nuevo-nombre" type="text" [(ngModel)]="nuevo.nombre" placeholder="Nombre completo" />
+      </div>
+      <div class="field">
+        <label for="nuevo-password">Contraseña</label>
+        <input id="nuevo-password" type="password" [(ngModel)]="nuevo.password" placeholder="Mínimo 6 caracteres" />
+      </div>
+      <div class="field">
+        <label for="nuevo-rol">Rol</label>
+        <select id="nuevo-rol" [(ngModel)]="nuevo.rol">
+          <option *ngFor="let r of roles" [value]="r">{{ r }}</option>
+        </select>
+      </div>
+      <button class="primary-btn" (click)="crear()" [disabled]="creando">
+        {{ creando ? 'Creando...' : 'Crear usuario' }}
+      </button>
+    </div>
+  </div>
+
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Cargando usuarios...</p>
+  </div>
+
+  <div class="table-card" *ngIf="!isLoading && usuarios.length > 0">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>NOMBRE</th>
+          <th>TELÉFONO</th>
+          <th>ROL</th>
+          <th>ESTADO</th>
+          <th>REGISTRO</th>
+          <th>ACCIONES</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let u of usuarios; trackBy: trackById" [class.inactive]="!u.activo">
+          <td>{{ u.id }}</td>
+          <td>{{ u.nombre }}</td>
+          <td>{{ u.telefono }}</td>
+          <td>
+            <select [ngModel]="u.rol" (ngModelChange)="cambiarRol(u, $event)" [disabled]="u.id === currentUserId">
+              <option *ngFor="let r of roles" [value]="r">{{ r }}</option>
+            </select>
+          </td>
+          <td>
+            <span class="badge" [class.badge-success]="u.activo" [class.badge-danger]="!u.activo">
+              {{ u.activo ? 'Activo' : 'Inactivo' }}
+            </span>
+          </td>
+          <td>{{ u.fecha_registro | date:'dd/MM/yyyy' }}</td>
+          <td>
+            <button class="toggle-btn" (click)="toggleActivo(u)" [disabled]="u.id === currentUserId"
+                    [title]="u.id === currentUserId ? 'No puedes desactivar tu propia cuenta' : ''">
+              {{ u.activo ? 'Desactivar' : 'Activar' }}
+            </button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="empty-state" *ngIf="!isLoading && usuarios.length === 0 && !errorMessage">
+    No hay usuarios registrados.
+  </div>
+</div>

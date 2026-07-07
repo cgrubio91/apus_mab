@@ -21,7 +21,11 @@ DANGEROUS_FUNCTIONS = re.compile(
     r"pg_get_keywords|current_setting|set_config|"
     r"lo_import|lo_export|copy|pg_terminate_backend|"
     r"pg_cancel_backend|dblink|pg_write_file|"
-    r"pg_execute|xp_cmdshell|exec|execute\s*\()",
+    r"pg_execute|xp_cmdshell|exec|execute\s*\(|"
+    r"sleep|benchmark|load_file|sys_exec|sys_eval|"
+    r"get_lock|release_lock|master_pos_wait|"
+    r"mysql_udf|into\s+(dump|out)file|"
+    r"information_schema\.|mysql\.|performance_schema\.)",
     re.IGNORECASE,
 )
 

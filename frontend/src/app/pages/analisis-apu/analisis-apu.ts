@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, NgZone, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Observable } from 'rxjs';
 import { ApuService } from '../../services/apu';
 import { AuthService } from '../../services/auth.service';
 
@@ -100,6 +101,7 @@ export class AnalisisApu implements OnInit {
 
   rechazoMotivo = '';
   showRechazoForm = false;
+  exportando = false;
 
   auth = inject(AuthService);
 
@@ -243,19 +245,31 @@ export class AnalisisApu implements OnInit {
     });
   }
 
-  analizarManual(id: number): void {
+  /**
+   * Ejecuta una acción del flujo de aprobación con el manejo común de
+   * loading, mensajes, recarga del detalle y detección de cambios.
+   */
+  private runWorkflowAction(
+    id: number,
+    action: () => Observable<any>,
+    errorFallback: string,
+    opts: { reloadList?: boolean; successMsg?: string; onSuccess?: () => void } = {},
+  ): void {
+    const { reloadList = true, successMsg, onSuccess } = opts;
     this.loading = true;
-    this.apuService.analizarSolicitud(id).subscribe({
+    action().subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
-          this.successMsg = 'Análisis completado';
+          this.successMsg = successMsg || res.mensaje;
           this.loading = false;
+          onSuccess?.();
           this._loadSolicitudDetail(id);
+          if (reloadList) this.loadSolicitudes();
         });
       },
       error: (err) => {
         this.ngZone.run(() => {
-          this.error = 'Error en análisis';
+          this.error = err.error?.detail || errorFallback;
           this.loading = false;
           this.cdr.detectChanges();
         });
@@ -263,25 +277,15 @@ export class AnalisisApu implements OnInit {
     });
   }
 
-  preaprobar(id: number): void {
-    this.loading = true;
-    this.apuService.preaprobarApu(id).subscribe({
-      next: (res: any) => {
-        this.ngZone.run(() => {
-          this.successMsg = res.mensaje;
-          this.loading = false;
-          this._loadSolicitudDetail(id);
-          this.loadSolicitudes();
-        });
-      },
-      error: (err) => {
-        this.ngZone.run(() => {
-          this.error = err.error?.detail || 'Error en preaprobación';
-          this.loading = false;
-          this.cdr.detectChanges();
-        });
-      },
+  analizarManual(id: number): void {
+    this.runWorkflowAction(id, () => this.apuService.analizarSolicitud(id), 'Error en análisis', {
+      reloadList: false,
+      successMsg: 'Análisis completado',
     });
+  }
+
+  preaprobar(id: number): void {
+    this.runWorkflowAction(id, () => this.apuService.preaprobarApu(id), 'Error en preaprobación');
   }
 
   rechazar(id: number): void {
@@ -289,89 +293,37 @@ export class AnalisisApu implements OnInit {
       this.error = 'Complete el motivo del rechazo';
       return;
     }
-    this.loading = true;
-    this.apuService.rechazarApu(id, this.rechazoMotivo).subscribe({
-      next: (res: any) => {
-        this.ngZone.run(() => {
-          this.successMsg = res.mensaje;
-          this.loading = false;
-          this.showRechazoForm = false;
-          this.rechazoMotivo = '';
-          this._loadSolicitudDetail(id);
-          this.loadSolicitudes();
-        });
-      },
-      error: (err) => {
-        this.ngZone.run(() => {
-          this.error = err.error?.detail || 'Error al rechazar';
-          this.loading = false;
-          this.cdr.detectChanges();
-        });
+    this.runWorkflowAction(id, () => this.apuService.rechazarApu(id, this.rechazoMotivo), 'Error al rechazar', {
+      onSuccess: () => {
+        this.showRechazoForm = false;
+        this.rechazoMotivo = '';
       },
     });
   }
 
   nuevasCotizaciones(id: number): void {
-    this.loading = true;
-    this.apuService.nuevasCotizaciones(id).subscribe({
-      next: (res: any) => {
-        this.ngZone.run(() => {
-          this.successMsg = res.mensaje;
-          this.loading = false;
-          this._loadSolicitudDetail(id);
-          this.loadSolicitudes();
-        });
-      },
-      error: (err) => {
-        this.ngZone.run(() => {
-          this.error = err.error?.detail || 'Error al registrar';
-          this.loading = false;
-          this.cdr.detectChanges();
-        });
-      },
-    });
+    this.runWorkflowAction(id, () => this.apuService.nuevasCotizaciones(id), 'Error al registrar');
   }
 
   aprobarSubgerente(id: number): void {
-    this.loading = true;
-    this.apuService.aprobarSubgerente(id).subscribe({
-      next: (res: any) => {
-        this.ngZone.run(() => {
-          this.successMsg = res.mensaje;
-          this.loading = false;
-          this._loadSolicitudDetail(id);
-          this.loadSolicitudes();
-        });
-      },
-      error: (err) => {
-        this.ngZone.run(() => {
-          this.error = err.error?.detail || 'Error en aprobación';
-          this.loading = false;
-          this.cdr.detectChanges();
-        });
-      },
-    });
+    this.runWorkflowAction(id, () => this.apuService.aprobarSubgerente(id), 'Error en aprobación');
   }
 
   firmarLegal(id: number): void {
-    this.loading = true;
-    this.apuService.firmarLegal(id).subscribe({
-      next: (res: any) => {
-        this.ngZone.run(() => {
-          this.successMsg = res.mensaje;
-          this.loading = false;
-          this._loadSolicitudDetail(id);
-          this.loadSolicitudes();
-        });
-      },
-      error: (err) => {
-        this.ngZone.run(() => {
-          this.error = err.error?.detail || 'Error en firma legal';
-          this.loading = false;
-          this.cdr.detectChanges();
-        });
-      },
-    });
+    this.runWorkflowAction(id, () => this.apuService.firmarLegal(id), 'Error en firma legal');
+  }
+
+  async exportarAnalisis(id: number): Promise<void> {
+    this.exportando = true;
+    this.error = null;
+    try {
+      await this.apuService.exportAnalisis(id);
+    } catch {
+      this.error = 'No se pudo exportar el análisis.';
+    } finally {
+      this.exportando = false;
+      this.cdr.detectChanges();
+    }
   }
 
   estadoBadgeClass(estado: string): string {

@@ -31,16 +31,17 @@ jobs:
     needs: lint
 
     services:
-      postgres:
-        image: postgres:16-alpine
+      mysql:
+        image: mysql:8.0
         env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_mapus
+          MYSQL_ROOT_PASSWORD: postgres
+          MYSQL_DATABASE: test_apus_mab
+          MYSQL_USER: postgres
+          MYSQL_PASSWORD: postgres
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "mysqladmin ping -h localhost"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -67,9 +68,8 @@ jobs:
       - name: Run tests
         env:
           TEST_DB_HOST: localhost
-          TEST_DB_PORT: 5432
-          TEST_DB_NAME: test_mapus
+          TEST_DB_PORT: 3306
+          TEST_DB_NAME: test_apus_mab
           TEST_DB_USER: postgres
           TEST_DB_PASSWORD: postgres
-          TEST_DB_SSLMODE: disable
         run: pytest tests/ -v --timeout=30

@@ -177,3 +177,133 @@
   70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
+// ── Notificaciones ─────────────────────────────────────────────
+.notif-item {
+  position: relative;
+}
+
+.notif-btn {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.notif-badge {
+  position: absolute;
+  top: 4px;
+  left: 26px;
+  background: #e53935;
+  color: #fff;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.notif-panel {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  width: 340px;
+  max-height: 420px;
+  background: #fff;
+  color: #263238;
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.notif-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+
+  .notif-mark-all {
+    background: none;
+    border: none;
+    color: #1565c0;
+    cursor: pointer;
+    font-size: 12px;
+  }
+}
+
+.notif-list {
+  overflow-y: auto;
+}
+
+.notif-empty {
+  padding: 24px 14px;
+  text-align: center;
+  color: #90a4ae;
+  font-size: 13px;
+}
+
+.notif-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-bottom: 1px solid #f2f2f2;
+  padding: 10px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+
+  &:hover {
+    background: #f5f8fa;
+  }
+
+  &.unread {
+    background: #eef4fb;
+  }
+
+  .notif-titulo {
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .notif-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #e53935;
+    flex-shrink: 0;
+  }
+
+  .notif-mensaje {
+    font-size: 12px;
+    color: #546e7a;
+  }
+
+  .notif-fecha {
+    font-size: 11px;
+    color: #90a4ae;
+  }
+}

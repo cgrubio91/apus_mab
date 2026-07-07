@@ -36,7 +36,7 @@ def format_date(value) -> str | None:
     if isinstance(value, datetime):
         return value.strftime("%Y-%m-%d")
     s = str(value).strip()
-    if not s or s in ("–", "—", "-", "", "N/A", "n/a"):
+    if not s or s in ("–", "—", "-", "", "N/A", "n/a") or s.lower() == "null":
         return None
     for fmt in [
         "%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%m-%Y", "%m-%d-%Y",
@@ -47,7 +47,7 @@ def format_date(value) -> str | None:
             return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
         except (ValueError, TypeError):
             continue
-    return s
+    return None
 
 
 def clean_numeric_value(value) -> float | None:
@@ -60,4 +60,6 @@ def clean_text_field(value) -> str | None:
     s = str(value).strip()
     s = unicodedata.normalize("NFKC", s)
     s = re.sub(r"\s+", " ", s)
-    return s if s else None
+    if not s or s.lower() == "null":
+        return None
+    return s

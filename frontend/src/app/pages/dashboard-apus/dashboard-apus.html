@@ -18,6 +18,13 @@
     <p>Cargando panel de control...</p>
   </div>
 
+  <!-- Error State -->
+  <div class="error-banner" *ngIf="!isLoading && errorMessage" role="alert"
+       style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+    <span>⚠️ {{ errorMessage }}</span>
+    <button (click)="loadStats()" style="background:none;border:1px solid #b71c1c;color:#b71c1c;border-radius:6px;padding:4px 12px;cursor:pointer;">Reintentar</button>
+  </div>
+
   <div class="dashboard-content animate-fade-in" *ngIf="!isLoading">
     <!-- Stats Grid -->
     <div class="stats-grid">

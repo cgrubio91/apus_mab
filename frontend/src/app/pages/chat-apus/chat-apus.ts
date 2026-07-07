@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { ApuService } from '../../services/apu';
+import { sanitizeChatHtml } from '../../services/html-sanitizer';
 
 interface ChatStage {
   phase: string;
@@ -12,6 +13,7 @@ interface ChatStage {
 interface ChatMessage {
   text: string;
   html?: SafeHtml;
+  htmlRaw?: string;
   isUser: boolean;
   timestamp: Date;
   sqlQuery?: string;
@@ -68,11 +70,15 @@ export class ChatApus implements AfterViewChecked {
       const saved = sessionStorage.getItem(ChatApus.STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        this.messages = parsed.map((m: any) => ({
-          ...m,
-          timestamp: new Date(m.timestamp),
-          html: m.html ? this.sanitizer.bypassSecurityTrustHtml(m.html) : undefined,
-        }));
+        this.messages = parsed.map((m: any) => {
+          const htmlRaw = m.htmlRaw ? sanitizeChatHtml(m.htmlRaw) : undefined;
+          return {
+            ...m,
+            timestamp: new Date(m.timestamp),
+            htmlRaw,
+            html: htmlRaw ? this.sanitizer.bypassSecurityTrustHtml(htmlRaw) : undefined,
+          };
+        });
       }
     } catch { }
     if (this.messages.length === 0) {
@@ -88,7 +94,7 @@ export class ChatApus implements AfterViewChecked {
     try {
       const toSave = this.messages.slice(-50).map(m => ({
         text: m.text,
-        html: m.html ? String(m.html) : undefined,
+        htmlRaw: m.htmlRaw,
         isUser: m.isUser,
         timestamp: m.timestamp,
         sqlQuery: m.sqlQuery,
@@ -101,9 +107,10 @@ export class ChatApus implements AfterViewChecked {
     } catch { }
   }
 
-  private processText(text: string): { text: string; html?: SafeHtml } {
+  private processText(text: string): { text: string; html?: SafeHtml; htmlRaw?: string } {
     if (text.includes('<table') || text.includes('<tr') || text.includes('<td')) {
-      return { text, html: this.sanitizer.bypassSecurityTrustHtml(text) };
+      const clean = sanitizeChatHtml(text);
+      return { text, html: this.sanitizer.bypassSecurityTrustHtml(clean), htmlRaw: clean };
     }
     return { text };
   }
@@ -149,6 +156,7 @@ export class ChatApus implements AfterViewChecked {
         const msg: ChatMessage = {
           text: processed.text,
           html: processed.html,
+          htmlRaw: processed.htmlRaw,
           isUser: false,
           timestamp: new Date(),
           sqlQuery: res.sql_query || undefined,

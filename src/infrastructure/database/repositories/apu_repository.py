@@ -1,15 +1,15 @@
 """
-Infrastructure: APU Repository Implementation (PostgreSQL)
+Infrastructure: APU Repository Implementation (MySQL)
 Bulk insert, query, filter, delete — all db interactions for APU records.
 """
 
 import logging
+import re
 import unicodedata
 from decimal import Decimal
 from typing import List, Dict, Any, Tuple, Optional
-from psycopg2 import DatabaseError
-from psycopg2.extras import execute_values, RealDictCursor
-from psycopg2.sql import SQL, Identifier
+
+import mysql.connector
 
 from src.infrastructure.database.connection import get_db_connection
 
@@ -19,15 +19,51 @@ MAX_ERRORS_RETAINED = 100
 BULK_PAGE_SIZE = 500
 STREAM_BATCH_SIZE = 200
 
+TIPO_INSUMO_MAP = {
+    "equipo": "Equipos",
+    "i. equipo": "Equipos",
+    "herramienta": "Herramienta",
+    "herramienta menor": "Herramienta",
+    "material": "Materiales",
+    "materiales": "Materiales",
+    "ii. materiales": "Materiales",
+    "mano de obra": "Mano de obra",
+    "iv. mano de obra": "Mano de obra",
+    "transporte": "Transporte",
+    "transportes": "Transporte",
+    "iii. transportes": "Transporte",
+    "indirecto": "Indirectos",
+    "indirectos": "Indirectos",
+    "administracion": "Indirectos",
+    "aiu": "Indirectos",
+    "costo directo": "Indirectos",
+    "costos indirectos": "Indirectos",
+    "directo": "Indirectos",
+    "imprevistos": "Indirectos",
+    "utilidad": "Indirectos",
+    "v. costos indirectos": "Indirectos",
+}
 
-def _std_field(item: Dict[str, Any], field_name: str, is_numeric: bool = False) -> Any:
+
+def _normalize_tipo_insumo(val: str | None) -> str | None:
+    if val is None:
+        return None
+    key = val.strip().lower()
+    key = unicodedata.normalize("NFKC", key)
+    return TIPO_INSUMO_MAP.get(key, val)
+
+
+def _std_field(item: Dict[str, Any], field_name: str, is_numeric: bool = False, is_date: bool = False) -> Any:
     val = item.get(field_name)
     if val in ("–", "—", "-", "", None):
         return None
     if isinstance(val, str):
         val = unicodedata.normalize("NFKC", val).strip()
-        if val in ("–", "—", "-", ""):
+        if val in ("–", "—", "-", "", ".") or val.lower() in ("null", "none"):
             return None
+        if is_date:
+            if not re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+                return None
     if is_numeric and val is not None:
         try:
             return Decimal(str(val))
@@ -36,7 +72,7 @@ def _std_field(item: Dict[str, Any], field_name: str, is_numeric: bool = False) 
     return val
 
 
-class ApuPostgresRepository:
+class ApuMySQLRepository:
 
     _allowed_sort_fields = {
         "id", "nombre_proyecto", "ciudad", "precio_unitario",
@@ -53,7 +89,7 @@ class ApuPostgresRepository:
             return {"status": "success", "count": 0, "duplicates": 0, "errors": []}
 
         sql = """
-            INSERT INTO apus (
+            INSERT IGNORE INTO apus (
                 fecha_aprobacion_apu, fecha_analisis_apu,
                 ciudad, pais, entidad, contratista, nombre_proyecto,
                 numero_contrato, item, items_descripcion, item_unidad,
@@ -63,15 +99,15 @@ class ApuPostgresRepository:
                 precio_unitario_apu, precio_parcial_apu,
                 observacion, link_documento
             )
-            VALUES %s
-            RETURNING 1;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
 
         tuple_data = []
         for item in apus_list:
             row = (
-                _std_field(item, "fecha_aprobacion_apu"),
-                _std_field(item, "fecha_analisis_apu"),
+                _std_field(item, "fecha_aprobacion_apu", is_date=True),
+                _std_field(item, "fecha_analisis_apu", is_date=True),
                 _std_field(item, "ciudad"),
                 _std_field(item, "pais"),
                 _std_field(item, "entidad"),
@@ -84,7 +120,7 @@ class ApuPostgresRepository:
                 _std_field(item, "precio_unitario", is_numeric=True),
                 _std_field(item, "precio_unitario_sin_aiu", is_numeric=True),
                 _std_field(item, "codigo_insumo"),
-                _std_field(item, "tipo_insumo"),
+                _normalize_tipo_insumo(_std_field(item, "tipo_insumo")),
                 _std_field(item, "insumo_descripcion"),
                 _std_field(item, "insumo_unidad"),
                 _std_field(item, "rendimiento_insumo", is_numeric=True),
@@ -100,15 +136,16 @@ class ApuPostgresRepository:
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
-                    execute_values(cursor, sql, tuple_data, page_size=BULK_PAGE_SIZE)
-                    inserted_count = len(cursor.fetchall())
+                    cursor.executemany(sql, tuple_data)
+                    conn.commit()
+                    inserted_count = cursor.rowcount
                     return {
                         "status": "success",
                         "count": inserted_count,
                         "duplicates": total_requested - inserted_count,
                         "errors": [],
                     }
-        except DatabaseError as e:
+        except mysql.connector.Error as e:
             return self._fallback_insert(apus_list, e)
 
     def _fallback_insert(self, apus_list: list, original_error: Exception) -> dict:
@@ -116,11 +153,8 @@ class ApuPostgresRepository:
         log.warning("Fallback to row-by-row insert: %s", error_msg)
         inserted_count = 0
         db_errors = [error_msg]
-        use_conflict = True
-        if "no unique or exclusion constraint matching the ON CONFLICT specification" in str(original_error).lower():
-            use_conflict = False
         single_sql = """
-            INSERT INTO apus (
+            INSERT IGNORE INTO apus (
                 fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad, contratista,
                 nombre_proyecto, numero_contrato, item, items_descripcion, item_unidad,
                 precio_unitario, precio_unitario_sin_aiu, codigo_insumo, tipo_insumo,
@@ -129,18 +163,13 @@ class ApuPostgresRepository:
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        if use_conflict:
-            single_sql += """
-                ON CONFLICT (numero_contrato, item, codigo_insumo, link_documento)
-                DO NOTHING
-            """
         try:
             with get_db_connection() as conn:
                 with conn.cursor() as cursor:
                     for item in apus_list:
                         row = (
-                            _std_field(item, "fecha_aprobacion_apu"),
-                            _std_field(item, "fecha_analisis_apu"),
+                            _std_field(item, "fecha_aprobacion_apu", is_date=True),
+                            _std_field(item, "fecha_analisis_apu", is_date=True),
                             _std_field(item, "ciudad"),
                             _std_field(item, "pais"),
                             _std_field(item, "entidad"),
@@ -164,14 +193,15 @@ class ApuPostgresRepository:
                         )
                         try:
                             cursor.execute(single_sql, row)
+                            conn.commit()
                             if cursor.rowcount and cursor.rowcount > 0:
                                 inserted_count += 1
-                        except DatabaseError as row_err:
+                        except mysql.connector.Error as row_err:
+                            conn.rollback()
                             if len(db_errors) < MAX_ERRORS_RETAINED:
                                 db_errors.append(str(row_err))
-                    conn.commit()
             return {"status": "success", "count": inserted_count, "duplicates": len(apus_list) - inserted_count, "errors": db_errors[1:]}
-        except DatabaseError as fallback_err:
+        except mysql.connector.Error as fallback_err:
             log.exception("Fallback insert also failed")
             return {"status": "error", "count": inserted_count, "duplicates": 0, "errors": db_errors + [str(fallback_err)]}
 
@@ -212,16 +242,16 @@ class ApuPostgresRepository:
         for field in text_filters:
             value = filters.get(field)
             if value:
-                where_clauses.append(f"{field} ILIKE %s")
+                where_clauses.append(f"{field} LIKE %s")
                 params.append(f"%{str(value).strip()}%")
 
         if search:
             search_value = f"%{search.strip()}%"
             search_clause = (
-                "(nombre_proyecto ILIKE %s OR "
-                "items_descripcion ILIKE %s OR "
-                "insumo_descripcion ILIKE %s OR "
-                "contratista ILIKE %s)"
+                "(nombre_proyecto LIKE %s OR "
+                "items_descripcion LIKE %s OR "
+                "insumo_descripcion LIKE %s OR "
+                "contratista LIKE %s)"
             )
             where_clauses.append(search_clause)
             params.extend([search_value] * 4)
@@ -239,12 +269,12 @@ class ApuPostgresRepository:
 
         try:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                    count_query = f"SELECT COUNT(*) FROM apus {where_str}"
+                with conn.cursor(dictionary=True) as cursor:
+                    count_query = f"SELECT COUNT(*) as total FROM apus {where_str}"
                     cursor.execute(count_query, params)
-                    total = cursor.fetchone()['count']
+                    total = cursor.fetchone()['total']
 
-                    query = SQL("""
+                    query = f"""
                         SELECT fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad,
                                contratista, nombre_proyecto, numero_contrato, item, items_descripcion,
                                item_unidad, precio_unitario, precio_unitario_sin_aiu, codigo_insumo,
@@ -254,11 +284,7 @@ class ApuPostgresRepository:
                         {where_str}
                         ORDER BY {sort_column} {order_direction}
                         LIMIT %s OFFSET %s
-                    """).format(
-                        where_str=SQL(where_str) if where_str else SQL(''),
-                        sort_column=Identifier(sort_column),
-                        order_direction=SQL(order_direction),
-                    )
+                    """
                     cursor.execute(query, params + [limit, offset])
                     results = cursor.fetchall()
 
@@ -270,7 +296,7 @@ class ApuPostgresRepository:
                         "offset": offset,
                         "data": results,
                     }
-        except DatabaseError:
+        except mysql.connector.Error:
             log.exception("Database error in get_apus")
             raise
 
@@ -278,10 +304,10 @@ class ApuPostgresRepository:
         query = "SELECT DISTINCT nombre_proyecto FROM apus WHERE nombre_proyecto IS NOT NULL ORDER BY nombre_proyecto"
         try:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(query)
                     return [r['nombre_proyecto'] for r in cursor.fetchall()]
-        except DatabaseError:
+        except mysql.connector.Error:
             log.exception("Database error in get_unique_projects")
             raise
 
@@ -291,9 +317,11 @@ class ApuPostgresRepository:
                 COUNT(*) as total_apus,
                 COUNT(DISTINCT nombre_proyecto) as total_projects,
                 COUNT(DISTINCT ciudad) as total_cities,
-                SUM(CASE WHEN item IS NOT NULL AND items_descripcion IS NOT NULL
-                         AND codigo_insumo IS NOT NULL AND precio_unitario IS NOT NULL
-                    THEN 1 ELSE 0 END)::float / NULLIF(COUNT(*), 0) * 100 as completitud_datos
+                CAST(
+                    SUM(CASE WHEN item IS NOT NULL AND items_descripcion IS NOT NULL
+                             AND codigo_insumo IS NOT NULL AND precio_unitario IS NOT NULL
+                        THEN 1 ELSE 0 END) AS DECIMAL(30,10)
+                ) / NULLIF(COUNT(*), 0) * 100 as completitud_datos
             FROM apus
         """
         breakdown_query = """
@@ -302,7 +330,7 @@ class ApuPostgresRepository:
         """
         try:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(summary_query)
                     summary = cursor.fetchone() or {}
                     cursor.execute(breakdown_query)
@@ -312,37 +340,39 @@ class ApuPostgresRepository:
                         'total_apus': summary.get('total_apus', 0),
                         'total_projects': summary.get('total_projects', 0),
                         'total_cities': summary.get('total_cities', 0),
-                        'completitud_datos': round(summary.get('completitud_datos') or 0.0, 1),
+                        'completitud_datos': round(float(summary.get('completitud_datos') or 0.0), 1),
                         'apus_por_tipo_insumo': breakdown,
                     }
-        except DatabaseError:
+        except mysql.connector.Error:
             log.exception("Database error in get_dashboard_stats")
             raise
 
     def get_filter_options(self) -> dict[str, list[str]]:
         query = """
             SELECT
-                COALESCE(json_agg(DISTINCT ciudad) FILTER (WHERE ciudad IS NOT NULL), '[]') as ciudad,
-                COALESCE(json_agg(DISTINCT entidad) FILTER (WHERE entidad IS NOT NULL), '[]') as entidad,
-                COALESCE(json_agg(DISTINCT contratista) FILTER (WHERE contratista IS NOT NULL), '[]') as contratista,
-                COALESCE(json_agg(DISTINCT tipo_insumo) FILTER (WHERE tipo_insumo IS NOT NULL), '[]') as tipo_insumo,
-                COALESCE(json_agg(DISTINCT pais) FILTER (WHERE pais IS NOT NULL), '[]') as pais
+                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT ciudad), ''), '[]') as ciudad,
+                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT entidad), ''), '[]') as entidad,
+                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT contratista), ''), '[]') as contratista,
+                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT tipo_insumo), ''), '[]') as tipo_insumo,
+                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT pais), ''), '[]') as pais
             FROM apus;
         """
         try:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(query)
                     row = cursor.fetchone()
+                    if not row:
+                        return {"ciudad": [], "entidad": [], "contratista": [], "tipo_insumo": [], "pais": []}
                     options = {
-                        "ciudad": sorted(row["ciudad"]) if row else [],
-                        "entidad": sorted(row["entidad"]) if row else [],
-                        "contratista": sorted(row["contratista"]) if row else [],
-                        "tipo_insumo": sorted(row["tipo_insumo"]) if row else [],
-                        "pais": sorted(row["pais"]) if row else [],
+                        "ciudad": sorted(row["ciudad"].split(",")) if row["ciudad"] != "[]" else [],
+                        "entidad": sorted(row["entidad"].split(",")) if row["entidad"] != "[]" else [],
+                        "contratista": sorted(row["contratista"].split(",")) if row["contratista"] != "[]" else [],
+                        "tipo_insumo": sorted(row["tipo_insumo"].split(",")) if row["tipo_insumo"] != "[]" else [],
+                        "pais": sorted(row["pais"].split(",")) if row["pais"] != "[]" else [],
                     }
                     return options
-        except DatabaseError:
+        except mysql.connector.Error:
             log.exception("Database error in get_filter_options")
             raise
 
@@ -354,12 +384,12 @@ class ApuPostgresRepository:
                     count = cursor.rowcount
                     conn.commit()
                     return {"success": True, "deleted": count, "message": f"Se eliminaron {count} APUs de {nombre_proyecto}."}
-        except DatabaseError:
+        except mysql.connector.Error:
             log.exception("Database error deleting project: %s", nombre_proyecto)
             raise
 
 
-apu_repo = ApuPostgresRepository()
+apu_repo = ApuMySQLRepository()
 
 # Module-level convenience functions
 def insert_apus_batch(apus_list): return apu_repo.insert_apus_batch(apus_list)

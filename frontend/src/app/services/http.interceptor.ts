@@ -1,4 +1,5 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import {
   HttpInterceptor,
   HttpRequest,
@@ -8,14 +9,17 @@ import {
 } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { timeout, catchError } from 'rxjs/operators';
+import { clearStoredSession, getStoredToken } from './auth.storage';
 
 @Injectable()
 export class ExtendedTimeoutInterceptor implements HttpInterceptor {
+  private router = inject(Router);
+
   intercept(
     request: HttpRequest<any>,
     next: HttpHandler,
   ): Observable<HttpEvent<any>> {
-    const token = localStorage.getItem('mapus_token');
+    const token = getStoredToken();
     let req = request;
 
     if (token) {
@@ -33,9 +37,8 @@ export class ExtendedTimeoutInterceptor implements HttpInterceptor {
       timeout(timeoutMs),
       catchError((err: HttpErrorResponse) => {
         if (err.status === 401 && token) {
-          localStorage.removeItem('mapus_token');
-          localStorage.removeItem('mapus_user');
-          window.location.href = '/login';
+          clearStoredSession();
+          this.router.navigate(['/login']);
         }
         return throwError(() => err);
       }),

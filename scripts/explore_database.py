@@ -1,10 +1,9 @@
 """
 📋 Database Explorer Script
-Interactive tool to explore PostgreSQL database tables and content
+Interactive tool to explore MySQL database tables and content
 """
 
 from db_config import get_db_connection, execute_query
-from psycopg2.extras import RealDictCursor
 import json
 from datetime import datetime
 

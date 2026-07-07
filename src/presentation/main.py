@@ -34,7 +34,13 @@ log = logging.getLogger("mapus")
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 if CORS_ORIGINS == ["*"] and os.getenv("ENV", "").lower() == "production":
-    log.warning("CORS configurado como '*' en producción. Esto NO es seguro.")
+    # allow_origins="*" + allow_credentials=True es una combinación insegura:
+    # cualquier sitio podría hacer peticiones autenticadas. En producción se exige
+    # una lista explícita de orígenes.
+    raise RuntimeError(
+        "CORS_ORIGINS='*' no está permitido en producción. "
+        "Define CORS_ORIGINS con los orígenes exactos del frontend."
+    )
 
 
 @asynccontextmanager

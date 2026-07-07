@@ -18,6 +18,7 @@ export class DashboardApus implements OnInit {
     apusPorTipoInsumo: {} as Record<string, number>,
   };
   isLoading = true;
+  errorMessage = '';
 
   constructor(
     private apuService: ApuService,
@@ -29,6 +30,7 @@ export class DashboardApus implements OnInit {
   }
 
   loadStats(): void {
+    this.errorMessage = '';
     this.apuService.getDashboard().subscribe({
       next: (data: any) => {
         this.stats.totalApus = data.total_apus || 0;
@@ -40,6 +42,7 @@ export class DashboardApus implements OnInit {
         this.cdr.markForCheck();
       },
       error: () => {
+        this.errorMessage = 'No se pudieron cargar las estadísticas. Verifica tu conexión e intenta de nuevo.';
         this.isLoading = false;
         this.cdr.markForCheck();
       },

@@ -100,7 +100,7 @@ async def upload_cotizacion(files: List[UploadFile] = File(...)) -> dict:
         raise
     except Exception as e:
         log.exception("Error en upload cotización")
-        raise HTTPException(status_code=500, detail=f"Error procesando archivo(s): {e}")
+        raise HTTPException(status_code=500, detail="Error procesando archivo(s). Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/crear", tags=["Análisis APU"])
@@ -111,7 +111,7 @@ async def crear_solicitud_manual(payload: AnalisisApuCreate) -> dict:
         return {"success": True, "solicitud_id": solicitud_id}
     except Exception as e:
         log.exception("Error creando solicitud manual")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/analizar", tags=["Análisis APU"])
@@ -123,7 +123,7 @@ async def analizar_solicitud(solicitud_id: int) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error analizando solicitud")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.get("/analisis-apu", tags=["Análisis APU"])
@@ -137,7 +137,7 @@ async def listar_solicitudes(estado: Optional[str] = None) -> dict:
         return {"success": True, "data": solicitudes}
     except Exception as e:
         log.exception("Error listando solicitudes")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.get("/analisis-apu/{solicitud_id}", tags=["Análisis APU"])
@@ -164,7 +164,7 @@ async def obtener_solicitud(solicitud_id: int) -> dict:
         raise
     except Exception as e:
         log.exception("Error obteniendo solicitud")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/preaprobar", tags=["Análisis APU"])
@@ -175,7 +175,7 @@ async def preaprobar_apu(solicitud_id: int, user: dict = Depends(require_role("a
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error en preaprobación")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/rechazar", tags=["Análisis APU"])
@@ -186,7 +186,7 @@ async def rechazar_apu(solicitud_id: int, payload: RechazarRequest, user: dict =
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error en rechazo")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/nuevas-cotizaciones", tags=["Análisis APU"])
@@ -197,7 +197,7 @@ async def nuevas_cotizaciones(solicitud_id: int) -> dict:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error registrando nuevas cotizaciones")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/aprobar-subgerente", tags=["Análisis APU"])
@@ -208,7 +208,7 @@ async def aprobar_subgerente_endpoint(solicitud_id: int, user: dict = Depends(re
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error en aprobación de subgerente")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.post("/analisis-apu/{solicitud_id}/firmar-legal", tags=["Análisis APU"])
@@ -219,7 +219,79 @@ async def firmar_legal_endpoint(solicitud_id: int, user: dict = Depends(require_
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         log.exception("Error en firma legal")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.get("/analisis-apu/{solicitud_id}/export", tags=["Análisis APU"])
+async def exportar_analisis(solicitud_id: int):
+    """Exporta a Excel el análisis comparativo de una solicitud (ítems + resumen)."""
+    import io
+    from datetime import datetime
+    from fastapi.responses import StreamingResponse
+
+    try:
+        solicitud = get_solicitud(solicitud_id)
+        if not solicitud:
+            raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+        analisis = solicitud.get("analisis") or {}
+        items = analisis.get("items_analizados") or []
+        if not items:
+            raise HTTPException(status_code=400, detail="La solicitud aún no tiene análisis para exportar")
+
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+
+        columnas = [
+            ("grupo_cotizacion", "COTIZACIÓN"),
+            ("item", "ITEM"),
+            ("descripcion", "DESCRIPCIÓN"),
+            ("unidad", "UNIDAD"),
+            ("precio_ofertado", "PRECIO OFERTADO"),
+            ("mejor_precio_banco", "MEJOR PRECIO BANCO"),
+            ("diferencia_precio", "DIFERENCIA"),
+            ("existe_en_banco", "EN BANCO"),
+            ("estructura_insumos_coincide", "ESTRUCTURA OK"),
+            ("rendimiento_coincide", "RENDIMIENTO OK"),
+            ("recomendacion", "RECOMENDACIÓN IA"),
+            ("observaciones", "OBSERVACIONES"),
+        ]
+
+        def build() -> bytes:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = f"Análisis #{solicitud_id}"
+            ws.append([f"Solicitud #{solicitud_id} — {solicitud.get('nombre_proyecto') or ''}"])
+            ws.append([f"Estado: {solicitud.get('estado')} · Recomendación IA: {analisis.get('recomendacion') or 'N/A'}"])
+            ws.append([f"Resumen: {analisis.get('resumen') or ''}"])
+            ws.append([])
+            ws.append([label for _, label in columnas])
+            for it in items:
+                fila = []
+                for key, _ in columnas:
+                    v = it.get(key)
+                    if isinstance(v, bool):
+                        v = "Sí" if v else "No"
+                    fila.append(v if v is not None else "")
+                ws.append(fila)
+            for i, (_, label) in enumerate(columnas, start=1):
+                ws.column_dimensions[get_column_letter(i)].width = max(14, min(50, len(label) + 6))
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue()
+
+        import asyncio
+        content = await asyncio.to_thread(build)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="analisis_solicitud_{solicitud_id}_{stamp}.xlsx"'},
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Error exportando análisis %s", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 
 @router.get("/analisis-apu/aprendizaje/rechazos", tags=["Análisis APU"])
@@ -229,4 +301,4 @@ async def obtener_aprendizaje(limit: int = 20) -> dict:
         return {"success": True, "data": data}
     except Exception as e:
         log.exception("Error obteniendo aprendizaje")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")

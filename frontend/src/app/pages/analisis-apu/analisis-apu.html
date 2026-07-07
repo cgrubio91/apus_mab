@@ -114,7 +114,13 @@
           · <span class="badge {{ estadoBadgeClass(selectedSolicitud.estado) }}">{{ estadoLabel(selectedSolicitud.estado) }}</span>
         </p>
       </div>
-      <button class="action-btn secondary" (click)="closeDetail()">✕ Cerrar</button>
+      <div class="detail-header-actions">
+        <button class="action-btn secondary" *ngIf="selectedSolicitud.analisis"
+                (click)="exportarAnalisis(selectedSolicitud.id!)" [disabled]="exportando">
+          {{ exportando ? '⏳ Exportando...' : '📥 Exportar Excel' }}
+        </button>
+        <button class="action-btn secondary" (click)="closeDetail()">✕ Cerrar</button>
+      </div>
     </div>
 
     <div class="detail-body">
@@ -234,45 +240,51 @@
         </div>
 
         <ng-container *ngIf="selectedSolicitud.analisis">
-          <!-- ═══ RESUMEN IA (visible siempre, colapsable) ═══ -->
-          <details class="resumen-details" *ngIf="selectedSolicitud.analisis.resumen" open>
-            <summary>📖 Resumen de la IA</summary>
-            <div class="resumen-card">
+          <!-- ═══ RESUMEN IA (Diseño Mejorado) ═══ -->
+          <div class="resumen-ia-container" *ngIf="selectedSolicitud.analisis.resumen">
+            <div class="resumen-header">
+              <span class="resumen-icon">📖</span>
+              <h3>Resumen del Análisis de IA</h3>
+            </div>
+            <div class="resumen-content">
               <p>{{ selectedSolicitud.analisis.resumen }}</p>
-            </div>
-          </details>
-
-          <!-- ═══ STATS BAR ═══ -->
-          <div class="stats-bar" *ngIf="selectedSolicitud.analisis.items_analizados?.length">
-            <div class="stat-card">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).total }}</span>
-              <span class="stat-label">Total ítems</span>
-            </div>
-            <div class="stat-card stat-ok">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).aprobar }}</span>
-              <span class="stat-label">Aprobados</span>
-            </div>
-            <div class="stat-card stat-warn">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).revisar }}</span>
-              <span class="stat-label">Revisar</span>
-            </div>
-            <div class="stat-card stat-ko">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).rechazar }}</span>
-              <span class="stat-label">Rechazados</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).conBanco }}</span>
-              <span class="stat-label">Con datos banco</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).sinBanco }}</span>
-              <span class="stat-label">Sin datos banco</span>
             </div>
           </div>
 
-          <!-- ═══ COMPARATIVA ENTRE COTIZACIONES ═══ -->
-          <div class="comparison-card" *ngIf="selectedSolicitud.analisis.comparacion_grupos?.total_grupos > 1">
-            <h4>Comparativa entre Cotizaciones</h4>
+          <!-- ═══ STATS BAR (Diseño Moderno) ═══ -->
+          <div class="stats-grid" *ngIf="selectedSolicitud.analisis.items_analizados?.length">
+            <div class="stat-card">
+              <span class="stat-label">Total ítems</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).total }}</span>
+            </div>
+            <div class="stat-card stat-ok">
+              <span class="stat-label">Aprobados</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).aprobar }}</span>
+            </div>
+            <div class="stat-card stat-warn">
+              <span class="stat-label">Revisar</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).revisar }}</span>
+            </div>
+            <div class="stat-card stat-ko">
+              <span class="stat-label">Rechazados</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).rechazar }}</span>
+            </div>
+            <div class="stat-card stat-info">
+              <span class="stat-label">Con datos banco</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).conBanco }}</span>
+            </div>
+            <div class="stat-card stat-info">
+              <span class="stat-label">Sin datos banco</span>
+              <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).sinBanco }}</span>
+            </div>
+          </div>
+
+          <!-- ═══ COMPARATIVA ENTRE COTIZACIONES (Cuadro Comparativo) ═══ -->
+          <div class="comparison-section" *ngIf="selectedSolicitud.analisis.comparacion_grupos?.total_grupos > 1">
+            <div class="section-title">
+              <h4>📊 Comparativa de Cotizaciones</h4>
+              <p class="section-subtitle">Análisis global de costos entre las diferentes propuestas recibidas</p>
+            </div>
             <div class="comparison-table-wrap">
               <table class="comparison-table">
                 <thead>
@@ -282,20 +294,22 @@
                     <th class="numeric">Total ($)</th>
                     <th class="numeric">Promedio / ítem ($)</th>
                     <th class="numeric">Ítems</th>
-                    <th></th>
+                    <th>Estado</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr *ngFor="let g of selectedSolicitud.analisis.comparacion_grupos.grupos | keyvalue" class="grupo-row" [class.mejor-grupo]="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo">
+                  <tr *ngFor="let g of selectedSolicitud.analisis.comparacion_grupos.grupos | keyvalue" 
+                      class="grupo-row" 
+                      [class.mejor-grupo]="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo">
                     <td>
                       <span class="grupo-badge small">C{{ g.key }}</span>
                     </td>
-                    <td>{{ g.value.archivo }}</td>
-                    <td class="numeric">${{ (g.value.total || 0) | number:'1.0-0' }}</td>
+                    <td class="file-name-cell">{{ g.value.archivo }}</td>
+                    <td class="numeric font-bold">${{ (g.value.total || 0) | number:'1.0-0' }}</td>
                     <td class="numeric">${{ (g.value.promedio || 0) | number:'1.0-0' }}</td>
                     <td class="numeric">{{ g.value.count }}</td>
                     <td>
-                      <span class="best-badge" *ngIf="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo">✓ MEJOR OPCIÓN</span>
+                      <span class="best-badge" *ngIf="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo">✨ MEJOR OPCIÓN</span>
                     </td>
                   </tr>
                 </tbody>
@@ -307,9 +321,11 @@
           <div class="grupos-detalle" *ngIf="selectedSolicitud.analisis.items_analizados?.length">
             <div class="grupo-analisis" *ngFor="let grupo of getGroupedItems(selectedSolicitud.analisis.items_analizados)">
               <div class="grupo-header">
-                <span class="grupo-badge medium">Cotización {{ grupo.grupo }}</span>
-                <span class="grupo-archivo-label">{{ getGrupoNombre(grupo.grupo) }}</span>
-                <span class="grupo-count">{{ grupo.items.length }} ítems</span>
+                <div class="grupo-info">
+                  <span class="grupo-badge medium">Cotización {{ grupo.grupo }}</span>
+                  <span class="grupo-archivo-label">{{ getGrupoNombre(grupo.grupo) }}</span>
+                </div>
+                <span class="grupo-count">{{ grupo.items.length }} ítems analizados</span>
               </div>
 
               <div class="table-responsive">
@@ -324,16 +340,16 @@
                       <th>Banco</th>
                       <th>Estruct.</th>
                       <th>Rendim.</th>
-                      <th>Recom.</th>
+                      <th>Recomendación</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr *ngFor="let item of grupo.items" class="rec-{{ item.recomendacion }}-row">
-                      <td>{{ item.item }}</td>
+                      <td class="item-id">{{ item.item }}</td>
                       <td class="desc-col">{{ item.descripcion }}</td>
-                      <td class="numeric">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</td>
+                      <td class="numeric font-bold">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</td>
                       <td class="numeric">${{ (item.mejor_precio_banco || 0) | number:'1.0-0' }}</td>
-                      <td class="numeric" [class.positive]="(item.diferencia_precio || 0) < 0" [class.negative]="(item.diferencia_precio || 0) > 0">
+                      <td class="numeric diff-cell" [class.positive]="(item.diferencia_precio || 0) < 0" [class.negative]="(item.diferencia_precio || 0) > 0">
                         {{ item.diferencia_precio ? '$' + (item.diferencia_precio | number:'1.0-0') : '-' }}
                       </td>
                       <td>
@@ -342,17 +358,17 @@
                         </span>
                       </td>
                       <td>
-                        <span class="badge mini" [class.badge-success]="item.estructura_insumos_coincide" [class.badge-danger]="item.estructura_insumos_coincide === false" [class.badge-secondary]="item.estructura_insumos_coincide === null">
+                        <span class="status-icon" [class.icon-success]="item.estructura_insumos_coincide" [class.icon-danger]="item.estructura_insumos_coincide === false" [class.icon-secondary]="item.estructura_insumos_coincide === null">
                           {{ item.estructura_insumos_coincide === true ? '✓' : item.estructura_insumos_coincide === false ? '✕' : '-' }}
                         </span>
                       </td>
                       <td>
-                        <span class="badge mini" [class.badge-success]="item.rendimiento_coincide" [class.badge-danger]="item.rendimiento_coincide === false" [class.badge-secondary]="item.rendimiento_coincide === null">
+                        <span class="status-icon" [class.icon-success]="item.rendimiento_coincide" [class.icon-danger]="item.rendimiento_coincide === false" [class.icon-secondary]="item.rendimiento_coincide === null">
                           {{ item.rendimiento_coincide === true ? '✓' : item.rendimiento_coincide === false ? '✕' : '-' }}
                         </span>
                       </td>
                       <td>
-                        <span class="rec-mini {{ recomendacionClass(item.recomendacion) }}">{{ item.recomendacion }}</span>
+                        <span class="rec-badge {{ recomendacionClass(item.recomendacion) }}">{{ item.recomendacion }}</span>
                         <div class="obs-tooltip" *ngIf="item.observaciones">{{ item.observaciones }}</div>
                       </td>
                     </tr>

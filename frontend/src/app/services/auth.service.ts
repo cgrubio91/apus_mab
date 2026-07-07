@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, BehaviorSubject, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { TOKEN_KEY, USER_KEY, isTokenExpired } from './auth.storage';
 
 export interface AuthUser {
   id: number;
@@ -17,8 +18,8 @@ export class AuthService {
   private http = inject(HttpClient);
   private router = inject(Router);
 
-  private readonly TOKEN_KEY = 'mapus_token';
-  private readonly USER_KEY = 'mapus_user';
+  private readonly TOKEN_KEY = TOKEN_KEY;
+  private readonly USER_KEY = USER_KEY;
 
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(this._hasToken());
   isAuthenticated$ = this.isAuthenticatedSubject.asObservable();
@@ -35,7 +36,8 @@ export class AuthService {
   }
 
   isLoggedIn(): boolean {
-    return !!this.getToken();
+    const token = this.getToken();
+    return !!token && !isTokenExpired(token);
   }
 
   login(telefono: string, password: string): Observable<any> {

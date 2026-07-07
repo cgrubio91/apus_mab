@@ -1,6 +1,6 @@
 """
-📊 CSV to PostgreSQL Loader
-Loads APU data from CSV file to PostgreSQL database with data cleaning and validation
+📊 CSV to MySQL Loader
+Loads APU data from CSV file to MySQL database with data cleaning and validation
 """
 
 import csv
@@ -9,7 +9,7 @@ from datetime import datetime
 import chardet
 
 from db_config import get_db_connection
-from psycopg2 import Error
+import mysql.connector
 
 # ============ CONFIGURACIÓN ============
 CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "APUS_V1.csv")
@@ -180,7 +180,7 @@ if total > 0:
             exitos += len(batch)
             print(f"✅ Lote {lotes_procesados} ({len(batch)} registros) - Fila CSV inicial: {i + 2}")
             
-        except Error as e:
+        except mysql.connector.Error as e:
             conn.rollback()  # Rollback en caso de error
             error_msg = f"Lote {lotes_procesados} (fila inicial CSV: {i + 2}): {str(e)}"
             print(f"❌ Error en {error_msg}")
@@ -193,7 +193,7 @@ if total > 0:
                     cursor.execute(sql, row)
                     conn.commit()
                     exitos += 1
-                except Error as row_error:
+                except mysql.connector.Error as row_error:
                     conn.rollback()
                     fila_csv = i + j + 2
                     print(f"   ❌ Error en fila CSV {fila_csv}: {row_error}")

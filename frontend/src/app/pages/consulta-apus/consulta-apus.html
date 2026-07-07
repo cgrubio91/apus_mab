@@ -6,6 +6,12 @@
       <p>Catálogo centralizado de Análisis de Precios Unitarios extraídos y validados.</p>
     </div>
     <div class="header-actions">
+      <button class="clear-filters-btn" (click)="exportar('xlsx')" [disabled]="isExporting" title="Exportar a Excel con los filtros actuales">
+        {{ isExporting ? '⏳ Exportando...' : '📥 Excel' }}
+      </button>
+      <button class="clear-filters-btn" (click)="exportar('csv')" [disabled]="isExporting" title="Exportar a CSV con los filtros actuales">
+        📄 CSV
+      </button>
       <button class="clear-filters-btn" (click)="resetFilters()" [class.has-filters]="hasActiveFilters()" title="Limpiar todos los filtros">
         ✕ Limpiar filtros
       </button>
@@ -44,6 +50,13 @@
   <div class="loading-state" *ngIf="isLoading">
     <div class="spinner"></div>
     <p>Cargando banco de APUs...</p>
+  </div>
+
+  <!-- Error State -->
+  <div class="error-banner" *ngIf="!isLoading && errorMessage" role="alert"
+       style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
+    <span>⚠️ {{ errorMessage }}</span>
+    <button (click)="loadApus()" style="background:none;border:1px solid #b71c1c;color:#b71c1c;border-radius:6px;padding:4px 12px;cursor:pointer;">Reintentar</button>
   </div>
 
   <!-- Spreadsheet Table -->

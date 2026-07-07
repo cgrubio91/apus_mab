@@ -31,7 +31,7 @@ def build_prompt_sql(mensaje_usuario: str) -> str:
     """Prueba el prompt SQL mejorado con un mensaje del usuario."""
     
     prompt_sql = f"""
-    Actúa como un asistente experto en bases de datos PostgreSQL y en análisis de precios unitarios (APU) de obras civiles.
+    Actúa como un asistente experto en bases de datos MySQL y en análisis de precios unitarios (APU) de obras civiles.
     Convierte la solicitud del usuario en una consulta SQL válida, considerando que el usuario NO conoce los nombres técnicos de las columnas.
 
     Tabla: apus

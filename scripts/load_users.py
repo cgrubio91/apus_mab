@@ -1,7 +1,6 @@
 import csv
 import os
 from db_config import get_db_connection
-from psycopg2 import Error
 
 CSV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "usuarios.csv")
 

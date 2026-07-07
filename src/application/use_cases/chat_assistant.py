@@ -11,10 +11,16 @@ import time
 import hashlib
 from collections import OrderedDict
 
-from src.infrastructure.database.connection import get_db_connection, execute_query, DBEncoder
-from src.infrastructure.ai.provider import ai_provider
+from src.application.use_cases.assistant_common import (
+    ejecutar_sql as _ejecutar_sql,
+    gemini_generate,
+    guardar_conversacion as _guardar_conversacion,
+    normalize_sql_for_mysql as _normalize_sql_for_mysql,
+    obtener_historial,
+    strip_sql_markdown,
+)
+from src.infrastructure.database.connection import DBEncoder
 from src.infrastructure.sql_validator import validate_readonly_query
-from psycopg2.extras import RealDictCursor
 
 log = logging.getLogger("mapus.application.chat")
 
@@ -68,46 +74,14 @@ def _truncate_large_fields(data: list[dict]) -> list[dict]:
     return cleaned
 
 
+CHAT_SYSTEM_PROMPT = (
+    "Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU) y analista avanzado de MySQL. "
+    "Tu objetivo es responder de manera precisa, segura y profesional."
+)
+
+
 def _gemini_generate(prompt: str, system: str = "") -> str:
-    default_system = "Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU) y analista avanzado de PostgreSQL. Tu objetivo es responder de manera precisa, segura y profesional."
-    return ai_provider.generate_text(prompt, system=system or default_system, timeout=300)
-
-
-def _ejecutar_sql(query: str) -> list[dict]:
-    try:
-        with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute(query)
-                return cursor.fetchall()
-    except Exception:
-        log.exception("SQL execution error")
-        return [{"error": "Error interno en la ejecución de la consulta SQL"}]
-
-
-def _obtener_historial(telefono: str, limite: int = 5) -> list[dict]:
-    try:
-        rows = execute_query(
-            """SELECT mensaje_usuario, sql_generado, respuesta_bot, timestamp
-               FROM historial_conversaciones
-               WHERE telefono = %s ORDER BY timestamp DESC LIMIT %s""",
-            (telefono, limite),
-        )
-        return list(reversed(rows)) if rows else []
-    except Exception:
-        log.exception("Error retrieving history for %s", telefono)
-        return []
-
-
-def _guardar_conversacion(telefono: str, mensaje: str, sql_: str, respuesta: str):
-    try:
-        execute_query(
-            """INSERT INTO historial_conversaciones (telefono, mensaje_usuario, sql_generado, respuesta_bot)
-               VALUES (%s, %s, %s, %s)""",
-            (telefono, mensaje, sql_, respuesta),
-            fetch=False,
-        )
-    except Exception:
-        log.exception("Failed to store conversation for %s", telefono)
+    return gemini_generate(prompt, system=system or CHAT_SYSTEM_PROMPT)
 
 
 def _total_seconds() -> int:
@@ -131,7 +105,7 @@ def process_chat_message(message: str, telefono: str, nombre: str) -> dict:
     log.info("Chat query from %s: %s", telefono, message[:120])
 
     try:
-        historial = _obtener_historial(telefono, 4)
+        historial = obtener_historial(telefono, 4)
         tiene_contexto = bool(historial)
 
         cache_key = _cache_key(message, telefono, historial)
@@ -155,7 +129,7 @@ def process_chat_message(message: str, telefono: str, nombre: str) -> dict:
         # ── Stage 1: SQL generation ──
         t0 = _total_seconds()
         prompt_sql = f"""
-Actúa como traductor estricto de Lenguaje Natural a PostgreSQL.
+Actúa como traductor estricto de Lenguaje Natural a MySQL.
 
 TABLA DISPONIBLE:
 apus
@@ -181,10 +155,10 @@ COLUMNAS CLAVE (con semántica):
 - ciudad, pais, entidad, contratista, nombre_proyecto, numero_contrato → datos del proyecto
 - observacion, link_documento → metadata
 
-REGLAS ABSOLUTAS:
+REGLAS ABSOLUTAS (SINTAXIS ESTRICTAMENTE MySQL 8.0):
 1. SOLO SELECT o WITH
 2. SOLO tabla apus
-3. Para texto usar ILIKE con %
+3. Para texto usar LIKE con % (NUNCA ILIKE — MySQL no soporta ILIKE)
 4. Máximo LIMIT 20
 5. Nunca uses markdown
 6. Nunca expliques nada en la respuesta SQL
@@ -192,10 +166,11 @@ REGLAS ABSOLUTAS:
 8. Nunca uses SELECT * sobre la tabla real
 9. Selecciona únicamente las columnas estrictamente necesarias
 10. Si el usuario pide "precio del ítem" o "valor unitario", usa precio_unitario
-11. Si el usuario pide listar ítems, usa SELECT DISTINCT ON (item, nombre_proyecto) para evitar duplicados
+11. Para evitar duplicados de ítems usa SELECT DISTINCT item, nombre_proyecto, ...
 12. Si el usuario refina una consulta anterior, modifica el SQL previo en lugar de generar uno nuevo
-13. Si el usuario pide desglose/breakdown de insumos de ítems específicos, usa DISTINCT ON (item, codigo_insumo) o GROUP BY para evitar filas duplicadas del mismo insumo en distintos proyectos
+13. Para desglose de insumos usa GROUP BY item, codigo_insumo, nombre_proyecto
 14. Si hay resultados numerosos, sugiere al usuario formas de acotar (por tipo de insumo, rango de precio, etc.)
+15. Esta es una base de datos MySQL 8.0. Usa LIKE, DISTINCT (sin ON), y CAST() si es necesario
 
 {ctx}
 
@@ -205,8 +180,10 @@ Pregunta:
 SQL:
 """
         raw_sql = _gemini_generate(prompt_sql)
-        sql = re.sub(r"```sql|```", "", raw_sql).strip()
+        sql = strip_sql_markdown(raw_sql)
         stages.append({"phase": "Generando SQL", "duration_ms": _total_seconds() - t0})
+
+        sql = _normalize_sql_for_mysql(sql)
 
         if sql.strip().upper() == "INVALID_QUERY":
             reply = "No puedo responder esa solicitud usando la base de APUs."

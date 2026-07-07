@@ -1,5 +1,5 @@
 """
-Infrastructure: Análisis APU Repository Implementation (PostgreSQL)
+Infrastructure: Análisis APU Repository Implementation (MySQL)
 """
 
 import json
@@ -7,13 +7,14 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
+import mysql.connector
+
 from src.infrastructure.database.connection import get_db_connection, execute_query
-from psycopg2.extras import RealDictCursor
 
 log = logging.getLogger("mapus.infrastructure.analisis_repo")
 
 
-class AnalisisPostgresRepository:
+class AnalisisMySQLRepository:
 
     def crear_solicitud(self, grupos_insumos: list[dict]) -> int:
         all_insumos = []
@@ -29,13 +30,13 @@ class AnalisisPostgresRepository:
 
         try:
             with get_db_connection() as conn:
-                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(
                         """INSERT INTO solicitudes_apu (link_documento, contratista, nombre_proyecto, estado)
-                           VALUES (%s, %s, %s, 'pendiente_analisis') RETURNING id""",
+                           VALUES (%s, %s, %s, 'pendiente_analisis')""",
                         (link_documento, contratista, nombre_proyecto),
                     )
-                    solicitud_id = cursor.fetchone()["id"]
+                    solicitud_id = cursor.lastrowid
 
                     for grupo in grupos_insumos:
                         grupo_idx = grupo.get("grupo_cotizacion", 1)
@@ -65,7 +66,7 @@ class AnalisisPostgresRepository:
 
     def get_solicitudes(self, estado: Optional[str] = None) -> list:
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with conn.cursor(dictionary=True) as cursor:
                 base_query = """
                     SELECT sa.*,
                            (SELECT items_descripcion FROM solicitud_insumos
@@ -81,7 +82,7 @@ class AnalisisPostgresRepository:
 
     def get_solicitud(self, solicitud_id: int) -> Optional[dict]:
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with conn.cursor(dictionary=True) as cursor:
                 cursor.execute("SELECT * FROM solicitudes_apu WHERE id = %s", (solicitud_id,))
                 solicitud = cursor.fetchone()
                 if not solicitud:
@@ -132,10 +133,10 @@ class AnalisisPostgresRepository:
                 cursor.execute(
                     """INSERT INTO analisis_apu (solicitud_id, analisis_json, resumen, recomendacion)
                        VALUES (%s, %s, %s, %s)
-                       ON CONFLICT (solicitud_id)
-                       DO UPDATE SET analisis_json = EXCLUDED.analisis_json,
-                                     resumen = EXCLUDED.resumen,
-                                     recomendacion = EXCLUDED.recomendacion""",
+                       ON DUPLICATE KEY UPDATE
+                           analisis_json = VALUES(analisis_json),
+                           resumen = VALUES(resumen),
+                           recomendacion = VALUES(recomendacion)""",
                     (solicitud_id, analisis_json, resumen, recomendacion),
                 )
                 if owns_conn:
@@ -245,19 +246,22 @@ class AnalisisPostgresRepository:
         palabras = [p for p in descripcion.split() if len(p) > 3][:5]
         if not palabras:
             return []
-        condiciones = " OR ".join([f"items_descripcion ILIKE %s" for _ in palabras])
+        condiciones = " OR ".join([f"items_descripcion LIKE %s" for _ in palabras])
         params = [f"%{p}%" for p in palabras]
         params.extend([descripcion[:10]])
         with get_db_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            with conn.cursor(dictionary=True) as cursor:
                 cursor.execute(
-                    f"""SELECT DISTINCT ON (items_descripcion) item, items_descripcion,
+                    f"""SELECT item, items_descripcion,
                                item_unidad, precio_unitario, precio_unitario_sin_aiu,
                                rendimiento_insumo, tipo_insumo, codigo_insumo,
                                insumo_descripcion, insumo_unidad
                         FROM apus
-                        WHERE ({condiciones} OR items_descripcion ILIKE %s)
+                        WHERE ({condiciones} OR items_descripcion LIKE %s)
                           AND precio_unitario IS NOT NULL
+                        GROUP BY items_descripcion, item, item_unidad, precio_unitario,
+                                 precio_unitario_sin_aiu, rendimiento_insumo, tipo_insumo,
+                                 codigo_insumo, insumo_descripcion, insumo_unidad
                         ORDER BY items_descripcion, precio_unitario ASC
                         LIMIT 5""",
                     params,
@@ -265,4 +269,4 @@ class AnalisisPostgresRepository:
                 return cursor.fetchall()
 
 
-analisis_repo = AnalisisPostgresRepository()
+analisis_repo = AnalisisMySQLRepository()

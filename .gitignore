@@ -2,6 +2,10 @@
 # ⚙️ ARCHIVOS A IGNORAR EN GIT — SEGURIDAD & DATOS SENSIBLES
 # ==========================================================
 
+# 🤖 CLAUDE CODE (guía local, no va al repositorio)
+CLAUDE.md
+.claude/
+
 # 🔑 CONFIGURACIONES Y CREDENCIALES (¡NUNCA SUBIR!)
 .env
 .env.local
@@ -24,7 +28,6 @@ tmp/
 *.xls
 *.pdf
 *.csv
-!usuarios*.csv   # Permitir explícitamente los archivos de control de usuarios si son requeridos
 
 # 🗄️ BASES DE DATOS LOCALES Y VOLCADOS
 *.sqlite
