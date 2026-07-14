@@ -8,7 +8,7 @@
     </div>
     <button class="export-btn">
       <span>Exportar reporte</span>
-      <span class="arrow">↗</span>
+      <span class="arrow material-symbols-outlined">open_in_new</span>
     </button>
   </header>
 
@@ -21,7 +21,7 @@
   <!-- Error State -->
   <div class="error-banner" *ngIf="!isLoading && errorMessage" role="alert"
        style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-    <span>⚠️ {{ errorMessage }}</span>
+    <span class="material-symbols-outlined alert-icon">warning</span><span>{{ errorMessage }}</span>
     <button (click)="loadStats()" style="background:none;border:1px solid #b71c1c;color:#b71c1c;border-radius:6px;padding:4px 12px;cursor:pointer;">Reintentar</button>
   </div>
 
@@ -33,7 +33,7 @@
         <span class="card-label">PROYECTOS ACTIVOS</span>
         <h2 class="card-value">{{ stats.totalProyectos }}</h2>
         <div class="trend-badge success">
-          <span class="trend-icon">↗</span>
+          <span class="trend-icon material-symbols-outlined">trending_up</span>
           <span class="trend-text">+2 vs mes anterior</span>
         </div>
       </div>
@@ -43,7 +43,7 @@
         <span class="card-label">APUS EN BANCO</span>
         <h2 class="card-value">{{ stats.totalApus }}</h2>
         <div class="trend-badge info">
-          <span class="trend-icon">↗</span>
+          <span class="trend-icon material-symbols-outlined">trending_up</span>
           <span class="trend-text">+{{ stats.ultimoMes }} vs mes anterior</span>
         </div>
       </div>
@@ -53,7 +53,7 @@
         <span class="card-label">CIUDADES</span>
         <h2 class="card-value">{{ stats.totalCiudades }}</h2>
         <div class="trend-badge info">
-          <span class="trend-icon">↗</span>
+          <span class="trend-icon material-symbols-outlined">trending_up</span>
           <span class="trend-text">Total de ciudades en la base</span>
         </div>
       </div>
@@ -63,7 +63,7 @@
         <span class="card-label">PRECISIÓN IA PROMEDIO</span>
         <h2 class="card-value">{{ stats.precisionIA }}%</h2>
         <div class="trend-badge success">
-          <span class="trend-icon">✓</span>
+          <span class="trend-icon material-symbols-outlined">check_circle</span>
           <span class="trend-text">Campos clave completos</span>
         </div>
       </div>

@@ -9,7 +9,7 @@
     </div>
 
     <div class="alert error" *ngIf="error">
-      <span>⚠️ {{ error }}</span>
+      <span class="material-symbols-outlined alert-icon">warning</span><span>{{ error }}</span>
     </div>
 
     <form (ngSubmit)="login()" class="login-form">

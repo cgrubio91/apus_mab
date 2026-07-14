@@ -207,14 +207,6 @@ export class ChatApus implements AfterViewChecked {
     return (total / 1000).toFixed(1);
   }
 
-  stageIcon(phase: string): string {
-    if (phase.includes('SQL')) return '💡';
-    if (phase.includes('Valid')) return '✅';
-    if (phase.includes('Consult') || phase.includes('base')) return '📊';
-    if (phase.includes('Redact')) return '✍️';
-    return '⚙️';
-  }
-
   maxChartValue(values: number[]): number {
     return Math.max(...values, 1);
   }

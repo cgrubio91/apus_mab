@@ -10,63 +10,63 @@
       </div>
     </div>
     <button class="toggle-btn" (click)="isCollapsed = !isCollapsed">
-      <span class="menu-icon">☰</span>
+      <span class="menu-icon material-symbols-outlined">menu</span>
     </button>
   </div>
 
   <ul class="nav-menu">
     <li class="nav-item">
       <a class="nav-link" routerLink="/dashboard-apus" routerLinkActive="active">
-        <span class="icon">📊</span>
+        <span class="icon material-symbols-outlined">dashboard</span>
         <span class="text" *ngIf="!isCollapsed">Dashboard</span>
       </a>
     </li>
 
     <li class="nav-item">
       <a class="nav-link" routerLink="/nuevos-apu-ia" routerLinkActive="active">
-        <span class="icon">🤖</span>
+        <span class="icon material-symbols-outlined">auto_awesome</span>
         <span class="text" *ngIf="!isCollapsed">Nuevos APUS-IA</span>
       </a>
     </li>
 
     <li class="nav-item">
       <a class="nav-link" routerLink="/analisis-apu" routerLinkActive="active">
-        <span class="icon">📋</span>
+        <span class="icon material-symbols-outlined">assignment</span>
         <span class="text" *ngIf="!isCollapsed">Análisis APU</span>
       </a>
     </li>
 
     <li class="nav-item">
       <a class="nav-link" routerLink="/chat-apus" routerLinkActive="active">
-        <span class="icon">💬</span>
+        <span class="icon material-symbols-outlined">chat</span>
         <span class="text" *ngIf="!isCollapsed">Consulta</span>
       </a>
     </li>
 
     <li class="nav-item">
       <a class="nav-link" routerLink="/consulta-apus" routerLinkActive="active">
-        <span class="icon">📁</span>
+        <span class="icon material-symbols-outlined">folder</span>
         <span class="text" *ngIf="!isCollapsed">Banco de APUS</span>
       </a>
     </li>
 
     <li class="nav-item">
       <a class="nav-link" routerLink="/historico-precios" routerLinkActive="active">
-        <span class="icon">📈</span>
+        <span class="icon material-symbols-outlined">trending_up</span>
         <span class="text" *ngIf="!isCollapsed">Histórico Precios</span>
       </a>
     </li>
 
     <li class="nav-item" *ngIf="isAdmin">
       <a class="nav-link" routerLink="/usuarios" routerLinkActive="active">
-        <span class="icon">👥</span>
+        <span class="icon material-symbols-outlined">group</span>
         <span class="text" *ngIf="!isCollapsed">Usuarios</span>
       </a>
     </li>
 
     <li class="nav-item notif-item" *ngIf="isLoggedIn">
       <button class="nav-link notif-btn" type="button" (click)="toggleNotifPanel()">
-        <span class="icon">🔔</span>
+        <span class="icon material-symbols-outlined">notifications</span>
         <span class="text" *ngIf="!isCollapsed">Notificaciones</span>
         <span class="notif-badge" *ngIf="(notif.noLeidas$ | async) as count">
           <ng-container *ngIf="count > 0">{{ count > 99 ? '99+' : count }}</ng-container>
@@ -108,7 +108,7 @@
       <button class="logout-btn" (click)="logout()">Cerrar Sesión</button>
     </div>
     <div class="login-link" *ngIf="!isLoggedIn && !isCollapsed">
-      <a routerLink="/login" class="nav-link">🔐 Iniciar Sesión</a>
+      <a routerLink="/login" class="nav-link"><span class="material-symbols-outlined icon">login</span> Iniciar Sesión</a>
     </div>
     <div class="engine-indicator" *ngIf="!isCollapsed">
       <span class="indicator-dot"></span>

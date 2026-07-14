@@ -6,7 +6,7 @@
       <p>Pregunta a tu banco de APUs en lenguaje natural. Respuestas fundamentadas en tus propios datos.</p>
     </div>
     <button class="btn-clear" (click)="clearChat()" title="Limpiar conversación">
-      <span class="clear-icon">🗑️</span>
+      <span class="clear-icon material-symbols-outlined">delete</span>
       <span class="text">Limpiar chat</span>
     </button>
   </header>
@@ -18,21 +18,11 @@
       [class.user]="msg.isUser"
       [class.bot]="!msg.isUser"
     >
-      <div class="avatar-icon" *ngIf="!msg.isUser">🤖</div>
-      <div class="avatar-icon" *ngIf="msg.isUser">👤</div>
+      <div class="avatar-icon" *ngIf="!msg.isUser"><span class="material-symbols-outlined avatar-icon">smart_toy</span></div>
+      <div class="avatar-icon" *ngIf="msg.isUser"><span class="material-symbols-outlined avatar-icon">person</span></div>
       <div class="message-bubble">
         <div class="message-content" *ngIf="msg.html" [innerHTML]="msg.html"></div>
         <div class="message-content" *ngIf="!msg.html" [innerText]="msg.text"></div>
-
-        <!-- SQL expandible -->
-        <div class="sql-section" *ngIf="msg.sqlQuery">
-          <button class="sql-toggle" (click)="toggleSql(msg)">
-            <span class="sql-icon">📝</span>
-            {{ msg.showSql ? 'Ocultar' : 'Ver' }} consulta SQL
-            <span class="sql-arrow">{{ msg.showSql ? '▲' : '▼' }}</span>
-          </button>
-          <pre class="sql-block" *ngIf="msg.showSql"><code>{{ msg.sqlQuery }}</code></pre>
-        </div>
 
         <!-- Chart -->
         <div class="chart-wrapper" *ngIf="msg.chartData">
@@ -49,16 +39,6 @@
           </div>
         </div>
 
-        <!-- Timeline de stages -->
-        <div class="stages-timeline" *ngIf="msg.stages?.length">
-          <div class="stage-item" *ngFor="let s of msg.stages">
-            <span class="stage-icon">{{ stageIcon(s.phase) }}</span>
-            <span class="stage-name">{{ s.phase }}</span>
-            <span class="stage-duration">{{ (s.duration_ms / 1000).toFixed(1) }}s</span>
-          </div>
-          <div class="stage-total">Total: {{ totalTime(msg.stages) }}s</div>
-        </div>
-
         <div class="followup-chips" *ngIf="msg.suggestedFollowups?.length">
           <button
             class="followup-chip"
@@ -73,7 +53,7 @@
 
     <!-- Loading con stages animados -->
     <div class="message-wrapper bot" *ngIf="isLoading">
-      <div class="avatar-icon">🤖</div>
+      <div class="avatar-icon"><span class="material-symbols-outlined avatar-icon">smart_toy</span></div>
       <div class="message-bubble typing-bubble">
         <div class="typing-indicator" *ngIf="currentStages.length === 0">
           <span class="dot"></span>
@@ -105,7 +85,7 @@
       [disabled]="isLoading"
     />
     <button class="btn-send" (click)="sendMessage()" [disabled]="!userInput.trim() || isLoading" title="Enviar mensaje">
-      <span class="send-icon">➔</span>
+      <span class="send-icon material-symbols-outlined">send</span>
     </button>
   </div>
 </div>

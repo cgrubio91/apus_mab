@@ -4,7 +4,7 @@
     <div class="header-titles">
       <span class="breadcrumb">MAPUS · WORKSPACE</span>
       <h1>Nuevos APUS-IA</h1>
-      <p>Procesamiento de memorias de cálculo y presupuestos mediante análisis con IA generativa.</p>
+      <p>Procesamiento de APUs desde archivos PDF, XLSX o XLS mediante extracción con IA generativa.</p>
     </div>
   </header>
 
@@ -15,7 +15,7 @@
       <!-- Drag & Drop Area (When not extracting/uploaded) -->
       <div class="drag-drop-area" *ngIf="!extracting && !extractedData">
         <div class="upload-icon-wrapper">
-          <span class="upload-cloud">☁️</span>
+          <span class="upload-cloud material-symbols-outlined cloud-icon">cloud_upload</span>
         </div>
         <h3>Carga tu archivo de presupuesto</h3>
         <p class="formats">Formatos PDF, XLSX o XLS hasta 25 MB</p>
@@ -66,7 +66,7 @@
       <!-- File Loaded actions (Before extraction) -->
       <div class="file-ready-box" *ngIf="selectedFile && !extracting && !extractedData && !isSaving">
         <div class="ready-info">
-          <span class="file-icon">📄</span>
+          <span class="file-icon material-symbols-outlined">description</span>
           <span class="ready-name">{{ selectedFile.name }}</span>
         </div>
         
@@ -89,7 +89,7 @@
 
       <!-- Errors -->
       <div class="error-box" *ngIf="error">
-        <span class="error-icon">⚠️</span>
+        <span class="error-icon material-symbols-outlined">warning</span>
         <span class="error-text">{{ error }}</span>
       </div>
 
@@ -114,7 +114,7 @@
           <p class="result-info">Revisa los ítems detectados antes de incorporarlos al banco</p>
         </div>
         <button class="confirm-btn" (click)="saveExtracted()" [disabled]="isSaving">
-          <span class="icon" *ngIf="!isSaving">✓</span>
+          <span class="icon material-symbols-outlined">check</span>
           <span>{{ isSaving ? 'Guardando...' : 'Confirmar datos' }}</span>
         </button>
       </div>
@@ -155,7 +155,7 @@
   <section class="saved-section animate-fade-in" *ngIf="saved && saveResult">
     <div class="saved-card">
       <div class="success-icon-wrapper">
-        <span class="success-icon">✓</span>
+        <span class="success-icon material-symbols-outlined">check_circle</span>
       </div>
       <h2>Procesamiento Completado</h2>
       <p>Los datos han sido validados e incorporados de manera exitosa a la base de datos.</p>

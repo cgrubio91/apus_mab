@@ -29,10 +29,13 @@
         </select>
       </div>
       <button class="search-btn" (click)="buscar()" [disabled]="isLoading">
-        {{ isLoading ? 'Buscando...' : '🔍 Buscar' }}
+        <ng-container *ngIf="isLoading">Buscando...</ng-container>
+        <ng-container *ngIf="!isLoading">
+          <span class="material-symbols-outlined">search</span> Buscar
+        </ng-container>
       </button>
     </div>
-    <div class="error-msg" *ngIf="errorMessage" role="alert">⚠️ {{ errorMessage }}</div>
+    <div class="error-msg" *ngIf="errorMessage" role="alert"><span class="material-symbols-outlined alert-icon">warning</span> {{ errorMessage }}</div>
   </div>
 
   <div class="loading-state" *ngIf="isLoading">
@@ -58,7 +61,7 @@
         <div class="summary-card" *ngIf="variacionTotal() !== null">
           <span class="summary-label">VARIACIÓN TOTAL</span>
           <span class="summary-value" [class.up]="variacionTotal()! > 0" [class.down]="variacionTotal()! < 0">
-            {{ variacionTotal()! > 0 ? '▲' : '▼' }} {{ variacionTotal()! | number:'1.1-1' }}%
+            <span class="material-symbols-outlined">{{ variacionTotal()! > 0 ? 'trending_up' : 'trending_down' }}</span> {{ variacionTotal()! | number:'1.1-1' }}%
           </span>
         </div>
       </div>

@@ -183,7 +183,7 @@ export class ConsultaApus implements OnInit, OnDestroy {
 
   getSortIcon(col: ColumnDef): string {
     if (this.sortBy !== col.key) return '';
-    return this.sortOrder === 'asc' ? '▲' : '▼';
+    return this.sortOrder === 'asc' ? 'arrow_upward' : 'arrow_downward';
   }
 
   toggleFilterDropdown(col: ColumnDef, event: MouseEvent): void {

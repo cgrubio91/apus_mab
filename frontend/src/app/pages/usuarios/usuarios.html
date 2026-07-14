@@ -6,17 +6,20 @@
       <p>Crea usuarios, asigna roles del flujo de aprobación y activa o desactiva cuentas.</p>
     </div>
     <button class="primary-btn" (click)="showCreateForm = !showCreateForm">
-      {{ showCreateForm ? 'Cancelar' : '➕ Nuevo usuario' }}
+      <ng-container *ngIf="showCreateForm">Cancelar</ng-container>
+      <ng-container *ngIf="!showCreateForm">
+        <span class="material-symbols-outlined">person_add</span> Nuevo usuario
+      </ng-container>
     </button>
   </header>
 
   <div class="alert error" *ngIf="errorMessage" role="alert">
-    ⚠️ {{ errorMessage }}
-    <button class="alert-close" (click)="errorMessage = ''">✕</button>
+    <span class="material-symbols-outlined alert-icon">warning</span> {{ errorMessage }}
+    <button class="alert-close" (click)="errorMessage = ''"><span class="material-symbols-outlined">close</span></button>
   </div>
   <div class="alert success" *ngIf="successMessage" role="status">
-    ✅ {{ successMessage }}
-    <button class="alert-close" (click)="successMessage = ''">✕</button>
+    <span class="material-symbols-outlined alert-icon">check_circle</span> {{ successMessage }}
+    <button class="alert-close" (click)="successMessage = ''"><span class="material-symbols-outlined">close</span></button>
   </div>
 
   <div class="create-card" *ngIf="showCreateForm">

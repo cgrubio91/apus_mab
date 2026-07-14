@@ -7,13 +7,18 @@
     </div>
     <div class="header-actions">
       <button class="clear-filters-btn" (click)="exportar('xlsx')" [disabled]="isExporting" title="Exportar a Excel con los filtros actuales">
-        {{ isExporting ? '⏳ Exportando...' : '📥 Excel' }}
+        <ng-container *ngIf="isExporting">
+          <span class="material-symbols-outlined">hourglass_top</span> Exportando...
+        </ng-container>
+        <ng-container *ngIf="!isExporting">
+          <span class="material-symbols-outlined">download</span> Excel
+        </ng-container>
       </button>
       <button class="clear-filters-btn" (click)="exportar('csv')" [disabled]="isExporting" title="Exportar a CSV con los filtros actuales">
-        📄 CSV
+        <span class="material-symbols-outlined">description</span> CSV
       </button>
       <button class="clear-filters-btn" (click)="resetFilters()" [class.has-filters]="hasActiveFilters()" title="Limpiar todos los filtros">
-        ✕ Limpiar filtros
+        <span class="material-symbols-outlined">close</span> Limpiar filtros
       </button>
     </div>
   </header>
@@ -21,7 +26,7 @@
   <!-- Search Bar -->
   <section class="search-bar animate-fade-in">
     <div class="search-box-wrapper">
-      <span class="search-icon">🔍</span>
+      <span class="search-icon material-symbols-outlined">search</span>
       <input
         type="text"
         [(ngModel)]="searchText"
@@ -41,7 +46,7 @@
       <ng-container *ngIf="filters[col.key]">
         <span class="chip-key">{{ col.label }}:</span>
         <span class="chip-val">{{ filters[col.key] }}</span>
-        <span class="chip-remove" (click)="clearColumnFilter(col, $event)">✕</span>
+        <span class="chip-remove material-symbols-outlined chip-close" (click)="clearColumnFilter(col, $event)">close</span>
       </ng-container>
     </span>
   </div>
@@ -55,7 +60,7 @@
   <!-- Error State -->
   <div class="error-banner" *ngIf="!isLoading && errorMessage" role="alert"
        style="background:#fdecea;color:#b71c1c;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;">
-    <span>⚠️ {{ errorMessage }}</span>
+    <span class="material-symbols-outlined">warning</span><span>{{ errorMessage }}</span>
     <button (click)="loadApus()" style="background:none;border:1px solid #b71c1c;color:#b71c1c;border-radius:6px;padding:4px 12px;cursor:pointer;">Reintentar</button>
   </div>
 
@@ -73,19 +78,19 @@
               [style.width]="col.width">
               <div class="th-content">
                 <span class="th-label" (click)="sortByColumn(col)">{{ col.label }}</span>
-                <span class="sort-icon" *ngIf="sortBy === col.key">{{ getSortIcon(col) }}</span>
-                <span class="filter-icon"
+                <span class="sort-icon material-symbols-outlined" *ngIf="sortBy === col.key">{{ getSortIcon(col) }}</span>
+                <span class="filter-icon material-symbols-outlined filter-arrow"
                   *ngIf="col.filterable"
                   [class.active]="activeFilterCol === col.key"
                   [class.has-filter]="!!filters[col.key]"
-                  (click)="toggleFilterDropdown(col, $event)">▼</span>
+                  (click)="toggleFilterDropdown(col, $event)">arrow_drop_down</span>
               </div>
 
               <!-- Filter Dropdown -->
               <div class="filter-dropdown" *ngIf="activeFilterCol === col.key" (click)="$event.stopPropagation()">
                 <div class="filter-dropdown-header">
                   <span>Filtrar por {{ col.label.toLowerCase() }}</span>
-                  <span class="filter-clear" *ngIf="filters[col.key]" (click)="clearColumnFilter(col, $event)">✕</span>
+                  <span class="filter-clear material-symbols-outlined filter-close" *ngIf="filters[col.key]" (click)="clearColumnFilter(col, $event)">close</span>
                 </div>
 
                 <!-- Text input for all filterable columns -->
@@ -105,7 +110,7 @@
                     *ngFor="let opt of (filteredOptionLists[col.key] || getFilterOptionsFor(col))"
                     [class.selected]="filters[col.key] === opt"
                     (click)="selectFilterOption(col, opt)">
-                    <span class="option-check">{{ filters[col.key] === opt ? '✓' : '' }}</span>
+                    <span class="option-check material-symbols-outlined">{{ filters[col.key] === opt ? 'check' : '' }}</span>
                     <span class="option-label">{{ opt }}</span>
                   </div>
                   <div class="filter-no-results" *ngIf="(filteredOptionLists[col.key] || getFilterOptionsFor(col)).length === 0">
@@ -135,7 +140,7 @@
 
     <!-- Empty State -->
     <div class="empty-state" *ngIf="apus.length === 0">
-      <span class="empty-icon">📁</span>
+      <span class="empty-icon material-symbols-outlined">folder_off</span>
       <p>No se encontraron registros en el banco de APUs</p>
     </div>
 

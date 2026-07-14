@@ -8,18 +8,23 @@
   </header>
 
   <div class="alert error" *ngIf="error">
-    <span>⚠️ {{ error }}</span>
-    <button class="alert-close" (click)="error = null">✕</button>
+    <span class="material-symbols-outlined alert-icon">warning</span><span>{{ error }}</span>
+    <button class="alert-close" (click)="error = null"><span class="material-symbols-outlined">close</span></button>
   </div>
   <div class="alert success" *ngIf="successMsg">
-    <span>✓ {{ successMsg }}</span>
-    <button class="alert-close" (click)="successMsg = null">✕</button>
+    <span class="material-symbols-outlined alert-icon">check_circle</span><span>{{ successMsg }}</span>
+    <button class="alert-close" (click)="successMsg = null"><span class="material-symbols-outlined">close</span></button>
   </div>
 
   <section class="upload-section" *ngIf="!selectedSolicitud">
     <div class="section-actions">
       <button class="action-btn primary" (click)="showUploadForm = !showUploadForm; selectedFiles = []">
-        {{ showUploadForm ? '✕ Cancelar' : '+ Nuevo Paquete de Cotizaciones' }}
+        <ng-container *ngIf="showUploadForm">
+          <span class="material-symbols-outlined">close</span> Cancelar
+        </ng-container>
+        <ng-container *ngIf="!showUploadForm">
+          <span class="material-symbols-outlined">add</span> Nuevo Paquete de Cotizaciones
+        </ng-container>
       </button>
     </div>
 
@@ -37,7 +42,7 @@
           <span class="file-badge">{{ f.name.split('.').pop() | uppercase }}</span>
           <span class="file-name">Cotización {{ i + 1 }}: {{ f.name }}</span>
           <span class="file-size">{{ (f.size / 1024 / 1024) | number:'1.1-1' }} MB</span>
-          <button class="file-remove" (click)="removeFile(i)">✕</button>
+          <button class="file-remove" (click)="removeFile(i)"><span class="material-symbols-outlined">close</span></button>
         </div>
       </div>
 
@@ -117,9 +122,14 @@
       <div class="detail-header-actions">
         <button class="action-btn secondary" *ngIf="selectedSolicitud.analisis"
                 (click)="exportarAnalisis(selectedSolicitud.id!)" [disabled]="exportando">
-          {{ exportando ? '⏳ Exportando...' : '📥 Exportar Excel' }}
+          <ng-container *ngIf="exportando">
+            <span class="material-symbols-outlined">hourglass_top</span> Exportando...
+          </ng-container>
+          <ng-container *ngIf="!exportando">
+            <span class="material-symbols-outlined">download</span> Exportar Excel
+          </ng-container>
         </button>
-        <button class="action-btn secondary" (click)="closeDetail()">✕ Cerrar</button>
+        <button class="action-btn secondary" (click)="closeDetail()"><span class="material-symbols-outlined">close</span> Cerrar</button>
       </div>
     </div>
 
@@ -128,7 +138,7 @@
         <ng-container [ngSwitch]="selectedSolicitud.estado">
           <ng-container *ngSwitchCase="'pendiente_analisis'">
             <button class="action-btn primary" (click)="analizarManual(selectedSolicitud.id!)">
-              🔍 Ejecutar Análisis IA
+              <span class="material-symbols-outlined">search</span> Ejecutar Análisis IA
             </button>
           </ng-container>
 
@@ -137,10 +147,10 @@
               <p class="info-text">El análisis fue completado. Puedes preaprobar o rechazar esta solicitud.</p>
               <div class="btn-group">
                 <button class="action-btn primary" (click)="preaprobar(selectedSolicitud.id!)">
-                  ✓ Preaprobar
+                  <span class="material-symbols-outlined">check</span> Preaprobar
                 </button>
                 <button class="action-btn danger" (click)="showRechazoForm = true">
-                  ✕ Rechazar
+                  <span class="material-symbols-outlined">close</span> Rechazar
                 </button>
               </div>
             </div>
@@ -167,7 +177,7 @@
               La contraparte debe enviar nuevas cotizaciones antes del: {{ selectedSolicitud.fecha_limite_respuesta }}
             </p>
             <button class="action-btn primary" (click)="nuevasCotizaciones(selectedSolicitud.id!)">
-              📄 Registrar Nuevas Cotizaciones Recibidas
+              <span class="material-symbols-outlined">description</span> Registrar Nuevas Cotizaciones Recibidas
             </button>
             <p class="help-text">Al registrar, la contraparte tendrá 3 días para responder.</p>
           </ng-container>
@@ -175,14 +185,14 @@
           <ng-container *ngSwitchCase="'preaprobado'">
             <p class="info-text">Esperando aprobación del subgerente técnico de la interventoría.</p>
             <button class="action-btn primary" (click)="aprobarSubgerente(selectedSolicitud.id!)">
-              ✓ Aprobar como Subgerente Técnico
+              <span class="material-symbols-outlined">check</span> Aprobar como Subgerente Técnico
             </button>
           </ng-container>
 
           <ng-container *ngSwitchCase="'aprobado_subgerente'">
             <p class="info-text">Esperando firma del representante legal de la interventoría.</p>
             <button class="action-btn primary" (click)="firmarLegal(selectedSolicitud.id!)">
-              ✍️ Firmar como Representante Legal
+              <span class="material-symbols-outlined">edit</span> Firmar como Representante Legal
             </button>
           </ng-container>
         </ng-container>
@@ -235,7 +245,7 @@
         <div class="analisis-placeholder" *ngIf="!selectedSolicitud.analisis">
           <p>El análisis de la IA se mostrará aquí una vez ejecutado.</p>
           <button class="action-btn primary" *ngIf="selectedSolicitud.estado === 'pendiente_analisis'" (click)="analizarManual(selectedSolicitud.id!)">
-            🔍 Ejecutar Análisis IA
+            <span class="material-symbols-outlined">search</span> Ejecutar Análisis IA
           </button>
         </div>
 
@@ -243,7 +253,7 @@
           <!-- ═══ RESUMEN IA (Diseño Mejorado) ═══ -->
           <div class="resumen-ia-container" *ngIf="selectedSolicitud.analisis.resumen">
             <div class="resumen-header">
-              <span class="resumen-icon">📖</span>
+              <span class="resumen-icon material-symbols-outlined">summarize</span>
               <h3>Resumen del Análisis de IA</h3>
             </div>
             <div class="resumen-content">
@@ -282,7 +292,7 @@
           <!-- ═══ COMPARATIVA ENTRE COTIZACIONES (Cuadro Comparativo) ═══ -->
           <div class="comparison-section" *ngIf="selectedSolicitud.analisis.comparacion_grupos?.total_grupos > 1">
             <div class="section-title">
-              <h4>📊 Comparativa de Cotizaciones</h4>
+              <h4><span class="material-symbols-outlined">bar_chart</span> Comparativa de Cotizaciones</h4>
               <p class="section-subtitle">Análisis global de costos entre las diferentes propuestas recibidas</p>
             </div>
             <div class="comparison-table-wrap">
@@ -309,7 +319,7 @@
                     <td class="numeric">${{ (g.value.promedio || 0) | number:'1.0-0' }}</td>
                     <td class="numeric">{{ g.value.count }}</td>
                     <td>
-                      <span class="best-badge" *ngIf="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo">✨ MEJOR OPCIÓN</span>
+                      <span class="best-badge" *ngIf="g.key == selectedSolicitud.analisis.comparacion_grupos.mejor_grupo"><span class="material-symbols-outlined">auto_awesome</span> MEJOR OPCIÓN</span>
                     </td>
                   </tr>
                 </tbody>
@@ -358,13 +368,13 @@
                         </span>
                       </td>
                       <td>
-                        <span class="status-icon" [class.icon-success]="item.estructura_insumos_coincide" [class.icon-danger]="item.estructura_insumos_coincide === false" [class.icon-secondary]="item.estructura_insumos_coincide === null">
-                          {{ item.estructura_insumos_coincide === true ? '✓' : item.estructura_insumos_coincide === false ? '✕' : '-' }}
+                        <span class="status-icon material-symbols-outlined" [class.icon-success]="item.estructura_insumos_coincide" [class.icon-danger]="item.estructura_insumos_coincide === false" [class.icon-secondary]="item.estructura_insumos_coincide === null">
+                          {{ item.estructura_insumos_coincide === true ? 'check' : item.estructura_insumos_coincide === false ? 'close' : 'remove' }}
                         </span>
                       </td>
                       <td>
-                        <span class="status-icon" [class.icon-success]="item.rendimiento_coincide" [class.icon-danger]="item.rendimiento_coincide === false" [class.icon-secondary]="item.rendimiento_coincide === null">
-                          {{ item.rendimiento_coincide === true ? '✓' : item.rendimiento_coincide === false ? '✕' : '-' }}
+                        <span class="status-icon material-symbols-outlined" [class.icon-success]="item.rendimiento_coincide" [class.icon-danger]="item.rendimiento_coincide === false" [class.icon-secondary]="item.rendimiento_coincide === null">
+                          {{ item.rendimiento_coincide === true ? 'check' : item.rendimiento_coincide === false ? 'close' : 'remove' }}
                         </span>
                       </td>
                       <td>

@@ -206,7 +206,7 @@ export class AnalisisApu implements OnInit {
           this.showUploadForm = false;
 
           if (res.solicitud_id) {
-            this.successMsg = `🔍 Solicitud #${res.solicitud_id} creada. Analizando con IA...`;
+            this.successMsg = `Solicitud #${res.solicitud_id} creada. Analizando con IA...`;
 
             this._loadSolicitudDetail(res.solicitud_id);
 
@@ -214,7 +214,7 @@ export class AnalisisApu implements OnInit {
               next: (analisisRes: any) => {
                 this.ngZone.run(() => {
                   this.uploading = false;
-                  this.successMsg = `✅ Análisis completado para solicitud #${res.solicitud_id}`;
+                  this.successMsg = `Análisis completado para solicitud #${res.solicitud_id}`;
                   this._loadSolicitudDetail(res.solicitud_id);
                 });
               },
@@ -222,7 +222,7 @@ export class AnalisisApu implements OnInit {
                 this.ngZone.run(() => {
                   this.uploading = false;
                   console.warn('Análisis automático falló:', errAnalisis);
-                  this.error = `⚠️ El análisis IA falló. Haz clic en "Ejecutar Análisis IA" para reintentar.`;
+                  this.error = `El análisis IA falló. Haz clic en "Ejecutar Análisis IA" para reintentar.`;
                   this._loadSolicitudDetail(res.solicitud_id);
                 });
               },
