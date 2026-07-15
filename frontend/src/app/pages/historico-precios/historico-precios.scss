@@ -205,3 +205,24 @@
     }
   }
 }
+
+@media (max-width: 768px) {
+  .historico-container {
+    padding: 0.75rem;
+  }
+
+  .page-header h1 { font-size: 1.25rem; }
+
+  .search-fields {
+    flex-direction: column;
+    .field { min-width: auto; width: 100%; }
+  }
+
+  .search-btn { width: 100%; justify-content: center; }
+
+  .summary-row {
+    flex-direction: column;
+  }
+
+  .summary-card { min-width: auto; }
+}

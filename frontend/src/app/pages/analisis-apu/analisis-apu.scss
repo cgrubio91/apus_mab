@@ -867,3 +867,75 @@
   gap: 8px;
   align-items: center;
 }
+
+@media (max-width: 768px) {
+  .analisis-container {
+    padding: 0.75rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .filters-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+
+    select { width: 100%; }
+  }
+
+  .page-header h2 { font-size: 1.25rem; }
+
+  .stats-bar {
+    flex-direction: column;
+  }
+
+  .stat-card {
+    min-width: auto;
+  }
+
+  .detail-header {
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+  }
+
+  .detail-body {
+    padding: 1rem;
+  }
+
+  .detail-header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .btn-group {
+    flex-direction: column;
+    gap: 0.5rem;
+
+    .action-btn { width: 100%; justify-content: center; }
+  }
+
+  .grupos-detalle {
+    gap: 0.75rem;
+  }
+
+  .grupo-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .solicitudes-table {
+    font-size: 0.75rem;
+
+    th, td { padding: 0.5rem; }
+  }
+}

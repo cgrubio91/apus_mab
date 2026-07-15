@@ -1,4 +1,4 @@
-<nav class="sidebar" [class.collapsed]="isCollapsed">
+<nav class="sidebar" [class.collapsed]="isCollapsed" [class.mobile-open]="isMobileOpen">
   <div class="sidebar-header">
     <div class="logo-wrapper">
       <div class="logo-icon">
@@ -9,8 +9,11 @@
         <span class="app-subtitle">APU · OBRA CIVIL</span>
       </div>
     </div>
-    <button class="toggle-btn" (click)="isCollapsed = !isCollapsed">
+    <button class="toggle-btn desktop-toggle" (click)="isCollapsed = !isCollapsed">
       <span class="menu-icon material-symbols-outlined">menu</span>
+    </button>
+    <button class="toggle-btn mobile-close" (click)="closeMobile()">
+      <span class="menu-icon material-symbols-outlined">close</span>
     </button>
   </div>
 

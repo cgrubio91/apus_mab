@@ -1,4 +1,11 @@
-<app-sidebar></app-sidebar>
-<div class="main-content">
+<app-sidebar [isMobileOpen]="isMobileOpen" (closeMobileEvent)="closeMobileSidebar()"></app-sidebar>
+<div class="sidebar-overlay" *ngIf="isMobileOpen" (click)="closeMobileSidebar()"></div>
+<div class="main-content" [class.mobile-open]="isMobileOpen">
+  <div class="mobile-header">
+    <button class="hamburger-btn" (click)="toggleMobileSidebar()">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+    <span class="mobile-title">MAPUS</span>
+  </div>
   <router-outlet></router-outlet>
 </div>

@@ -307,3 +307,38 @@
     color: #90a4ae;
   }
 }
+
+.mobile-close {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .sidebar {
+    left: -280px;
+    width: 280px;
+  }
+
+  .sidebar.mobile-open {
+    left: 0;
+  }
+
+  .desktop-toggle {
+    display: none;
+  }
+
+  .mobile-close {
+    display: flex;
+  }
+
+  .notif-panel {
+    position: fixed;
+    left: 0 !important;
+    right: 0;
+    top: auto !important;
+    bottom: 0;
+    width: 100%;
+    max-height: 60vh;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.2);
+  }
+}

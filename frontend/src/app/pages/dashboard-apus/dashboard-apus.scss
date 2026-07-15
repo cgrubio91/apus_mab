@@ -320,3 +320,45 @@
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 768px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+
+    h1 { font-size: 1.4rem; }
+  }
+
+  .export-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .stat-card {
+    padding: 1.15rem;
+
+    .card-value { font-size: 1.5rem; }
+  }
+
+  .grid-card {
+    padding: 1rem;
+  }
+
+  .grid-card .card-header {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .premium-table {
+    font-size: 0.75rem;
+
+    th, td { padding: 0.5rem; }
+  }
+}

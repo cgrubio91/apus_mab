@@ -652,3 +652,69 @@
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@media (max-width: 768px) {
+  .nuevos-container {
+    padding: 0 0.25rem;
+  }
+
+  .page-header {
+    margin-bottom: 1.25rem;
+
+    h1 { font-size: 1.3rem; }
+  }
+
+  .upload-card {
+    padding: 1.25rem;
+  }
+
+  .drag-drop-area {
+    padding: 1.5rem 1rem;
+
+    h3 { font-size: 0.95rem; }
+  }
+
+  .file-progress-card .card-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .file-ready-box {
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: stretch;
+
+    .action-btn { width: 100%; justify-content: center; }
+  }
+
+  .results-section .grid-card {
+    padding: 1rem;
+  }
+
+  .results-section .card-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .saved-card {
+    padding: 1.5rem 1rem;
+  }
+
+  .saved-card .summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-card .ready-actions {
+    flex-direction: column;
+    gap: 0.5rem;
+
+    .action-btn { width: 100%; justify-content: center; }
+  }
+
+  .summary-footer {
+    flex-direction: column;
+    gap: 0.5rem;
+    text-align: center;
+  }
+}

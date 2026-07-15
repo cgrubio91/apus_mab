@@ -534,3 +534,44 @@
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@media (max-width: 768px) {
+  .consulta-container {
+    padding: 0 0.75rem 24px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 0.75rem;
+
+    .header-titles h1 { font-size: 1.25rem; }
+  }
+
+  .search-bar {
+    flex-direction: column;
+    gap: 0.5rem;
+
+    .search-box-wrapper { width: 100%; }
+
+    .results-badge { align-self: flex-start; }
+  }
+
+  .pagination-footer {
+    flex-direction: column;
+    gap: 0.5rem;
+
+    .page-indicator { font-size: 0.75rem; }
+  }
+
+  .filter-dropdown {
+    position: fixed !important;
+    top: auto !important;
+    bottom: 0;
+    left: 0 !important;
+    right: 0;
+    max-width: 100% !important;
+    max-height: 60vh !important;
+    border-radius: 12px 12px 0 0 !important;
+    box-shadow: 0 -4px 24px rgba(0,0,0,0.15) !important;
+  }
+}

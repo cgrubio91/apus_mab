@@ -1,9 +1,10 @@
-import { Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, inject, Input, Output, EventEmitter, HostListener, OnInit, OnDestroy } from '@angular/core';
+import { Router, RouterLink, RouterLinkActive, NavigationEnd } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../services/auth.service';
 import { NotificacionesService } from '../../services/notificaciones.service';
 import { Notificacion } from '../../services/apu';
+import { filter, Subscription } from 'rxjs';
 
 @Component({
   selector: 'app-sidebar',
@@ -12,14 +13,33 @@ import { Notificacion } from '../../services/apu';
   templateUrl: './sidebar.html',
   styleUrl: './sidebar.scss',
 })
-export class Sidebar {
+export class Sidebar implements OnInit, OnDestroy {
   auth = inject(AuthService);
   notif = inject(NotificacionesService);
   private router = inject(Router);
 
+  @Input() isMobileOpen = false;
+  @Output() closeMobileEvent = new EventEmitter<void>();
+
   isCollapsed = false;
   apuExpanded = true;
   showNotifPanel = false;
+  private routerSub?: Subscription;
+
+  ngOnInit() {
+    this.routerSub = this.router.events
+      .pipe(filter(e => e instanceof NavigationEnd))
+      .subscribe(() => {
+        if (this.isMobileOpen) {
+          this.closeMobileEvent.emit();
+          document.body.style.overflow = '';
+        }
+      });
+  }
+
+  ngOnDestroy() {
+    this.routerSub?.unsubscribe();
+  }
 
   get currentUser() {
     return this.auth.getCurrentUser();
@@ -31,6 +51,19 @@ export class Sidebar {
 
   get isAdmin() {
     return (this.currentUser?.rol || '').toLowerCase() === 'admin';
+  }
+
+  @HostListener('document:click', ['$event'])
+  onDocClick(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    if (!target.closest('.notif-item') && !target.closest('.notif-panel')) {
+      this.showNotifPanel = false;
+    }
+  }
+
+  closeMobile() {
+    this.closeMobileEvent.emit();
+    document.body.style.overflow = '';
   }
 
   toggleNotifPanel(): void {
