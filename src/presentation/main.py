@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 load_dotenv()
 
@@ -70,8 +72,9 @@ def create_app() -> FastAPI:
     app.include_router(api_router, prefix="/api")
     app.include_router(whatsapp_router)
 
-    @app.get("/")
-    def home():
+    # Movemos la info de la API a una ruta alternativa por si quieres consultarla
+    @app.get("/api/status")
+    def api_status():
         return {
             "status": "online",
             "version": "2.1.0",
@@ -99,6 +102,45 @@ def create_app() -> FastAPI:
             status["database"] = str(e)
             log.error("Health check failed: %s", e)
         return status
+
+    # ── Soporte para Servir Angular (Frontend) ────────────────────────
+    STATIC_DIR = "/app/static"
+
+    if os.path.exists(STATIC_DIR):
+        # 1. Buscamos el index.html en la carpeta static
+        # (Angular compila dentro de dist/ o dist/nombre-app/, el Dockerfile se encarga de unificar esto en /app/static)
+        index_path = os.path.join(STATIC_DIR, "index.html")
+
+        # Si Angular compiló en una subcarpeta (ej. /app/static/browser/index.html) ajustamos dinámicamente:
+        if not os.path.exists(index_path):
+            for root, dirs, files in os.walk(STATIC_DIR):
+                if "index.html" in files:
+                    STATIC_DIR = root
+                    index_path = os.path.join(root, "index.html")
+                    break
+
+        log.info("Serving Angular frontend from: %s", STATIC_DIR)
+        app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+        # 2. Servimos la raíz del sitio con Angular
+        @app.get("/")
+        async def serve_home():
+            return FileResponse(index_path)
+
+        # 3. Wildcard para no romper el ruteo interno de Angular
+        @app.get("/{catchall:path}")
+        async def serve_frontend(catchall: str):
+            # No interferimos con las peticiones de la API ni de WhatsApp
+            if not catchall.startswith("api") and not catchall.startswith("whatsapp"):
+                file_path = os.path.join(STATIC_DIR, catchall)
+                if os.path.exists(file_path) and os.path.isfile(file_path):
+                    return FileResponse(file_path)
+                return FileResponse(index_path)
+    else:
+        # Fallback por si la carpeta no existe en desarrollo local
+        @app.get("/")
+        def home():
+            return {"status": "online", "message": "Static folder not found. API is ready."}
 
     return app
 
