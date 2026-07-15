@@ -45,6 +45,7 @@ SCHEMA_STATEMENTS = [
         password_hash VARCHAR(255)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
+    "ALTER TABLE usuarios ADD COLUMN email VARCHAR(255) NULL AFTER nombre",
     "CREATE INDEX idx_usuarios_telefono ON usuarios (telefono)",
 
     """

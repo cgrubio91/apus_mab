@@ -25,8 +25,18 @@ export class Usuarios implements OnInit {
   successMessage = '';
 
   showCreateForm = false;
-  nuevo = { telefono: '', nombre: '', password: '', rol: 'user' };
+  showRoleInfo = false;
+  nuevo = { telefono: '', nombre: '', email: '', password: '', rol: 'user' };
   creando = false;
+
+  roleDescriptions = [
+    { rol: 'admin', desc: 'Acceso total: gestiona usuarios, roles, proyectos y toda la configuración del sistema.' },
+    { rol: 'subgerente', desc: 'Aprueba APUs en segunda instancia. Supervisa el flujo de aprobación y revisa análisis.' },
+    { rol: 'legal', desc: 'Firma legalmente los APUs aprobados. Revisa y da el visto bueno final.' },
+    { rol: 'analista', desc: 'Crea y analiza APUs, sube cotizaciones, preaprueba o rechaza solicitudes en primera instancia.' },
+    { rol: 'contraparte', desc: 'Visualiza APUs y análisis completos. Consulta el banco de precios e históricos.' },
+    { rol: 'user', desc: 'Acceso básico de solo lectura al banco de APUs y chat asistente.' },
+  ];
 
   get currentUserId(): number | undefined {
     return this.auth.getCurrentUser()?.id;
@@ -60,12 +70,16 @@ export class Usuarios implements OnInit {
       this.errorMessage = 'Completa teléfono, nombre y una contraseña de mínimo 6 caracteres.';
       return;
     }
+    if (this.nuevo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.nuevo.email)) {
+      this.errorMessage = 'El correo electrónico no es válido.';
+      return;
+    }
     this.creando = true;
     this.errorMessage = '';
     this.apuService.createUser(this.nuevo).subscribe({
       next: () => {
         this.successMessage = `Usuario ${this.nuevo.nombre} creado.`;
-        this.nuevo = { telefono: '', nombre: '', password: '', rol: 'user' };
+        this.nuevo = { telefono: '', nombre: '', email: '', password: '', rol: 'user' };
         this.showCreateForm = false;
         this.creando = false;
         this.loadUsers();

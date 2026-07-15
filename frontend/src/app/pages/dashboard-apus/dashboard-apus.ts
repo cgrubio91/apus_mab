@@ -14,7 +14,7 @@ export class DashboardApus implements OnInit {
     totalApus: 0,
     totalProyectos: 0,
     totalCiudades: 0,
-    precisionIA: 0,
+
     apusPorTipoInsumo: {} as Record<string, number>,
   };
   isLoading = true;
@@ -36,7 +36,7 @@ export class DashboardApus implements OnInit {
         this.stats.totalApus = data.total_apus || 0;
         this.stats.totalProyectos = data.total_projects || 0;
         this.stats.totalCiudades = data.total_cities || 0;
-        this.stats.precisionIA = data.completitud_datos || 0;
+
         this.stats.apusPorTipoInsumo = data.apus_por_tipo_insumo || {};
         this.isLoading = false;
         this.cdr.markForCheck();

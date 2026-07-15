@@ -111,6 +111,7 @@ export interface UsuarioAdmin {
   id: number;
   telefono: string;
   nombre: string;
+  email?: string;
   rol: string;
   activo: boolean;
   fecha_registro?: string;
@@ -366,7 +367,7 @@ export class ApuService {
     return this.http.get<{ users: UsuarioAdmin[] }>(`${this.baseUrl}/auth/users`);
   }
 
-  createUser(user: { telefono: string; nombre: string; password: string; rol: string }): Observable<any> {
+  createUser(user: { telefono: string; nombre: string; email?: string; password: string; rol: string }): Observable<any> {
     return this.http.post(`${this.baseUrl}/auth/users`, user);
   }
 

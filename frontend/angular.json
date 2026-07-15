@@ -59,6 +59,10 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "proxyConfig": "proxy.conf.js",
+            "allowedHosts": ["alfred-audience-derby-courts.trycloudflare.com"]
+          },
           "configurations": {
             "production": {
               "buildTarget": "apu-frontend:build:production"

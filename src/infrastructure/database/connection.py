@@ -41,7 +41,7 @@ class DatabaseConfig:
             )
 
     def get_connection_params(self):
-        return {
+        params = {
             "host": self.host,
             "port": self.port,
             "database": self.name,
@@ -49,6 +49,9 @@ class DatabaseConfig:
             "password": self.password,
             "connect_timeout": 30,
         }
+        if settings.DB_SSLMODE and settings.DB_SSLMODE.lower() in ("require", "verify-ca", "verify-full"):
+            params["ssl_ca"] = "ca.pem"
+        return params
 
 
 db_config = DatabaseConfig()

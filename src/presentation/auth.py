@@ -70,7 +70,7 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
-    rows = execute_query("SELECT id, telefono, nombre, rol, activo FROM usuarios WHERE id = %s", (user_id,))
+    rows = execute_query("SELECT id, telefono, nombre, email, rol, activo FROM usuarios WHERE id = %s", (user_id,))
     if not rows or not rows[0].get("activo"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado o inactivo")
     return rows[0]

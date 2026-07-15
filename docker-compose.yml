@@ -35,6 +35,9 @@ services:
       DB_PASSWORD: postgres
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL: gemini-2.5-flash
+      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      OLLAMA_HOST: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:31b-cloud}
       CORS_ORIGINS: http://localhost:4200
       ENV: production
     depends_on:

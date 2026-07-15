@@ -1,4 +1,5 @@
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -24,12 +25,14 @@ class LoginRequest(BaseModel):
 class RegisterRequest(BaseModel):
     telefono: str
     nombre: str
+    email: str | None = None
     password: str
 
 
 class AdminCreateUserRequest(BaseModel):
     telefono: str
     nombre: str
+    email: str | None = None
     password: str
     rol: str = "user"
 
@@ -42,7 +45,7 @@ class AdminUpdateUserRequest(BaseModel):
 @router.post("/auth/login", tags=["Auth"])
 async def login(payload: LoginRequest) -> dict:
     rows = execute_query(
-        "SELECT id, telefono, nombre, rol, activo, password_hash FROM usuarios WHERE telefono = %s",
+        "SELECT id, telefono, nombre, email, rol, activo, password_hash FROM usuarios WHERE telefono = %s",
         (payload.telefono,),
     )
     if not rows:
@@ -64,17 +67,21 @@ async def login(payload: LoginRequest) -> dict:
         "telefono": user["telefono"],
         "rol": user["rol"],
         "nombre": user["nombre"],
+        "email": user.get("email"),
     })
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user["id"], "nombre": user["nombre"], "rol": user["rol"], "telefono": user["telefono"]},
+        "user": {"id": user["id"], "nombre": user["nombre"], "rol": user["rol"], "telefono": user["telefono"], "email": user.get("email")},
     }
 
 
-def _crear_usuario(telefono: str, nombre: str, password: str, rol: str) -> None:
+def _crear_usuario(telefono: str, nombre: str, password: str, rol: str, email: str | None = None) -> None:
     if len(password) < 6:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+
+    if email and not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+        raise HTTPException(status_code=400, detail="El correo electrónico no es válido")
 
     existing = execute_query("SELECT id FROM usuarios WHERE telefono = %s", (telefono,))
     if existing:
@@ -82,8 +89,8 @@ def _crear_usuario(telefono: str, nombre: str, password: str, rol: str) -> None:
 
     password_hash = hash_password(password)
     execute_query(
-        "INSERT INTO usuarios (telefono, nombre, rol, password_hash) VALUES (%s, %s, %s, %s)",
-        (telefono, nombre, rol, password_hash),
+        "INSERT INTO usuarios (telefono, nombre, email, rol, password_hash) VALUES (%s, %s, %s, %s, %s)",
+        (telefono, nombre, email, rol, password_hash),
         fetch=False,
     )
     log.info("Usuario registrado: %s (%s)", telefono, rol)
@@ -93,14 +100,14 @@ def _crear_usuario(telefono: str, nombre: str, password: str, rol: str) -> None:
 async def register(payload: RegisterRequest) -> dict:
     # El registro público siempre crea usuarios con el rol mínimo; los roles
     # superiores solo se asignan desde los endpoints de administración.
-    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol="user")
+    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol="user", email=payload.email)
     return {"success": True, "mensaje": "Usuario registrado exitosamente"}
 
 
 @router.get("/auth/users", tags=["Auth"])
 async def list_users(_admin: dict = Depends(require_role("admin"))) -> dict:
     rows = execute_query(
-        "SELECT id, telefono, nombre, rol, activo, fecha_registro FROM usuarios ORDER BY id"
+        "SELECT id, telefono, nombre, email, rol, activo, fecha_registro FROM usuarios ORDER BY id"
     )
     return {"users": rows or []}
 
@@ -111,7 +118,7 @@ async def admin_create_user(
 ) -> dict:
     if payload.rol not in ROLES_HIERARCHY:
         raise HTTPException(status_code=400, detail=f"Rol inválido. Roles válidos: {sorted(ROLES_HIERARCHY)}")
-    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol=payload.rol)
+    _crear_usuario(payload.telefono, payload.nombre, payload.password, rol=payload.rol, email=payload.email)
     return {"success": True, "mensaje": "Usuario creado exitosamente"}
 
 

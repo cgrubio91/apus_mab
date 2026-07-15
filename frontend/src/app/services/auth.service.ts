@@ -11,6 +11,7 @@ export interface AuthUser {
   nombre: string;
   rol: string;
   telefono: string;
+  email?: string;
 }
 
 @Injectable({ providedIn: 'root' })
