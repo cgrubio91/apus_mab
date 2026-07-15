@@ -642,6 +642,13 @@
   border-radius: 999px;
 }
 
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
 .stats-bar {
   display: flex;
   gap: 12px;
@@ -679,6 +686,7 @@
   &.stat-ok  .stat-value { color: #059669; }
   &.stat-warn .stat-value { color: #d97706; }
   &.stat-ko   .stat-value { color: #dc2626; }
+  &.stat-info .stat-value { color: #2563eb; }
 }
 
 .comparison-card {
@@ -938,4 +946,27 @@
 
     th, td { padding: 0.5rem; }
   }
+}
+
+@media (max-width: 480px) {
+  .analisis-container { padding: 0.5rem; }
+
+  .page-header h2 { font-size: 1.1rem; }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-card .stat-value { font-size: 20px; }
+
+  .detail-header h2 { font-size: 1.1rem; }
+
+  .solicitudes-table {
+    font-size: 0.7rem;
+
+    th, td { padding: 0.4rem; }
+  }
+
+  .grupos-list { gap: 0.4rem; }
 }

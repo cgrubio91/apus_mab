@@ -317,3 +317,24 @@
     .field { min-width: auto; width: 100%; }
   }
 }
+
+@media (max-width: 480px) {
+  .usuarios-container { padding: 0.5rem; }
+
+  .page-header h1 { font-size: 1.1rem; }
+
+  .header-actions {
+    flex-wrap: wrap;
+
+    .primary-btn { width: 100%; }
+    .info-btn { width: 44px; flex: 1; }
+  }
+
+  .create-card { padding: 12px; }
+
+  .table-card table {
+    th, td { padding: 8px 10px; font-size: 12px; }
+  }
+
+  .modal-content { padding: 16px; width: 95%; }
+}

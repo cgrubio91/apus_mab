@@ -362,3 +362,25 @@
     th, td { padding: 0.5rem; }
   }
 }
+
+@media (max-width: 480px) {
+  .dashboard-container { padding: 0; }
+
+  .dashboard-header {
+    h1 { font-size: 1.25rem; }
+    p { font-size: 0.8rem; }
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .stat-card {
+    padding: 0.9rem;
+
+    .card-value { font-size: 1.35rem; }
+  }
+
+  .grid-card { padding: 0.75rem; }
+}

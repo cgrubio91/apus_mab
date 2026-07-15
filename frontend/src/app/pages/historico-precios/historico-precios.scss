@@ -226,3 +226,19 @@
 
   .summary-card { min-width: auto; }
 }
+
+@media (max-width: 480px) {
+  .historico-container { padding: 0.5rem; }
+
+  .page-header h1 { font-size: 1.1rem; }
+  .page-header p { font-size: 0.8rem; }
+
+  .search-card { padding: 12px; }
+
+  .chart-card,
+  .table-card { padding: 12px; }
+
+  .summary-card { padding: 10px 14px; }
+
+  .summary-value { font-size: 18px; }
+}

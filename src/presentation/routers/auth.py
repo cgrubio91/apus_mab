@@ -45,8 +45,10 @@ class AdminUpdateUserRequest(BaseModel):
 @router.post("/auth/login", tags=["Auth"])
 async def login(payload: LoginRequest) -> dict:
     rows = execute_query(
-        "SELECT id, telefono, nombre, email, rol, activo, password_hash FROM usuarios WHERE telefono = %s",
-        (payload.telefono,),
+        """SELECT id, telefono, nombre, email, rol, activo, password_hash
+           FROM usuarios
+           WHERE telefono = %s OR email = %s""",
+        (payload.telefono, payload.telefono),
     )
     if not rows:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas")

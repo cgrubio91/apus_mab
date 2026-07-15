@@ -575,3 +575,34 @@
     box-shadow: 0 -4px 24px rgba(0,0,0,0.15) !important;
   }
 }
+
+@media (max-width: 480px) {
+  .consulta-container {
+    padding: 0 0.5rem 16px;
+  }
+
+  .page-header .header-titles h1 { font-size: 1.1rem; }
+
+  .header-actions {
+    width: 100%;
+
+    .clear-filters-btn {
+      flex: 1;
+      justify-content: center;
+      font-size: 0.75rem;
+      padding: 8px 6px;
+    }
+  }
+
+  .premium-table {
+    font-size: 11px;
+
+    th, td { padding: 6px 8px; }
+  }
+
+  .pagination-footer {
+    .pagination-actions { width: 100%; justify-content: center; }
+
+    .page-indicator { text-align: center; width: 100%; }
+  }
+}

@@ -718,3 +718,31 @@
     text-align: center;
   }
 }
+
+@media (max-width: 480px) {
+  .nuevos-container { padding: 0; }
+
+  .page-header h1 { font-size: 1.2rem; }
+  .page-header p { font-size: 0.8rem; }
+
+  .upload-card { padding: 1rem; }
+
+  .drag-drop-area { padding: 1.25rem 0.75rem; }
+
+  .phase-indicators {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+
+    .phase-label { display: none; }
+  }
+
+  .results-section .grid-card { padding: 0.75rem; }
+
+  .premium-table {
+    font-size: 0.75rem;
+
+    th, td { padding: 0.5rem 0.4rem; }
+  }
+
+  .saved-card { padding: 1.25rem 0.75rem; }
+}
