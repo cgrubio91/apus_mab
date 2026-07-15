@@ -146,8 +146,10 @@
 
   .card-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: baseline;
+    gap: 0.5rem;
     margin-bottom: 1.5rem;
 
     h3 {
@@ -315,7 +317,7 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 1300px) {
   .main-grid {
     grid-template-columns: 1fr;
   }

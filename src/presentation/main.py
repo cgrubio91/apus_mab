@@ -9,10 +9,14 @@ import sys
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+
+# El HTML de la SPA no debe cachearse: si el navegador retiene un index.html viejo
+# tras un redeploy, sigue pidiendo bundles con hash que ya no existen en disco.
+_INDEX_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
 
 load_dotenv()
 
@@ -125,7 +129,7 @@ def create_app() -> FastAPI:
         # 2. Servimos la raíz del sitio con Angular
         @app.get("/")
         async def serve_home():
-            return FileResponse(index_path)
+            return FileResponse(index_path, headers=_INDEX_NO_CACHE_HEADERS)
 
         # 3. Wildcard para no romper el ruteo interno de Angular
         @app.get("/{catchall:path}")
@@ -135,7 +139,13 @@ def create_app() -> FastAPI:
                 file_path = os.path.join(STATIC_DIR, catchall)
                 if os.path.exists(file_path) and os.path.isfile(file_path):
                     return FileResponse(file_path)
-                return FileResponse(index_path)
+                # Un asset con extensión (bundle .js/.css con hash) que no existe es un
+                # 404 real, no una ruta de Angular: si se sirve index.html en su lugar,
+                # el navegador lo recibe con Content-Type equivocado y lo descarta en
+                # silencio, dejando la app sin estilos tras un redeploy.
+                if os.path.splitext(catchall)[1]:
+                    raise HTTPException(status_code=404)
+                return FileResponse(index_path, headers=_INDEX_NO_CACHE_HEADERS)
     else:
         # Fallback por si la carpeta no existe en desarrollo local
         @app.get("/")
