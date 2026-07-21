@@ -27,10 +27,34 @@ ROLES_HIERARCHY = {
     "user": 10,
 }
 
+INTERVENTORIA_ROLE_MAP = {
+    "super_admin": "admin",
+    "director": "subgerente",
+    "residente": "analista",
+    "topografo": "contraparte",
+    "inspector": "contraparte",
+    "calidad": "contraparte",
+    "bim": "contraparte",
+}
+
+
+def _resolve_mapus_role(interventoria_roles: list[str]) -> str:
+    best_level = 0
+    best_role = "contraparte"
+    for r in interventoria_roles:
+        clean = r.strip().lower()
+        if clean in ROLES_HIERARCHY:
+            mapped = clean
+        else:
+            mapped = INTERVENTORIA_ROLE_MAP.get(clean, "contraparte")
+        level = ROLES_HIERARCHY.get(mapped, 0)
+        if level > best_level:
+            best_level = level
+            best_role = mapped
+    return best_role
+
 
 def _get_secret() -> str:
-    # En producción settings.py ya falló al arranque si no hay clave;
-    # el fallback solo aplica en desarrollo local.
     key = settings.JWT_SECRET_KEY
     if not key:
         log.warning("JWT_SECRET_KEY no configurada; usando clave de desarrollo insegura.")
@@ -62,6 +86,110 @@ def verify_token(token: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido o expirado")
 
 
+def _buscar_usuario_por_id(user_id: int) -> dict | None:
+    """Busca usuario en tabla interventoria `users`, con roles vía usuario_rol + rol.
+    Si no existe, fallback a tabla `usuarios` (MAPUS standalone)."""
+    try:
+        rows = execute_query(
+            """SELECT u.id, u.phone AS telefono, u.name AS nombre, u.email,
+                      GROUP_CONCAT(DISTINCT r.codigo ORDER BY r.codigo SEPARATOR ',') AS roles_str
+               FROM users u
+               LEFT JOIN usuario_rol ur ON ur.user_id = u.id
+               LEFT JOIN rol r ON r.id = ur.rol_id
+               WHERE u.id = %s
+               GROUP BY u.id""",
+            (user_id,),
+        )
+    except Exception:
+        rows = None
+
+    if rows and rows[0].get("id"):
+        u = rows[0]
+        role_list = [x.strip() for x in (u.get("roles_str") or "").split(",") if x.strip()]
+        return {
+            "id": u["id"],
+            "telefono": u.get("telefono") or "",
+            "nombre": u["nombre"] or "",
+            "email": u.get("email") or "",
+            "rol": _resolve_mapus_role(role_list),
+            "activo": True,
+        }
+
+    try:
+        rows = execute_query(
+            "SELECT id, telefono, nombre, email, rol, activo FROM usuarios WHERE id = %s",
+            (user_id,),
+        )
+    except Exception:
+        rows = None
+
+    if rows and rows[0].get("id"):
+        u = rows[0]
+        return {
+            "id": u["id"],
+            "telefono": u.get("telefono") or "",
+            "nombre": u["nombre"] or "",
+            "email": u.get("email") or "",
+            "rol": (u.get("rol") or "user").lower(),
+            "activo": bool(u.get("activo", True)),
+        }
+
+    return None
+
+
+def _buscar_usuario_por_login(identificador: str) -> dict | None:
+    """Busca usuario por email o telefono en interventoria `users`, con fallback a `usuarios`."""
+    try:
+        rows = execute_query(
+            """SELECT u.id, u.phone AS telefono, u.name AS nombre, u.email, u.password,
+                      GROUP_CONCAT(DISTINCT r.codigo ORDER BY r.codigo SEPARATOR ',') AS roles_str
+               FROM users u
+               LEFT JOIN usuario_rol ur ON ur.user_id = u.id
+               LEFT JOIN rol r ON r.id = ur.rol_id
+               WHERE u.email = %s OR u.phone = %s
+               GROUP BY u.id""",
+            (identificador, identificador),
+        )
+    except Exception:
+        rows = None
+
+    if rows and rows[0].get("id"):
+        u = rows[0]
+        role_list = [x.strip() for x in (u.get("roles_str") or "").split(",") if x.strip()]
+        return {
+            "id": u["id"],
+            "telefono": u.get("telefono") or "",
+            "nombre": u["nombre"] or "",
+            "email": u.get("email") or "",
+            "password_hash": u.get("password"),
+            "rol": _resolve_mapus_role(role_list),
+            "activo": True,
+        }
+
+    try:
+        rows = execute_query(
+            """SELECT id, telefono, nombre, email, rol, activo, password_hash
+               FROM usuarios WHERE telefono = %s OR email = %s""",
+            (identificador, identificador),
+        )
+    except Exception:
+        rows = None
+
+    if rows and rows[0].get("id"):
+        u = rows[0]
+        return {
+            "id": u["id"],
+            "telefono": u.get("telefono") or "",
+            "nombre": u["nombre"] or "",
+            "email": u.get("email") or "",
+            "password_hash": u.get("password_hash"),
+            "rol": (u.get("rol") or "user").lower(),
+            "activo": bool(u.get("activo", True)),
+        }
+
+    return None
+
+
 async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Autenticación requerida")
@@ -70,20 +198,20 @@ async def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] =
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
-    rows = execute_query("SELECT id, telefono, nombre, email, rol, activo FROM usuarios WHERE id = %s", (user_id,))
-    if not rows or not rows[0].get("activo"):
+    try:
+        user_id_int = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+    user = _buscar_usuario_por_id(user_id_int)
+    if not user or not user.get("activo"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado o inactivo")
-    return rows[0]
+    return user
 
 
 async def get_current_user_flexible(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     token: Optional[str] = Query(default=None, include_in_schema=False),
 ):
-    """Como get_current_user, pero acepta también el token por query param.
-
-    Necesario para EventSource (SSE), que no permite enviar headers.
-    """
     if credentials is None and token:
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
     return await get_current_user(credentials)

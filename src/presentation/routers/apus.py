@@ -14,6 +14,8 @@ from fastapi.responses import StreamingResponse
 import mysql.connector
 from pydantic import BaseModel
 
+from src.infrastructure.database.connection import execute_query
+
 from src.application.use_cases.query_apus import (
     get_apus as query_apus,
     get_filter_options,
@@ -242,6 +244,53 @@ async def get_projects() -> dict:
     except mysql.connector.Error:
         log.exception("Database error in get_projects")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al cargar la lista de proyectos.")
+
+
+@router.get("/proyectos-mapus", tags=["APUs"])
+async def listar_proyectos_mapus() -> dict:
+    try:
+        rows = execute_query(
+            """SELECT p.id, p.id_proy, p.descripcion, p.presupuesto_total,
+                      COUNT(ip.id) AS items_apu_cargados,
+                      COUNT(CASE WHEN ip.aprobado_interventoria = 1 THEN 1 END) AS items_apu_aprobados,
+                      COALESCE(SUM(ip.valor_presupuestado), 0) AS total_apu_cargado
+               FROM proyectos p
+               LEFT JOIN item_proyecto ip ON ip.proyecto = p.id AND ip.apu_solicitud_id IS NOT NULL
+               GROUP BY p.id
+               ORDER BY p.id DESC"""
+        )
+        return {"success": True, "proyectos": rows or []}
+    except Exception:
+        log.exception("Error listando proyectos MAPUS")
+        raise HTTPException(status_code=500, detail="Error al cargar proyectos.")
+
+
+class CrearProyectoRequest(BaseModel):
+    id_proy: int
+    descripcion: Optional[str] = ""
+    presupuesto_total: Optional[float] = 0
+    id_folder: str = "local"
+    id_folder_bim: Optional[str] = None
+    pdo_current_version_id: Optional[int] = None
+    pdo_drive_subfolder_id: Optional[str] = None
+
+
+@router.post("/proyectos-mapus", tags=["APUs"])
+async def crear_proyecto(payload: CrearProyectoRequest) -> dict:
+    try:
+        execute_query(
+            """INSERT INTO proyectos (id_proy, descripcion, presupuesto_total, id_folder, id_folder_bim, pdo_current_version_id, pdo_drive_subfolder_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            (payload.id_proy, payload.descripcion, payload.presupuesto_total, payload.id_folder,
+             payload.id_folder_bim, payload.pdo_current_version_id, payload.pdo_drive_subfolder_id),
+            fetch=False,
+        )
+        project_id = execute_query("SELECT LAST_INSERT_ID() AS id")[0]["id"]
+        log.info("Proyecto %d creado: %s", project_id, payload.descripcion)
+        return {"success": True, "id": project_id}
+    except Exception:
+        log.exception("Error creando proyecto")
+        raise HTTPException(status_code=500, detail="Error al crear proyecto.")
 
 
 @router.delete("/projects", tags=["APUs"])

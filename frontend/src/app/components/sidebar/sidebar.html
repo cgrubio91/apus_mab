@@ -54,6 +54,13 @@
     </li>
 
     <li class="nav-item">
+      <a class="nav-link" routerLink="/proyectos-mapus" routerLinkActive="active">
+        <span class="icon material-symbols-outlined">account_tree</span>
+        <span class="text" *ngIf="!isCollapsed">Proyectos</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
       <a class="nav-link" routerLink="/historico-precios" routerLinkActive="active">
         <span class="icon material-symbols-outlined">trending_up</span>
         <span class="text" *ngIf="!isCollapsed">Histórico Precios</span>

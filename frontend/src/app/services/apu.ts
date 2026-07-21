@@ -129,6 +129,14 @@ export class ApuService {
     return this.http.get(`${this.baseUrl}/projects`);
   }
 
+  getProyectosMapus(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/proyectos-mapus`);
+  }
+
+  crearProyecto(data: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/proyectos-mapus`, data);
+  }
+
   getDashboard(): Observable<any> {
     return this.http.get(`${this.baseUrl}/dashboard`);
   }

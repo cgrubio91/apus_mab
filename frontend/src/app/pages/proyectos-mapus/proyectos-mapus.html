@@ -1,0 +1,145 @@
+<div class="proyectos-container">
+  <header class="proyectos-header animate-fade-in">
+    <div class="header-titles">
+      <span class="breadcrumb">MAPUS · PRESUPUESTO</span>
+      <h1>Proyectos y Carga de APUs</h1>
+      <p>Proyectos registrados con sus ítems de APU cargados al presupuesto.</p>
+    </div>
+    <button class="btn-primary" (click)="abrirModal()">
+      <span class="material-symbols-outlined">add</span>
+      Nuevo Proyecto
+    </button>
+  </header>
+
+  <div class="loading-state" *ngIf="isLoading">
+    <div class="spinner"></div>
+    <p>Cargando proyectos...</p>
+  </div>
+
+  <div class="error-banner" *ngIf="!isLoading && errorMessage" role="alert">
+    <span class="material-symbols-outlined alert-icon">warning</span>
+    <span>{{ errorMessage }}</span>
+    <button (click)="cargarProyectos()">Reintentar</button>
+  </div>
+
+  <div class="proyectos-content animate-fade-in" *ngIf="!isLoading">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <span class="card-label">PROYECTOS</span>
+        <h2 class="card-value">{{ proyectos.length }}</h2>
+      </div>
+      <div class="stat-card">
+        <span class="card-label">ITEMS APU CARGADOS</span>
+        <h2 class="card-value">{{ proyectos.reduce((s, p) => s + p.items_apu_cargados, 0) }}</h2>
+      </div>
+      <div class="stat-card">
+        <span class="card-label">ITEMS APROBADOS</span>
+        <h2 class="card-value">{{ proyectos.reduce((s, p) => s + p.items_apu_aprobados, 0) }}</h2>
+      </div>
+      <div class="stat-card">
+        <span class="card-label">TOTAL CARGADO</span>
+        <h2 class="card-value">{{ formatearMoneda(proyectos.reduce((s, p) => s + p.total_apu_cargado, 0)) }}</h2>
+      </div>
+    </div>
+
+    <div class="table-card" *ngIf="proyectos.length > 0; else emptyState">
+      <div class="card-header">
+        <h3>Proyectos</h3>
+        <span class="header-count">{{ proyectos.length }} registro(s)</span>
+      </div>
+      <div class="table-responsive">
+        <table class="premium-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>DESCRIPCIÓN</th>
+              <th>PRESUPUESTO TOTAL</th>
+              <th>ITEMS APU</th>
+              <th>APROBADOS</th>
+              <th>TOTAL CARGADO</th>
+              <th>% PRESUPUESTO</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let p of proyectos">
+              <td class="code-col">#{{ p.id_proy }}</td>
+              <td class="name-col">{{ p.descripcion || 'Sin nombre' }}</td>
+              <td class="price-col">{{ formatearMoneda(p.presupuesto_total) }}</td>
+              <td>
+                <span class="status-pill" [class.info]="p.items_apu_cargados > 0">
+                  {{ p.items_apu_cargados }}
+                </span>
+              </td>
+              <td>
+                <span class="status-pill" [class.success]="p.items_apu_aprobados > 0">
+                  {{ p.items_apu_aprobados }}
+                </span>
+              </td>
+              <td class="price-col">{{ formatearMoneda(p.total_apu_cargado) }}</td>
+              <td>
+                <span class="status-pill" [class.info]="porcentajePresupuesto(p) > 0">
+                  {{ porcentajePresupuesto(p) }}%
+                </span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <ng-template #emptyState>
+      <div class="empty-state">
+        <span class="material-symbols-outlined empty-icon">folder_off</span>
+        <h3>No hay proyectos registrados</h3>
+        <p>Crea un proyecto usando el botón "Nuevo Proyecto" para comenzar.</p>
+      </div>
+    </ng-template>
+  </div>
+</div>
+
+<div class="modal-overlay" *ngIf="showModal" (click)="cerrarModal()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <div class="modal-header">
+      <h2>Nuevo Proyecto</h2>
+      <button class="modal-close" (click)="cerrarModal()">
+        <span class="material-symbols-outlined">close</span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>ID Proyecto <span class="required">*</span></label>
+        <input type="number" [(ngModel)]="form.id_proy" placeholder="Ej: 101" />
+      </div>
+      <div class="form-group">
+        <label>Descripción</label>
+        <input type="text" [(ngModel)]="form.descripcion" placeholder="Nombre del proyecto" />
+      </div>
+      <div class="form-group">
+        <label>Presupuesto Total</label>
+        <input type="number" [(ngModel)]="form.presupuesto_total" placeholder="0" />
+      </div>
+      <div class="form-group">
+        <label>ID Folder (Drive)</label>
+        <input type="text" [(ngModel)]="form.id_folder" placeholder="local" />
+      </div>
+      <div class="form-group">
+        <label>ID Folder BIM</label>
+        <input type="text" [(ngModel)]="form.id_folder_bim" placeholder="Opcional" />
+      </div>
+      <div class="form-group">
+        <label>PDO Current Version ID</label>
+        <input type="number" [(ngModel)]="form.pdo_current_version_id" placeholder="Opcional" />
+      </div>
+      <div class="form-group">
+        <label>PDO Drive Subfolder ID</label>
+        <input type="text" [(ngModel)]="form.pdo_drive_subfolder_id" placeholder="Opcional" />
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" (click)="cerrarModal()">Cancelar</button>
+      <button class="btn-primary" (click)="crearProyecto()" [disabled]="creating || !form.id_proy">
+        {{ creating ? 'Creando...' : 'Crear Proyecto' }}
+      </button>
+    </div>
+  </div>
+</div>

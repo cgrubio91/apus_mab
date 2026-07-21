@@ -240,6 +240,80 @@ class AnalisisMySQLRepository:
 
         return {"mejor_grupo": mejor_grupo, "grupos": grupos, "total_grupos": len(grupos)}
 
+    def resolver_proyecto_por_nombre(self, nombre_proyecto: str) -> Optional[int]:
+        if not nombre_proyecto or nombre_proyecto in ("Sin proyecto", ""):
+            return None
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor(dictionary=True) as cursor:
+                    cursor.execute(
+                        """SELECT id FROM proyectos
+                           WHERE descripcion LIKE %s
+                              OR nombre LIKE %s
+                           LIMIT 1""",
+                        (f"%{nombre_proyecto}%", f"%{nombre_proyecto}%"),
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        return row["id"]
+                    cursor.execute(
+                        "SELECT id FROM proyectos ORDER BY id DESC LIMIT 1"
+                    )
+                    row = cursor.fetchone()
+                    if row:
+                        log.warning("Proyecto '%s' no encontrado exacto, se asigna el último proyecto (%d)", nombre_proyecto, row["id"])
+                        return row["id"]
+                    return None
+        except Exception:
+            log.exception("Error resolviendo proyecto para '%s'", nombre_proyecto)
+            return None
+
+    def actualizar_proyecto_id(self, solicitud_id: int, proyecto_id: int, conn=None):
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE solicitudes_apu SET proyecto_id = %s WHERE id = %s",
+                    (proyecto_id, solicitud_id),
+                )
+                if owns_conn:
+                    conn.commit()
+        finally:
+            if owns_conn and conn:
+                conn.close()
+
+    def crear_item_proyecto(self, solicitud_id: int, proyecto_id: int, item_code: str, descripcion: str,
+                             unidad: str, valor_unitario: float, conn=None) -> int:
+        owns_conn = conn is None
+        if owns_conn:
+            conn = get_db_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """INSERT INTO item_proyecto
+                       (proyecto, codigo, nombre, unidad_medida, cantidad_presupuestada,
+                        valor_unitario, valor_presupuestado, tipo_item,
+                        aprobado_interventoria, apu_solicitud_id, aprobado_costos)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'NP', 1, %s, 1)""",
+                    (proyecto_id, item_code, descripcion, unidad, 0,
+                     valor_unitario, 0, solicitud_id),
+                )
+                item_id = cursor.lastrowid
+                if owns_conn:
+                    conn.commit()
+                log.info("Item_proyecto %d creado desde APU solicitud %d: %s", item_id, solicitud_id, item_code)
+                return item_id
+        except Exception:
+            log.exception("Error creando item_proyecto desde APU solicitud %d", solicitud_id)
+            if owns_conn:
+                conn.rollback()
+            raise
+        finally:
+            if owns_conn and conn:
+                conn.close()
+
     def buscar_en_banco(self, descripcion: str) -> list:
         if not descripcion:
             return []

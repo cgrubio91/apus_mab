@@ -58,6 +58,15 @@ def realizar_analisis(solicitud_id: int) -> dict:
 
     analisis_repo.guardar_analisis(solicitud_id, analisis_json, resumen, recomendacion)
     analisis_repo.actualizar_estado(solicitud_id, "analizado")
+
+    nombre_proyecto = solicitud.get("nombre_proyecto", "")
+    proyecto_id = analisis_repo.resolver_proyecto_por_nombre(nombre_proyecto)
+    if proyecto_id:
+        analisis_repo.actualizar_proyecto_id(solicitud_id, proyecto_id)
+        proyecto_info = f"proyecto #{proyecto_id}"
+    else:
+        proyecto_info = "proyecto no identificado"
+
     notificar_transicion(solicitud_id, "analizado")
 
     return {
@@ -65,6 +74,7 @@ def realizar_analisis(solicitud_id: int) -> dict:
         "items_analizados": items_analizados,
         "resumen": resumen,
         "recomendacion": recomendacion,
+        "proyecto_asignado": proyecto_info,
     }
 
 
@@ -322,14 +332,55 @@ def firmar_legal(solicitud_id: int, usuario_rol: str, usuario_nombre: str) -> di
         if not analisis_repo.actualizar_estado(solicitud_id, "aprobado_legal", "AND estado = 'aprobado_subgerente'", conn=conn):
             raise ValueError("La solicitud no está en estado 'aprobado_subgerente'")
         analisis_repo.insertar_historial(solicitud_id, "aprobado_legal", usuario_rol, usuario_nombre, conn=conn)
+
+        items_creados = _crear_items_presupuesto(solicitud_id, conn)
+
         conn.commit()
         notificar_transicion(solicitud_id, "aprobado_legal", usuario_nombre)
-        return {"success": True, "mensaje": "APU aprobado y firmado legalmente. Incorporado al banco de APUs."}
+        msg = "APU aprobado y firmado legalmente. Incorporado al banco de APUs."
+        if items_creados:
+            msg += f" {items_creados} ítem(s) enviado(s) al presupuesto del proyecto."
+        return {"success": True, "mensaje": msg, "items_creados": items_creados}
     except Exception:
         conn.rollback()
         raise
     finally:
         conn.close()
+
+
+def _crear_items_presupuesto(solicitud_id: int, conn) -> int:
+    solicitud = analisis_repo.get_solicitud(solicitud_id)
+    if not solicitud:
+        return 0
+    analisis_data = solicitud.get("analisis") or {}
+    items_analizados = analisis_data.get("items_analizados") or []
+
+    proyecto_id = solicitud.get("proyecto_id")
+    if not proyecto_id:
+        log.warning("Solicitud %d sin proyecto_id — no se crearon items en presupuesto", solicitud_id)
+        return 0
+
+    creados = 0
+    items_vistos = set()
+    for item in items_analizados:
+        codigo = (item.get("item") or "").strip()
+        descripcion = (item.get("descripcion") or "").strip()
+        if not codigo or not descripcion:
+            continue
+        if codigo in items_vistos:
+            continue
+        items_vistos.add(codigo)
+        unidad = (item.get("unidad") or "").strip()
+        precio = float(item.get("precio_ofertado") or 0)
+        try:
+            analisis_repo.crear_item_proyecto(
+                solicitud_id, proyecto_id, codigo, descripcion,
+                unidad, precio, conn=conn,
+            )
+            creados += 1
+        except Exception:
+            log.exception("Error creando item_proyecto para %s", codigo)
+    return creados
 
 
 def get_aprendizaje_rechazos(limit: int = 20) -> list:
