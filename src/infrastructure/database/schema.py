@@ -300,10 +300,13 @@ def _migrar_usuarios_legacy(log):
 
     execute_query(
         """INSERT IGNORE INTO users (name, cc, email, password, phone, position, proyecto)
-           SELECT u.nombre, u.telefono, u.email, u.password_hash, u.telefono, 'Usuario MAPUS', 'LOCAL'
+           SELECT u.nombre, u.telefono,
+                  COALESCE(u.email, CONCAT(u.telefono, '@mapus.local')),
+                  COALESCE(u.password_hash, ''),
+                  u.telefono, 'Usuario MAPUS', 'LOCAL'
            FROM usuarios u
            WHERE NOT EXISTS (
-               SELECT 1 FROM users us WHERE us.email = u.email OR us.phone = u.telefono
+               SELECT 1 FROM users us WHERE us.phone = u.telefono
            )""",
         fetch=False,
     )
@@ -312,7 +315,7 @@ def _migrar_usuarios_legacy(log):
         """INSERT IGNORE INTO usuario_rol (user_id, rol_id)
            SELECT us.id, r.id
            FROM usuarios u
-           JOIN users us ON us.email = u.email
+           JOIN users us ON us.phone = u.telefono
            JOIN rol r ON r.codigo = LOWER(u.rol)
            WHERE NOT EXISTS (
                SELECT 1 FROM usuario_rol ur WHERE ur.user_id = us.id
@@ -320,9 +323,8 @@ def _migrar_usuarios_legacy(log):
         fetch=False,
     )
 
-    ejecutados = execute_query("SELECT ROW_COUNT() AS n")[0]["n"]
     execute_query("DROP TABLE IF EXISTS usuarios", fetch=False)
-    log.info("Migración legacy completada. %d registro(s) migrado(s). Tabla `usuarios` eliminada.", ejecutados)
+    log.info("Migración legacy completada. Tabla `usuarios` eliminada.")
 
 
 def _seed_interventoria_data():
