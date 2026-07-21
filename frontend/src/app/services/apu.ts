@@ -376,7 +376,13 @@ export class ApuService {
   }
 
   createUser(user: { telefono: string; nombre: string; email?: string; password: string; rol: string }): Observable<any> {
-    return this.http.post(`${this.baseUrl}/auth/users`, user);
+    return this.http.post(`${this.baseUrl}/auth/users`, {
+      name: user.nombre,
+      email: user.email || '',
+      phone: user.telefono,
+      password: user.password,
+      rol: user.rol,
+    });
   }
 
   updateUser(id: number, cambios: { rol?: string; activo?: boolean }): Observable<any> {
