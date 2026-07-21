@@ -9,7 +9,7 @@ from datetime import datetime
 
 from db_schema import INSUMO_CATEGORIES
 
-ALLOWED_EXPLORE_TABLES = {"apus", "usuarios", "historial_conversaciones", "solicitudes_apu", "solicitud_insumos", "analisis_apu", "historial_aprobaciones", "aprendizaje_rechazos"}
+ALLOWED_EXPLORE_TABLES = {"apus", "users", "historial_conversaciones", "solicitudes_apu", "solicitud_insumos", "analisis_apu", "historial_aprobaciones", "aprendizaje_rechazos"}
 
 def _validate_table_name(table_name: str) -> str:
     if table_name not in ALLOWED_EXPLORE_TABLES:

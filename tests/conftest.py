@@ -155,22 +155,29 @@ def auth_token(test_db):
     from src.presentation.auth import create_access_token, hash_password
 
     telefono = "test-admin-000"
-    execute_query("DELETE FROM usuarios WHERE telefono = %s", (telefono,), fetch=False)
+    execute_query("DELETE FROM users WHERE phone = %s", (telefono,), fetch=False)
     execute_query(
-        "INSERT INTO usuarios (telefono, nombre, rol, activo, password_hash) VALUES (%s, %s, %s, %s, %s)",
-        (telefono, "Admin Test", "admin", True, hash_password("test-password")),
+        "INSERT INTO users (name, cc, email, password, phone, position, proyecto) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        ("Admin Test", telefono, "admin@test.local", hash_password("test-password"), telefono, "Admin Test", "LOCAL"),
         fetch=False,
     )
-    rows = execute_query("SELECT id, telefono, rol, nombre FROM usuarios WHERE telefono = %s", (telefono,))
+    rows = execute_query("SELECT id, phone AS telefono FROM users WHERE phone = %s", (telefono,))
     user = rows[0]
+    rol_row = execute_query("SELECT id FROM rol WHERE codigo = 'admin'")
+    if rol_row:
+        execute_query(
+            "INSERT IGNORE INTO usuario_rol (user_id, rol_id) VALUES (%s, %s)",
+            (user["id"], rol_row[0]["id"]),
+            fetch=False,
+        )
     token = create_access_token({
         "sub": str(user["id"]),
         "telefono": user["telefono"],
-        "rol": user["rol"],
-        "nombre": user["nombre"],
+        "rol": "admin",
+        "nombre": "Admin Test",
     })
     yield token
-    execute_query("DELETE FROM usuarios WHERE telefono = %s", (telefono,), fetch=False)
+    execute_query("DELETE FROM users WHERE phone = %s", (telefono,), fetch=False)
 
 
 @pytest.fixture

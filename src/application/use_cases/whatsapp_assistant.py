@@ -30,15 +30,6 @@ def usuario_autorizado(telefono: str):
             "FROM users u WHERE u.phone = %s",
             (telefono,),
         )
-        if rows:
-            return rows[0]
-    except Exception:
-        pass
-    try:
-        rows = execute_query(
-            "SELECT id, telefono, nombre, email FROM usuarios WHERE telefono = %s AND activo = true",
-            (telefono,),
-        )
         return rows[0] if rows else None
     except Exception as e:
         log.error("Error checking user %s: %s", telefono, e)

@@ -279,6 +279,52 @@ def ensure_schema():
     log.info("Database schema verified — all tables active")
 
 
+def _migrar_usuarios_legacy(log):
+    """Migra datos de `usuarios` (legacy MAPUS) a `users` + `usuario_rol`,
+    luego elimina la tabla `usuarios`."""
+    try:
+        rows = execute_query("SELECT COUNT(*) AS cnt FROM usuarios")
+    except Exception:
+        return
+    count = rows[0]["cnt"] if rows else 0
+    if count == 0:
+        log.info("Tabla `usuarios` vacía o inexistente — sin migrar.")
+        try:
+            execute_query("DROP TABLE IF EXISTS usuarios", fetch=False)
+            log.info("Tabla `usuarios` eliminada (estaba vacía).")
+        except Exception:
+            pass
+        return
+
+    log.info("Migrando %d usuario(s) de `usuarios` a `users`...", count)
+
+    execute_query(
+        """INSERT IGNORE INTO users (name, cc, email, password, phone, position, proyecto)
+           SELECT u.nombre, u.telefono, u.email, u.password_hash, u.telefono, 'Usuario MAPUS', 'LOCAL'
+           FROM usuarios u
+           WHERE NOT EXISTS (
+               SELECT 1 FROM users us WHERE us.email = u.email OR us.phone = u.telefono
+           )""",
+        fetch=False,
+    )
+
+    execute_query(
+        """INSERT IGNORE INTO usuario_rol (user_id, rol_id)
+           SELECT us.id, r.id
+           FROM usuarios u
+           JOIN users us ON us.email = u.email
+           JOIN rol r ON r.codigo = LOWER(u.rol)
+           WHERE NOT EXISTS (
+               SELECT 1 FROM usuario_rol ur WHERE ur.user_id = us.id
+           )""",
+        fetch=False,
+    )
+
+    ejecutados = execute_query("SELECT ROW_COUNT() AS n")[0]["n"]
+    execute_query("DROP TABLE IF EXISTS usuarios", fetch=False)
+    log.info("Migración legacy completada. %d registro(s) migrado(s). Tabla `usuarios` eliminada.", ejecutados)
+
+
 def _seed_interventoria_data():
     """Poblado inicial de tablas interventoría para desarrollo local.
     Los roles se sincronizan siempre (INSERT IGNORE).
@@ -313,6 +359,8 @@ def _seed_interventoria_data():
         )
     except Exception:
         log.exception("Error sincronizando roles")
+
+    _migrar_usuarios_legacy(log)
 
     try:
         rows = execute_query("SELECT COUNT(*) AS cnt FROM users")

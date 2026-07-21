@@ -87,8 +87,7 @@ def verify_token(token: str) -> dict:
 
 
 def _buscar_usuario_por_id(user_id: int) -> dict | None:
-    """Busca usuario en tabla interventoria `users`, con roles vía usuario_rol + rol.
-    Si no existe, fallback a tabla `usuarios` (MAPUS standalone)."""
+    """Busca usuario en `users` con roles vía usuario_rol + rol."""
     try:
         rows = execute_query(
             """SELECT u.id, u.phone AS telefono, u.name AS nombre, u.email,
@@ -115,30 +114,11 @@ def _buscar_usuario_por_id(user_id: int) -> dict | None:
             "activo": True,
         }
 
-    try:
-        rows = execute_query(
-            "SELECT id, telefono, nombre, email, rol, activo FROM usuarios WHERE id = %s",
-            (user_id,),
-        )
-    except Exception:
-        rows = None
-
-    if rows and rows[0].get("id"):
-        u = rows[0]
-        return {
-            "id": u["id"],
-            "telefono": u.get("telefono") or "",
-            "nombre": u["nombre"] or "",
-            "email": u.get("email") or "",
-            "rol": (u.get("rol") or "user").lower(),
-            "activo": bool(u.get("activo", True)),
-        }
-
     return None
 
 
 def _buscar_usuario_por_login(identificador: str) -> dict | None:
-    """Busca usuario por email o telefono en interventoria `users`, con fallback a `usuarios`."""
+    """Busca usuario por email o telefono en `users`."""
     try:
         rows = execute_query(
             """SELECT u.id, u.phone AS telefono, u.name AS nombre, u.email, u.password,
@@ -164,27 +144,6 @@ def _buscar_usuario_por_login(identificador: str) -> dict | None:
             "password_hash": u.get("password"),
             "rol": _resolve_mapus_role(role_list),
             "activo": True,
-        }
-
-    try:
-        rows = execute_query(
-            """SELECT id, telefono, nombre, email, rol, activo, password_hash
-               FROM usuarios WHERE telefono = %s OR email = %s""",
-            (identificador, identificador),
-        )
-    except Exception:
-        rows = None
-
-    if rows and rows[0].get("id"):
-        u = rows[0]
-        return {
-            "id": u["id"],
-            "telefono": u.get("telefono") or "",
-            "nombre": u["nombre"] or "",
-            "email": u.get("email") or "",
-            "password_hash": u.get("password_hash"),
-            "rol": (u.get("rol") or "user").lower(),
-            "activo": bool(u.get("activo", True)),
         }
 
     return None

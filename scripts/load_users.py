@@ -45,23 +45,31 @@ def load_users():
         cursor = conn.cursor()
         
         for nombre, telefono, rol, activo in users_to_insert:
-            # Check if user exists
-            cursor.execute("SELECT id FROM usuarios WHERE telefono = %s", (telefono,))
+            cursor.execute("SELECT id FROM users WHERE phone = %s", (telefono,))
             existing = cursor.fetchone()
             
             if existing:
                 print(f"⚠️ Usuario {nombre} ({telefono}) ya existe. Actualizando...")
                 cursor.execute("""
-                    UPDATE usuarios 
-                    SET nombre = %s, rol = %s, activo = %s 
-                    WHERE telefono = %s
-                """, (nombre, rol, activo, telefono))
+                    UPDATE users SET name = %s WHERE phone = %s
+                """, (nombre, telefono))
             else:
                 print(f"➕ Insertando usuario {nombre} ({telefono})...")
                 cursor.execute("""
-                    INSERT INTO usuarios (nombre, telefono, rol, activo)
-                    VALUES (%s, %s, %s, %s)
-                """, (nombre, telefono, rol, activo))
+                    INSERT INTO users (name, cc, email, password, phone, position, proyecto)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """, (nombre, telefono, f"{telefono}@mapus.local", '', telefono, f"Rol: {rol}", "LOCAL"))
+            
+            cursor.execute("SELECT id FROM users WHERE phone = %s", (telefono,))
+            user_row = cursor.fetchone()
+            if user_row:
+                cursor.execute("SELECT id FROM rol WHERE codigo = %s", (rol,))
+                rol_row = cursor.fetchone()
+                if rol_row:
+                    cursor.execute("""
+                        INSERT INTO usuario_rol (user_id, rol_id) VALUES (%s, %s)
+                        ON DUPLICATE KEY UPDATE rol_id = %s
+                    """, (user_row[0], rol_row[0], rol_row[0]))
         
         conn.commit()
         print("\n🎉 Usuarios procesados correctamente.")
