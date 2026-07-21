@@ -6,7 +6,8 @@ Approval workflow endpoints.
 import logging
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, status, UploadFile, File, Depends
+from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Depends
+from pydantic import BaseModel
 from src.domain.entities.analisis import AnalisisApuCreate, RechazarRequest
 from src.application.use_cases.manage_analisis import (
     crear_solicitud,
@@ -18,16 +19,21 @@ from src.application.use_cases.manage_analisis import (
     nuevas_cotizaciones_recibidas,
     aprobar_subgerente,
     firmar_legal,
+    seleccionar_proyecto,
     get_aprendizaje_rechazos,
 )
 from src.presentation.auth import get_current_user, require_role, get_optional_user
+
+
+class SeleccionarProyectoRequest(BaseModel):
+    proyecto_id: int
 
 log = logging.getLogger("mapus.presentation.analisis")
 router = APIRouter()
 
 
 @router.post("/analisis-apu/upload", tags=["Análisis APU"])
-async def upload_cotizacion(files: List[UploadFile] = File(...)) -> dict:
+async def upload_cotizacion(files: List[UploadFile] = File(...), proyecto_id: Optional[int] = Form(None)) -> dict:
     try:
         grupos_insumos = []
 
@@ -85,7 +91,7 @@ async def upload_cotizacion(files: List[UploadFile] = File(...)) -> dict:
             raise HTTPException(status_code=400, detail="No se pudieron extraer insumos de los archivos.")
 
         total_insumos = sum(len(g["insumos"]) for g in grupos_insumos)
-        solicitud_id = crear_solicitud(grupos_insumos)
+        solicitud_id = crear_solicitud(grupos_insumos, proyecto_id)
 
         return {
             "success": True,
@@ -137,6 +143,17 @@ async def listar_solicitudes(estado: Optional[str] = None) -> dict:
         return {"success": True, "data": solicitudes}
     except Exception as e:
         log.exception("Error listando solicitudes")
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.patch("/analisis-apu/{solicitud_id}/proyecto", tags=["Análisis APU"])
+async def seleccionar_proyecto_endpoint(solicitud_id: int, payload: SeleccionarProyectoRequest) -> dict:
+    try:
+        return seleccionar_proyecto(solicitud_id, payload.proyecto_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error seleccionando proyecto para solicitud %d", solicitud_id)
         raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 

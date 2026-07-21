@@ -67,6 +67,7 @@ export interface SolicitudApu {
   link_documento?: string;
   contratista?: string;
   nombre_proyecto?: string;
+  proyecto_id?: number | null;
   fecha_solicitud?: string;
   fecha_limite_respuesta?: string;
   fecha_limite_aprobacion?: string;
@@ -77,6 +78,12 @@ export interface SolicitudApu {
   analisis?: AnalisisApu;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ProyectoMapus {
+  id: number;
+  id_proy: number;
+  descripcion: string;
 }
 
 @Component({
@@ -98,15 +105,21 @@ export class AnalisisApu implements OnInit {
   selectedFiles: File[] = [];
   uploading = false;
   uploadProgress = '';
+  uploadProyectoId: number | null = null;
 
   rechazoMotivo = '';
   showRechazoForm = false;
   exportando = false;
 
+  proyectos: ProyectoMapus[] = [];
+  proyectoSeleccionId: number | null = null;
+  guardandoProyecto = false;
+
   auth = inject(AuthService);
 
   ngOnInit(): void {
     this.loadSolicitudes();
+    this.loadProyectos();
   }
 
   constructor(
@@ -136,6 +149,18 @@ export class AnalisisApu implements OnInit {
     });
   }
 
+  loadProyectos(): void {
+    this.apuService.getProyectosMapus().subscribe({
+      next: (res: any) => {
+        this.ngZone.run(() => {
+          this.proyectos = res.proyectos || [];
+          this.cdr.detectChanges();
+        });
+      },
+      error: () => {},
+    });
+  }
+
   viewSolicitud(s: SolicitudApu): void {
     this._loadSolicitudDetail(s.id!);
   }
@@ -147,6 +172,7 @@ export class AnalisisApu implements OnInit {
       next: (res: any) => {
         this.ngZone.run(() => {
           this.selectedSolicitud = res.data;
+          this.proyectoSeleccionId = res.data?.proyecto_id ?? null;
           this.loading = false;
           this.cdr.detectChanges();
         });
@@ -199,10 +225,11 @@ export class AnalisisApu implements OnInit {
     this.error = null;
     this.uploadProgress = `Subiendo ${this.selectedFiles.length} archivo(s)...`;
 
-    this.apuService.uploadCotizaciones(this.selectedFiles).subscribe({
+    this.apuService.uploadCotizaciones(this.selectedFiles, this.uploadProyectoId).subscribe({
       next: (res: any) => {
         this.ngZone.run(() => {
           this.selectedFiles = [];
+          this.uploadProyectoId = null;
           this.showUploadForm = false;
 
           if (res.solicitud_id) {
@@ -271,6 +298,30 @@ export class AnalisisApu implements OnInit {
         this.ngZone.run(() => {
           this.error = err.error?.detail || errorFallback;
           this.loading = false;
+          this.cdr.detectChanges();
+        });
+      },
+    });
+  }
+
+  guardarProyecto(id: number): void {
+    if (!this.proyectoSeleccionId) {
+      this.error = 'Selecciona un proyecto';
+      return;
+    }
+    this.guardandoProyecto = true;
+    this.apuService.seleccionarProyectoSolicitud(id, this.proyectoSeleccionId).subscribe({
+      next: (res: any) => {
+        this.ngZone.run(() => {
+          this.guardandoProyecto = false;
+          this.successMsg = res.mensaje;
+          this._loadSolicitudDetail(id);
+        });
+      },
+      error: (err) => {
+        this.ngZone.run(() => {
+          this.guardandoProyecto = false;
+          this.error = err.error?.detail || 'Error al asignar el proyecto';
           this.cdr.detectChanges();
         });
       },

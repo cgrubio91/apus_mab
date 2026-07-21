@@ -25,8 +25,21 @@ ESTADOS = [
 ]
 
 
-def crear_solicitud(grupos_insumos: list[dict]) -> int:
-    return analisis_repo.crear_solicitud(grupos_insumos)
+def crear_solicitud(grupos_insumos: list[dict], proyecto_id: Optional[int] = None) -> int:
+    return analisis_repo.crear_solicitud(grupos_insumos, proyecto_id)
+
+
+def seleccionar_proyecto(solicitud_id: int, proyecto_id: int) -> dict:
+    solicitud = analisis_repo.get_solicitud(solicitud_id)
+    if not solicitud:
+        raise ValueError(f"Solicitud {solicitud_id} no encontrada")
+    if solicitud.get("estado") == "aprobado_legal":
+        raise ValueError("No se puede cambiar el proyecto de una solicitud ya firmada legalmente")
+    if not analisis_repo.existe_proyecto(proyecto_id):
+        raise ValueError(f"Proyecto {proyecto_id} no encontrado")
+
+    analisis_repo.actualizar_proyecto_id(solicitud_id, proyecto_id)
+    return {"success": True, "mensaje": f"Proyecto #{proyecto_id} asignado a la solicitud #{solicitud_id}."}
 
 
 def get_solicitudes(estado: Optional[str] = None) -> list:
@@ -59,13 +72,17 @@ def realizar_analisis(solicitud_id: int) -> dict:
     analisis_repo.guardar_analisis(solicitud_id, analisis_json, resumen, recomendacion)
     analisis_repo.actualizar_estado(solicitud_id, "analizado")
 
-    nombre_proyecto = solicitud.get("nombre_proyecto", "")
-    proyecto_id = analisis_repo.resolver_proyecto_por_nombre(nombre_proyecto)
+    proyecto_id = solicitud.get("proyecto_id")
     if proyecto_id:
-        analisis_repo.actualizar_proyecto_id(solicitud_id, proyecto_id)
-        proyecto_info = f"proyecto #{proyecto_id}"
+        proyecto_info = f"proyecto #{proyecto_id} (seleccionado manualmente)"
     else:
-        proyecto_info = "proyecto no identificado"
+        nombre_proyecto = solicitud.get("nombre_proyecto", "")
+        proyecto_id = analisis_repo.resolver_proyecto_por_nombre(nombre_proyecto)
+        if proyecto_id:
+            analisis_repo.actualizar_proyecto_id(solicitud_id, proyecto_id)
+            proyecto_info = f"proyecto #{proyecto_id}"
+        else:
+            proyecto_info = "proyecto no identificado — selecciónalo manualmente antes de la firma legal"
 
     notificar_transicion(solicitud_id, "analizado")
 

@@ -232,6 +232,37 @@
   overflow: hidden;
 }
 
+.proyecto-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+
+  label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+    font-size: 13px;
+    color: #374151;
+  }
+
+  .proyecto-picker {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+
+    select {
+      flex: 1;
+      max-width: 400px;
+      padding: 6px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+  }
+}
+
 .solicitudes-table {
   width: 100%;
   border-collapse: collapse;

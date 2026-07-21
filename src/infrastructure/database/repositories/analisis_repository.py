@@ -16,7 +16,7 @@ log = logging.getLogger("mapus.infrastructure.analisis_repo")
 
 class AnalisisMySQLRepository:
 
-    def crear_solicitud(self, grupos_insumos: list[dict]) -> int:
+    def crear_solicitud(self, grupos_insumos: list[dict], proyecto_id: Optional[int] = None) -> int:
         all_insumos = []
         for grupo in grupos_insumos:
             all_insumos.extend(grupo.get("insumos", []))
@@ -32,9 +32,9 @@ class AnalisisMySQLRepository:
             with get_db_connection() as conn:
                 with conn.cursor(dictionary=True) as cursor:
                     cursor.execute(
-                        """INSERT INTO solicitudes_apu (link_documento, contratista, nombre_proyecto, estado)
-                           VALUES (%s, %s, %s, 'pendiente_analisis')""",
-                        (link_documento, contratista, nombre_proyecto),
+                        """INSERT INTO solicitudes_apu (link_documento, contratista, nombre_proyecto, estado, proyecto_id)
+                           VALUES (%s, %s, %s, 'pendiente_analisis', %s)""",
+                        (link_documento, contratista, nombre_proyecto, proyecto_id),
                     )
                     solicitud_id = cursor.lastrowid
 
@@ -249,24 +249,21 @@ class AnalisisMySQLRepository:
                     cursor.execute(
                         """SELECT id FROM proyectos
                            WHERE descripcion LIKE %s
-                              OR nombre LIKE %s
                            LIMIT 1""",
-                        (f"%{nombre_proyecto}%", f"%{nombre_proyecto}%"),
+                        (f"%{nombre_proyecto}%",),
                     )
                     row = cursor.fetchone()
                     if row:
                         return row["id"]
-                    cursor.execute(
-                        "SELECT id FROM proyectos ORDER BY id DESC LIMIT 1"
-                    )
-                    row = cursor.fetchone()
-                    if row:
-                        log.warning("Proyecto '%s' no encontrado exacto, se asigna el último proyecto (%d)", nombre_proyecto, row["id"])
-                        return row["id"]
+                    log.info("Proyecto '%s' no encontrado — requiere selección manual", nombre_proyecto)
                     return None
         except Exception:
             log.exception("Error resolviendo proyecto para '%s'", nombre_proyecto)
             return None
+
+    def existe_proyecto(self, proyecto_id: int) -> bool:
+        rows = execute_query("SELECT id FROM proyectos WHERE id = %s", (proyecto_id,))
+        return bool(rows)
 
     def actualizar_proyecto_id(self, solicitud_id: int, proyecto_id: int, conn=None):
         owns_conn = conn is None

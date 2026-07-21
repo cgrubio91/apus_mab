@@ -32,6 +32,14 @@
       <h3>Cargar Cotizaciones de APU</h3>
       <p class="help-text">Selecciona uno o varios archivos (PDF o Excel). Cada archivo se agrupará como "Cotización 1", "Cotización 2", etc. El contratista y nombre del proyecto se extraerán automáticamente.</p>
 
+      <div class="form-group">
+        <label>Proyecto (opcional — si no se selecciona, se intentará detectar automáticamente del documento)</label>
+        <select [(ngModel)]="uploadProyectoId">
+          <option [ngValue]="null">-- Detectar automáticamente --</option>
+          <option *ngFor="let p of proyectos" [ngValue]="p.id">{{ p.descripcion }} (#{{ p.id_proy }})</option>
+        </select>
+      </div>
+
       <div class="file-input-wrapper">
         <input type="file" id="fileInput" multiple (change)="onFilesSelected($event)" accept=".pdf,.xlsx,.xls" />
         <label for="fileInput" class="custom-file-btn">Seleccionar archivos</label>
@@ -134,6 +142,22 @@
     </div>
 
     <div class="detail-body">
+      <div class="proyecto-section" *ngIf="selectedSolicitud.estado !== 'aprobado_legal'">
+        <label>Proyecto asignado (presupuesto donde se cargará el ítem al firmar legal)</label>
+        <div class="proyecto-picker">
+          <select [(ngModel)]="proyectoSeleccionId">
+            <option [ngValue]="null">-- Sin proyecto asignado --</option>
+            <option *ngFor="let p of proyectos" [ngValue]="p.id">{{ p.descripcion }} (#{{ p.id_proy }})</option>
+          </select>
+          <button class="action-btn small" (click)="guardarProyecto(selectedSolicitud.id!)" [disabled]="guardandoProyecto">
+            {{ guardandoProyecto ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+        <p class="help-text" *ngIf="!selectedSolicitud.proyecto_id">
+          Sin proyecto asignado: al firmar legal no se creará ningún ítem en el presupuesto hasta que selecciones uno.
+        </p>
+      </div>
+
       <div class="detail-actions">
         <ng-container [ngSwitch]="selectedSolicitud.estado">
           <ng-container *ngSwitchCase="'pendiente_analisis'">

@@ -271,10 +271,15 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/chat-assistant`, { message, telefono, nombre });
   }
 
-  uploadCotizaciones(files: File[]): Observable<any> {
+  uploadCotizaciones(files: File[], proyectoId?: number | null): Observable<any> {
     const formData = new FormData();
     files.forEach(f => formData.append('files', f));
+    if (proyectoId) formData.append('proyecto_id', String(proyectoId));
     return this.http.post(`${this.baseUrl}/analisis-apu/upload`, formData);
+  }
+
+  seleccionarProyectoSolicitud(solicitudId: number, proyectoId: number): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/analisis-apu/${solicitudId}/proyecto`, { proyecto_id: proyectoId });
   }
 
   analizarSolicitud(solicitudId: number): Observable<any> {
