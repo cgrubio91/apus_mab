@@ -45,7 +45,7 @@ SCHEMA_STATEMENTS = [
     CREATE TABLE IF NOT EXISTS usuario_rol (
         user_id INT NOT NULL,
         rol_id INT NOT NULL,
-        PRIMARY KEY (user_id),
+        PRIMARY KEY (user_id, rol_id),
         KEY idx_usuario_rol_rol (rol_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
     """,
@@ -263,6 +263,10 @@ SCHEMA_STATEMENTS = [
     "ALTER TABLE item_proyecto ADD COLUMN apu_solicitud_id INT NULL",
     "ALTER TABLE item_proyecto ADD COLUMN aprobado_costos TINYINT(1) DEFAULT 0",
     "ALTER TABLE item_proyecto ADD INDEX idx_item_apu_solicitud (apu_solicitud_id)",
+
+    # ── Migración: usuario_rol pasa de 1 rol por usuario a varios (rol de
+    # interventoría + roles MAPUS adicionales, ver src/presentation/auth.py) ──
+    "ALTER TABLE usuario_rol DROP PRIMARY KEY, ADD PRIMARY KEY (user_id, rol_id)",
 ]
 
 

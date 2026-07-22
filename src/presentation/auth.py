@@ -27,30 +27,20 @@ ROLES_HIERARCHY = {
     "user": 10,
 }
 
-INTERVENTORIA_ROLE_MAP = {
-    "super_admin": "admin",
-    "director": "subgerente",
-    "residente": "analista",
-    "topografo": "contraparte",
-    "inspector": "contraparte",
-    "calidad": "contraparte",
-    "bim": "contraparte",
-}
-
-
-def _resolve_mapus_role(interventoria_roles: list[str]) -> str:
-    best_level = 0
-    best_role = "contraparte"
-    for r in interventoria_roles:
+def _resolve_mapus_role(role_codes: list[str]) -> str:
+    """Un usuario puede tener varios roles (su rol de interventoría + roles MAPUS
+    adicionales, ver usuario_rol). Para efectos de autorización en MAPUS se toma
+    el de mayor jerarquía entre los que sean roles MAPUS (admin/subgerente/legal/
+    analista/contraparte/user); roles ajenos a MAPUS (director, topografo, etc.)
+    no traducen a un nivel y se ignoran."""
+    best_level = -1
+    best_role = "user"
+    for r in role_codes:
         clean = r.strip().lower()
-        if clean in ROLES_HIERARCHY:
-            mapped = clean
-        else:
-            mapped = INTERVENTORIA_ROLE_MAP.get(clean, "contraparte")
-        level = ROLES_HIERARCHY.get(mapped, 0)
+        level = ROLES_HIERARCHY.get(clean, -1)
         if level > best_level:
             best_level = level
-            best_role = mapped
+            best_role = clean
     return best_role
 
 

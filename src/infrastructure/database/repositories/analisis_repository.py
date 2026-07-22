@@ -288,12 +288,14 @@ class AnalisisMySQLRepository:
             conn = get_db_connection()
         try:
             with conn.cursor() as cursor:
+                # nivel=1 / parent_id=NULL: el flujo de APU no captura a qué capítulo
+                # pertenece la cotización, así que el ítem NP queda sin jerarquía asignada.
                 cursor.execute(
                     """INSERT INTO item_proyecto
-                       (proyecto, codigo, nombre, unidad_medida, cantidad_presupuestada,
+                       (proyecto, nivel, codigo, nombre, unidad_medida, cantidad_presupuestada,
                         valor_unitario, valor_presupuestado, tipo_item,
                         aprobado_interventoria, apu_solicitud_id, aprobado_costos)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, 'NP', 1, %s, 1)""",
+                        VALUES (%s, 1, %s, %s, %s, %s, %s, %s, 'NP', 1, %s, 1)""",
                     (proyecto_id, item_code, descripcion, unidad, 0,
                      valor_unitario, 0, solicitud_id),
                 )
