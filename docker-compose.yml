@@ -7,7 +7,7 @@ services:
       - "3307:3306"
     environment:
       MYSQL_ROOT_PASSWORD: postgres
-      MYSQL_DATABASE: interventoria
+      MYSQL_DATABASE: apus_mab
       MYSQL_USER: postgres
       MYSQL_PASSWORD: postgres
     volumes:
@@ -30,7 +30,7 @@ services:
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_NAME: interventoria
+      DB_NAME: apus_mab
       DB_USER: postgres
       DB_PASSWORD: postgres
       GEMINI_API_KEY: ${GEMINI_API_KEY}
