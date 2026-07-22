@@ -30,8 +30,8 @@
 }
 
 .btn-primary {
-  background: var(--text-main);
-  border: 1px solid var(--text-main);
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
   color: #fff;
   padding: 0.65rem 1.25rem;
   border-radius: var(--radius-md);
@@ -46,8 +46,8 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 
   &:hover {
-    background: #1e293b;
-    border-color: #1e293b;
+    background: var(--accent-primary-hover);
+    border-color: var(--accent-primary-hover);
   }
 
   &:disabled {

@@ -64,10 +64,15 @@
   padding: 9px 20px;
   border: none;
   border-radius: 8px;
-  background: #1565c0;
+  background: var(--accent-primary);
   color: #fff;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s ease;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-primary-hover);
+  }
 
   &:disabled {
     opacity: 0.6;

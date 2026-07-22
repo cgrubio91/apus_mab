@@ -1,0 +1,49 @@
+<header class="topbar" *ngIf="isLoggedIn">
+  <div class="breadcrumb">
+    <span class="crumb-root">MAPUS</span>
+    <span class="crumb-sep">/</span>
+    <span class="crumb-current">{{ seccion }}</span>
+  </div>
+
+  <div class="topbar-actions">
+    <div class="topbar-notif">
+      <button class="notif-trigger" type="button" (click)="toggleNotifPanel()">
+        <span class="material-symbols-outlined">notifications</span>
+        <span class="notif-label">Notificaciones</span>
+        <span class="notif-badge" *ngIf="(notif.noLeidas$ | async) as count">
+          <ng-container *ngIf="count > 0">{{ count > 99 ? '99+' : count }}</ng-container>
+        </span>
+      </button>
+
+      <div class="notif-panel" *ngIf="showNotifPanel">
+        <div class="notif-panel-header">
+          <strong>Notificaciones</strong>
+          <button type="button" class="notif-mark-all" (click)="marcarTodas()">Marcar todas leídas</button>
+        </div>
+        <div class="notif-list">
+          <div class="notif-empty" *ngIf="(notif.notificaciones$ | async)?.length === 0">
+            No tienes notificaciones.
+          </div>
+          <button
+            type="button"
+            class="notif-entry"
+            [class.unread]="!n.leida"
+            *ngFor="let n of notif.notificaciones$ | async"
+            (click)="abrirNotificacion(n)">
+            <span class="notif-titulo">
+              <span class="notif-dot" *ngIf="!n.leida"></span>
+              {{ n.titulo }}
+            </span>
+            <span class="notif-mensaje">{{ n.mensaje }}</span>
+            <span class="notif-fecha">{{ n.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button class="export-btn" type="button" (click)="exportar()">
+      <span class="material-symbols-outlined">download</span>
+      <span>Exportar Reporte</span>
+    </button>
+  </div>
+</header>

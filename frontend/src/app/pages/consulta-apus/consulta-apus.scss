@@ -382,7 +382,7 @@
         padding: 6px;
         border: none;
         border-radius: 5px;
-        background: #1d4ed8;
+        background: var(--accent-primary);
         color: white;
         font-size: 12px;
         font-weight: 600;
@@ -390,7 +390,7 @@
         transition: background 0.15s;
 
         &:hover {
-          background: #1e40af;
+          background: var(--accent-primary-hover);
         }
       }
     }
@@ -519,9 +519,9 @@
     }
 
     &.active {
-      background: #1d4ed8;
+      background: var(--accent-primary);
       color: white;
-      border-color: #1d4ed8;
+      border-color: var(--accent-primary);
     }
   }
 }

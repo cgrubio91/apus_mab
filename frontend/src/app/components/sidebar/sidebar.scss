@@ -2,6 +2,7 @@
   width: 260px;
   height: 100vh;
   background: var(--bg-sidebar);
+  background: var(--bg-sidebar-gradient);
   color: var(--text-white);
   display: flex;
   flex-direction: column;
@@ -33,22 +34,23 @@
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
-  background: #ffffff;
-  border-radius: 8px;
+  width: 38px;
+  height: 38px;
+  background: var(--accent-primary);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 6px 16px rgba(242, 101, 34, 0.35);
+  flex-shrink: 0;
 }
 
-.diamond {
-  width: 14px;
-  height: 14px;
-  background: #000000;
-  transform: rotate(45deg);
-  border-radius: 2px;
+.logo-letter {
+  font-family: var(--font-family-title);
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1;
 }
 
 .logo-text {
@@ -104,29 +106,46 @@
 }
 
 .nav-link {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.85rem 1rem;
+  padding: 0.8rem 1rem;
   color: var(--text-light);
   text-decoration: none;
   border-radius: var(--radius-md);
   font-family: var(--font-family-body);
-  font-size: 0.925rem;
+  font-size: 0.9rem;
   font-weight: 500;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .nav-link:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.05);
   color: var(--text-white);
 }
 
 .nav-link.active {
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--text-white);
+  background: #ffffff;
+  color: var(--text-main);
   font-weight: 600;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+
+.nav-link.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--accent-primary);
+  border-radius: 0 3px 3px 0;
+}
+
+.nav-link.active .icon {
+  color: var(--accent-primary);
 }
 
 .icon {
@@ -142,19 +161,87 @@
 }
 
 .sidebar-footer {
-  padding: 1.25rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  padding: 1rem 1.25rem 1.35rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.user-section {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+
+  &.collapsed-avatar {
+    justify-content: center;
+  }
+}
+
+.user-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(242, 101, 34, 0.3);
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logout-btn {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+
+  .material-symbols-outlined {
+    font-size: 1.2rem;
+  }
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-danger);
+  }
+}
+
+.login-link {
+  .nav-link {
+    color: var(--text-light);
+  }
 }
 
 .engine-indicator {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  background: rgba(16, 185, 129, 0.05);
-  border: 1px solid rgba(16, 185, 129, 0.15);
-  padding: 0.5rem 0.75rem;
-  border-radius: 20px;
-  justify-content: center;
+  gap: 0.35rem;
 }
 
 .indicator-dot {
@@ -164,10 +251,11 @@
   border-radius: 50%;
   box-shadow: 0 0 8px var(--accent-success);
   animation: pulse 2s infinite;
+  flex-shrink: 0;
 }
 
 .indicator-text {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--accent-success);
 }
@@ -199,7 +287,7 @@
   position: absolute;
   top: 4px;
   left: 26px;
-  background: #e53935;
+  background: var(--accent-primary);
   color: #fff;
   border-radius: 10px;
   font-size: 10px;

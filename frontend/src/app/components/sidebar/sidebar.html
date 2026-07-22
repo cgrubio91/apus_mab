@@ -2,7 +2,7 @@
   <div class="sidebar-header">
     <div class="logo-wrapper">
       <div class="logo-icon">
-        <span class="diamond"></span>
+        <span class="logo-letter">M</span>
       </div>
       <div class="logo-text" *ngIf="!isCollapsed">
         <span class="app-title">MAPUS</span>
@@ -113,16 +113,23 @@
 
   <div class="sidebar-footer">
     <div class="user-section" *ngIf="isLoggedIn && !isCollapsed">
-      <span class="user-name">{{ currentUser?.nombre }}</span>
-      <span class="user-rol">{{ currentUser?.rol }}</span>
-      <button class="logout-btn" (click)="logout()">Cerrar Sesión</button>
+      <span class="user-avatar">{{ iniciales }}</span>
+      <span class="user-meta">
+        <span class="user-name">{{ currentUser?.nombre }}</span>
+        <span class="engine-indicator">
+          <span class="indicator-dot"></span>
+          <span class="indicator-text">Gemini · Activo</span>
+        </span>
+      </span>
+      <button class="logout-btn" (click)="logout()" title="Cerrar sesión" aria-label="Cerrar sesión">
+        <span class="material-symbols-outlined">logout</span>
+      </button>
+    </div>
+    <div class="user-section collapsed-avatar" *ngIf="isLoggedIn && isCollapsed">
+      <span class="user-avatar">{{ iniciales }}</span>
     </div>
     <div class="login-link" *ngIf="!isLoggedIn && !isCollapsed">
       <a routerLink="/login" class="nav-link"><span class="material-symbols-outlined icon">login</span> Iniciar Sesión</a>
-    </div>
-    <div class="engine-indicator" *ngIf="!isCollapsed">
-      <span class="indicator-dot"></span>
-      <span class="indicator-text">Gemini · Activo</span>
     </div>
   </div>
 </nav>

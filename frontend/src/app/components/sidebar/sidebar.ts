@@ -53,6 +53,15 @@ export class Sidebar implements OnInit, OnDestroy {
     return (this.currentUser?.rol || '').toLowerCase() === 'admin';
   }
 
+  get iniciales(): string {
+    const nombre = (this.currentUser?.nombre || '').trim();
+    if (!nombre) return '?';
+    const partes = nombre.split(/\s+/);
+    const primera = partes[0]?.charAt(0) ?? '';
+    const segunda = partes.length > 1 ? partes[partes.length - 1].charAt(0) : '';
+    return (primera + segunda).toUpperCase() || '?';
+  }
+
   @HostListener('document:click', ['$event'])
   onDocClick(event: MouseEvent) {
     const target = event.target as HTMLElement;

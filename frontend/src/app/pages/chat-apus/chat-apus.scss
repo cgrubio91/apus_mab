@@ -212,7 +212,7 @@
   .btn-send {
     width: 42px;
     height: 42px;
-    background: var(--text-main);
+    background: var(--accent-primary);
     border: none;
     border-radius: var(--radius-md);
     color: var(--text-white);
@@ -224,7 +224,7 @@
     transition: background 0.2s ease;
 
     &:hover:not(:disabled) {
-      background: #1e293b;
+      background: var(--accent-primary-hover);
     }
 
     &:disabled {
