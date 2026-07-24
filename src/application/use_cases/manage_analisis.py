@@ -238,7 +238,8 @@ def _analizar_apu_con_banco(apu: dict) -> dict:
     if not descripcion:
         return resultado
 
-    candidatos = analisis_repo.buscar_apus_similares(descripcion)
+    insumos_desc = [i.get("insumo_descripcion") for i in apu.get("insumos", []) if i.get("insumo_descripcion")]
+    candidatos = analisis_repo.buscar_apus_similares(descripcion, insumos_desc=insumos_desc)
     resultado["existe_en_banco"] = len(candidatos) > 0
 
     if candidatos:

@@ -443,49 +443,58 @@ class AnalisisMySQLRepository:
                 )
                 return cursor.fetchall()
 
-    def buscar_apus_similares(self, descripcion: str, max_candidatos: int = 5, max_insumos: int = 40) -> list:
+    def buscar_apus_similares(self, descripcion: str, insumos_desc: Optional[list] = None,
+                              max_candidatos: int = 5, max_insumos: int = 40) -> list:
         """Devuelve los APUs del banco más parecidos al ítem cotizado.
 
-        Cada candidato es un APU COMPLETO (no una fila de insumo suelta): trae el
-        proyecto, entidad, ciudad, contratista y precio del ítem, más la lista de
-        sus insumos (descripción, unidad, rendimiento y precios). El ranking usa
-        similitud de tokens (Jaccard) sobre la descripción del ítem.
+        Busca por la descripción del ítem Y por la de sus insumos (para ítems genéricos
+        como "Alquiler de maquinaria" cuyo insumo real es "minicargador"). El ranking usa
+        similitud sobre (descripción del ítem + insumos) y prioriza los que tienen valor.
         """
-        if not descripcion:
+        # Tokens objetivo = descripción del ítem + descripciones de sus insumos.
+        objetivo = _tokenizar(descripcion or "")
+        for d in (insumos_desc or []):
+            objetivo |= _tokenizar(d or "")
+        if not objetivo:
             return []
-        palabras = [p for p in descripcion.split() if len(p) > 3][:6]
-        if not palabras:
-            return []
-        condiciones = " OR ".join(["items_descripcion LIKE %s" for _ in palabras])
-        params = [f"%{p}%" for p in palabras]
+        palabras = sorted(objetivo, key=len, reverse=True)[:8]
+        like_item = " OR ".join(["items_descripcion LIKE %s" for _ in palabras])
+        like_ins = " OR ".join(["insumo_descripcion LIKE %s" for _ in palabras])
+        params = [f"%{p}%" for p in palabras] + [f"%{p}%" for p in palabras]
 
         with get_db_connection() as conn:
             with conn.cursor(dictionary=True) as cursor:
-                # Paso 1: cabeceras de APUs candidatos (un registro por APU del banco).
+                # Paso 1: cabeceras de APUs candidatos (busca por ítem O por insumo).
                 cursor.execute(
                     f"""SELECT numero_contrato, link_documento, item, items_descripcion, item_unidad,
                                nombre_proyecto, entidad, ciudad, contratista,
                                MAX(precio_unitario) AS precio_unitario,
                                MAX(precio_unitario_sin_aiu) AS precio_unitario_sin_aiu,
                                MAX(fecha_aprobacion_apu) AS fecha,
-                               COUNT(*) AS num_insumos
+                               COUNT(*) AS num_insumos,
+                               MAX(CASE WHEN precio_unitario_apu > 0 THEN 1 ELSE 0 END) AS tiene_valor,
+                               GROUP_CONCAT(DISTINCT insumo_descripcion SEPARATOR ' | ') AS insumos_texto
                         FROM apus
-                        WHERE ({condiciones}) AND precio_unitario IS NOT NULL
+                        WHERE ({like_item}) OR ({like_ins})
                         GROUP BY numero_contrato, link_documento, item, items_descripcion,
                                  item_unidad, nombre_proyecto, entidad, ciudad, contratista
                         ORDER BY num_insumos DESC
-                        LIMIT 80""",
+                        LIMIT 150""",
                     params,
                 )
                 candidatos = cursor.fetchall()
                 if not candidatos:
                     return []
 
-                objetivo = _tokenizar(descripcion)
                 for c in candidatos:
-                    c["_score"] = _similitud_tokens(objetivo, _tokenizar(c.get("items_descripcion", "")))
+                    texto = (c.get("items_descripcion") or "") + " " + (c.get("insumos_texto") or "")
+                    c["_score"] = _similitud_tokens(objetivo, _tokenizar(texto))
                 candidatos = [c for c in candidatos if c["_score"] > 0]
-                candidatos.sort(key=lambda c: (c["_score"], c.get("num_insumos", 0)), reverse=True)
+                # Prioriza: similitud, luego los que tienen valor, luego nº de insumos.
+                candidatos.sort(
+                    key=lambda c: (c["_score"], c.get("tiene_valor", 0) or 0, c.get("num_insumos", 0)),
+                    reverse=True,
+                )
                 top = candidatos[:max_candidatos]
 
                 # Paso 2: insumos de cada APU candidato (NULL-safe con <=> por si hay campos vacíos).
@@ -504,6 +513,8 @@ class AnalisisMySQLRepository:
                     )
                     c["insumos"] = cursor.fetchall()
                     c["similitud"] = round(c.pop("_score", 0.0), 3)
+                    c.pop("insumos_texto", None)
+                    c.pop("tiene_valor", None)
                 return top
 
 
