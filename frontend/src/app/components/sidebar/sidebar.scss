@@ -304,20 +304,25 @@
 }
 
 .notif-panel {
-  position: absolute;
-  left: calc(100% + 8px);
-  top: 0;
+  /* Fija respecto al viewport para NO quedar recortada por el overflow-x del sidebar */
+  position: fixed;
+  left: 268px;
+  bottom: 20px;
   width: 340px;
-  max-height: 420px;
+  max-height: 60vh;
   background: #fff;
   color: #263238;
   border: 1px solid #e0e0e0;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-  z-index: 1000;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.22);
+  z-index: 1200;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.sidebar.collapsed .notif-panel {
+  left: 88px;
 }
 
 .notif-panel-header {

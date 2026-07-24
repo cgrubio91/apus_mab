@@ -149,6 +149,7 @@ SCHEMA_STATEMENTS = [
         fecha_limite_respuesta DATE,
         fecha_limite_aprobacion DATE,
         estado VARCHAR(50) DEFAULT 'pendiente_analisis',
+        tipo_comparacion VARCHAR(20) DEFAULT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         KEY idx_solicitudes_proyecto (proyecto_id)
@@ -169,6 +170,8 @@ SCHEMA_STATEMENTS = [
         insumo_descripcion TEXT,
         insumo_unidad VARCHAR(20),
         rendimiento_insumo DECIMAL(30,10),
+        precio_unitario_apu DECIMAL(30,10),
+        precio_parcial_apu DECIMAL(30,10),
         tipo_insumo VARCHAR(100),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (solicitud_id) REFERENCES solicitudes_apu(id) ON DELETE CASCADE
@@ -260,6 +263,9 @@ SCHEMA_STATEMENTS = [
     # ── Migraciones para tablas que ya existen sin las columnas de integración ──
     "ALTER TABLE solicitudes_apu ADD COLUMN proyecto_id INT NULL",
     "ALTER TABLE solicitudes_apu ADD INDEX idx_solicitudes_proyecto (proyecto_id)",
+    "ALTER TABLE solicitudes_apu ADD COLUMN tipo_comparacion VARCHAR(20) DEFAULT NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN precio_unitario_apu DECIMAL(30,10) NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN precio_parcial_apu DECIMAL(30,10) NULL",
     "ALTER TABLE item_proyecto ADD COLUMN apu_solicitud_id INT NULL",
     "ALTER TABLE item_proyecto ADD COLUMN aprobado_costos TINYINT(1) DEFAULT 0",
     "ALTER TABLE item_proyecto ADD INDEX idx_item_apu_solicitud (apu_solicitud_id)",

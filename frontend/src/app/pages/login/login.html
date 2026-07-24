@@ -1,47 +1,102 @@
-<div class="login-container">
-  <div class="login-card">
-    <div class="login-header">
-      <div class="logo-icon">
-        <span class="diamond"></span>
+<div class="auth-screen">
+  <!-- ── Panel izquierdo: carrusel de imágenes ───────────────────── -->
+  <aside class="auth-visual">
+    <div class="slides">
+      <div
+        class="slide"
+        *ngFor="let s of slides; let i = index"
+        [class.active]="i === current"
+        [style.background-image]="'url(' + s + ')'">
       </div>
-      <h1>MAPUS</h1>
-      <p class="subtitle">Análisis de Precios Unitarios</p>
     </div>
+    <div class="visual-overlay"></div>
 
-    <div class="alert error" *ngIf="error">
-      <span class="material-symbols-outlined alert-icon">warning</span><span>{{ error }}</span>
+    <div class="visual-content">
+      <div class="brand-top">
+        <img *ngIf="logoOk" src="mab-logo.png" alt="MAB Ingeniería de Valor" class="brand-logo" (error)="logoOk = false" />
+        <div *ngIf="!logoOk" class="brand-wordmark">
+          <span class="wm-mab">MAB</span>
+          <span class="wm-sub">INGENIERÍA DE VALOR</span>
+        </div>
+      </div>
+
+      <div class="visual-copy">
+        <span class="visual-badge">● INTERVENTORÍA 4.0</span>
+        <h1>Ingeniería de valor<br />para <span class="hl">tus proyectos.</span></h1>
+      </div>
+
+      <div class="visual-dots">
+        <button
+          *ngFor="let s of slides; let i = index"
+          class="dot"
+          [class.active]="i === current"
+          (click)="goTo(i)"
+          [attr.aria-label]="'Imagen ' + (i + 1)">
+        </button>
+      </div>
     </div>
+  </aside>
 
-    <form (ngSubmit)="login()" class="login-form">
-      <div class="form-group">
-        <label for="username">Usuario</label>
-        <input
-          id="username"
-          type="text"
-          [(ngModel)]="username"
-          name="username"
-          placeholder="Email o teléfono"
-          required
-          autocomplete="username"
-        />
+  <!-- ── Panel derecho: formulario ───────────────────────────────── -->
+  <main class="auth-form-side">
+    <div class="auth-card">
+      <div class="card-logo">
+        <img *ngIf="logoOk" src="mab-logo.png" alt="MAB" (error)="logoOk = false" />
+        <div *ngIf="!logoOk" class="card-logo-fallback">MAB</div>
       </div>
 
-      <div class="form-group">
-        <label for="password">Contraseña</label>
-        <input
-          id="password"
-          type="password"
-          [(ngModel)]="password"
-          name="password"
-          placeholder="Ingrese su contraseña"
-          required
-          autocomplete="current-password"
-        />
+      <span class="eyebrow">ACCESO SEGURO</span>
+      <h2>Iniciar Sesión</h2>
+      <p class="card-subtitle">Ingresa tus credenciales para continuar</p>
+
+      <div class="alert error" *ngIf="error">
+        <span class="material-symbols-outlined alert-icon">warning</span><span>{{ error }}</span>
       </div>
 
-      <button type="submit" class="login-btn" [disabled]="loading">
-        {{ loading ? 'Ingresando...' : 'Iniciar Sesión' }}
-      </button>
-    </form>
-  </div>
+      <form (ngSubmit)="login()" class="auth-form" autocomplete="on">
+        <div class="field">
+          <label for="username">USUARIO</label>
+          <div class="input-wrap">
+            <span class="material-symbols-outlined field-icon">person</span>
+            <input
+              id="username"
+              type="text"
+              [(ngModel)]="username"
+              name="username"
+              placeholder="nombre_usuario"
+              required
+              autocomplete="username" />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="password">CONTRASEÑA</label>
+          <div class="input-wrap">
+            <span class="material-symbols-outlined field-icon">lock</span>
+            <input
+              id="password"
+              [type]="showPassword ? 'text' : 'password'"
+              [(ngModel)]="password"
+              name="password"
+              placeholder="••••••••"
+              required
+              autocomplete="current-password" />
+            <button type="button" class="toggle-pass" (click)="togglePassword()" [attr.aria-label]="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'">
+              <span class="material-symbols-outlined">{{ showPassword ? 'visibility_off' : 'visibility' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <label class="remember">
+          <input type="checkbox" [(ngModel)]="rememberMe" name="rememberMe" />
+          <span>Recordarme sesión</span>
+        </label>
+
+        <button type="submit" class="submit-btn" [disabled]="loading">
+          {{ loading ? 'Ingresando…' : 'Ingresar al sistema' }}
+          <span class="material-symbols-outlined" *ngIf="!loading">arrow_forward</span>
+        </button>
+      </form>
+    </div>
+  </main>
 </div>

@@ -1,14 +1,19 @@
-<app-sidebar [isMobileOpen]="isMobileOpen" (closeMobileEvent)="closeMobileSidebar()"></app-sidebar>
-<div class="sidebar-overlay" *ngIf="isMobileOpen" (click)="closeMobileSidebar()"></div>
-<div class="main-content" [class.mobile-open]="isMobileOpen">
-  <div class="mobile-header">
-    <button class="hamburger-btn" (click)="toggleMobileSidebar()">
-      <span class="material-symbols-outlined">menu</span>
-    </button>
-    <span class="mobile-title">MAPUS</span>
+<ng-container *ngIf="isAuthRoute; else appShell">
+  <router-outlet></router-outlet>
+</ng-container>
+
+<ng-template #appShell>
+  <app-sidebar [isMobileOpen]="isMobileOpen" (closeMobileEvent)="closeMobileSidebar()" (collapsedChange)="sidebarCollapsed = $event"></app-sidebar>
+  <div class="sidebar-overlay" *ngIf="isMobileOpen" (click)="closeMobileSidebar()"></div>
+  <div class="main-content" [class.mobile-open]="isMobileOpen" [class.collapsed]="sidebarCollapsed">
+    <div class="mobile-header">
+      <button class="hamburger-btn" (click)="toggleMobileSidebar()">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+      <span class="mobile-title">MAPUS</span>
+    </div>
+    <div class="page-content">
+      <router-outlet></router-outlet>
+    </div>
   </div>
-  <app-topbar></app-topbar>
-  <div class="page-content">
-    <router-outlet></router-outlet>
-  </div>
-</div>
+</ng-template>

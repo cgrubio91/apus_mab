@@ -18,6 +18,8 @@ export interface SolicitudInsumo {
   insumo_descripcion?: string;
   insumo_unidad?: string;
   rendimiento_insumo?: number;
+  precio_unitario_apu?: number | null;
+  precio_parcial_apu?: number | null;
   tipo_insumo?: string;
 }
 
@@ -36,6 +38,42 @@ export interface HistorialAprobacion {
   created_at?: string;
 }
 
+export interface InsumoCotizado {
+  tipo_insumo?: string;
+  codigo_insumo?: string;
+  insumo_descripcion?: string;
+  insumo_unidad?: string;
+  rendimiento_insumo?: number | null;
+  precio_unitario_apu?: number | null;
+  precio_parcial_apu?: number | null;
+  equivalente?: boolean;
+}
+
+export interface InsumoBanco extends InsumoCotizado {
+  precio_unitario_apu?: number | null;
+  precio_parcial_apu?: number | null;
+}
+
+export interface CandidatoBanco {
+  nombre_proyecto?: string;
+  entidad?: string;
+  ciudad?: string;
+  contratista?: string;
+  numero_contrato?: string;
+  item?: string;
+  items_descripcion?: string;
+  item_unidad?: string;
+  precio_unitario?: number;
+  precio_unitario_sin_aiu?: number;
+  fecha?: string;
+  similitud?: number;
+  diferencia_precio?: number | null;
+  diferencia_pct?: number | null;
+  es_match_ia?: boolean;
+  es_referencia?: boolean;
+  insumos?: InsumoBanco[];
+}
+
 export interface AnalisisItem {
   item: string;
   descripcion: string;
@@ -43,6 +81,7 @@ export interface AnalisisItem {
   precio_ofertado: number;
   mejor_precio_banco?: number;
   diferencia_precio?: number;
+  diferencia_pct?: number;
   existe_en_banco: boolean;
   item_banco_encontrado?: string;
   estructura_insumos_coincide?: boolean;
@@ -50,6 +89,58 @@ export interface AnalisisItem {
   observaciones?: string;
   recomendacion: string;
   grupo_cotizacion?: number;
+  nombre_archivo?: string;
+  insumos_cotizados?: InsumoCotizado[];
+  candidatos?: CandidatoBanco[];
+}
+
+export interface ProveedorPrecio {
+  grupo: number;
+  proveedor: string;
+  precio: number;
+  rendimiento?: number | null;
+  precio_parcial?: number | null;
+  es_menor?: boolean;
+}
+
+export interface BancoRefInsumo {
+  insumo_descripcion?: string;
+  insumo_unidad?: string;
+  tipo_insumo?: string;
+  rendimiento_insumo?: number | null;
+  precio_unitario_apu?: number;
+  precio_parcial_apu?: number | null;
+  nombre_proyecto?: string;
+  entidad?: string;
+  ciudad?: string;
+  contratista?: string;
+  fecha?: string;
+  similitud?: number;
+  diferencia?: number | null;
+  diferencia_pct?: number | null;
+}
+
+export interface SugerenciaInsumo {
+  insumo_descripcion?: string;
+  insumo_unidad?: string;
+  tipo_insumo?: string;
+  codigo_insumo?: string;
+  precio_unitario_apu?: number | null;
+}
+
+export interface InsumoComparado {
+  descripcion: string;
+  unidad?: string;
+  codigo?: string;
+  tipo_insumo?: string;
+  sugerencia?: SugerenciaInsumo;
+  descripciones_originales?: string[];
+  proveedores: ProveedorPrecio[];
+  mejor_precio?: number | null;
+  mejor_proveedor?: string | null;
+  mejor_precio_banco?: number | null;
+  existe_en_banco?: boolean;
+  banco_referencia?: BancoRefInsumo[];
 }
 
 export interface AnalisisApu {
@@ -58,7 +149,9 @@ export interface AnalisisApu {
   analisis_json?: string;
   resumen?: string;
   recomendacion?: string;
+  modo?: string;
   items_analizados?: AnalisisItem[];
+  insumos_comparados?: InsumoComparado[];
   created_at?: string;
 }
 
@@ -72,6 +165,7 @@ export interface SolicitudApu {
   fecha_limite_respuesta?: string;
   fecha_limite_aprobacion?: string;
   estado: string;
+  tipo_comparacion?: string;
   insumos?: SolicitudInsumo[];
   grupos_archivos?: GrupoArchivo[];
   historial?: HistorialAprobacion[];
@@ -433,6 +527,116 @@ export class AnalisisApu implements OnInit {
       groups[g].push(item);
     });
     return Object.keys(groups).map(k => ({ grupo: Number(k), items: groups[k] }));
+  }
+
+  cambiandoModo = false;
+
+  get modoActual(): string {
+    return this.selectedSolicitud?.tipo_comparacion
+      || this.selectedSolicitud?.analisis?.modo
+      || 'apu';
+  }
+
+  modoLabel(tipo?: string): string {
+    return (tipo || this.modoActual) === 'insumos' ? 'Solo insumos (proveedores)' : 'APU completo';
+  }
+
+  cambiarModo(id: number, tipo: 'apu' | 'insumos'): void {
+    if (this.modoActual === tipo || this.cambiandoModo) return;
+    this.cambiandoModo = true;
+    this.error = null;
+    this.apuService.setTipoComparacion(id, tipo).subscribe({
+      next: () => {
+        // Cambiar el modo obliga a re-analizar para regenerar la comparación correcta.
+        this.apuService.analizarSolicitud(id).subscribe({
+          next: () => this.ngZone.run(() => {
+            this.cambiandoModo = false;
+            this.successMsg = `Modo cambiado a "${this.modoLabel(tipo)}" y re-analizado.`;
+            this._loadSolicitudDetail(id);
+          }),
+          error: () => this.ngZone.run(() => {
+            this.cambiandoModo = false;
+            this._loadSolicitudDetail(id);
+          }),
+        });
+      },
+      error: (err) => this.ngZone.run(() => {
+        this.cambiandoModo = false;
+        this.error = err.error?.detail || 'No se pudo cambiar el modo';
+        this.cdr.detectChanges();
+      }),
+    });
+  }
+
+  showApuCotizado = true;
+
+  // Explicación de "Vr. Unit. APU" / "Vr. Parcial APU"
+  showInfoApu = false;
+
+  toggleInfoApu(): void {
+    this.showInfoApu = !this.showInfoApu;
+  }
+
+  // ── Subir insumo al banco (modo insumos) ──────────────────────────
+  tipoInsumoOpciones = ['Materiales', 'Equipos', 'Mano de obra', 'Transporte', 'Herramienta', 'Indirectos', 'Otro'];
+  subiendoIdx: number | null = null;
+  subirDatos: SugerenciaInsumo = {};
+  subirGuardando = false;
+  subidos = new Set<number>();
+
+  abrirSubir(idx: number, ins: InsumoComparado): void {
+    this.subiendoIdx = idx;
+    const s = ins.sugerencia || {};
+    this.subirDatos = {
+      insumo_descripcion: s.insumo_descripcion ?? ins.descripcion ?? '',
+      insumo_unidad: s.insumo_unidad ?? ins.unidad ?? '',
+      tipo_insumo: s.tipo_insumo ?? ins.tipo_insumo ?? '',
+      codigo_insumo: s.codigo_insumo ?? ins.codigo ?? '',
+      precio_unitario_apu: s.precio_unitario_apu ?? ins.mejor_precio ?? null,
+    };
+  }
+
+  cancelarSubir(): void {
+    this.subiendoIdx = null;
+    this.subirDatos = {};
+  }
+
+  confirmarSubir(idx: number): void {
+    if (!this.subirDatos.insumo_descripcion?.trim()) {
+      this.error = 'La descripción del insumo es obligatoria';
+      return;
+    }
+    this.subirGuardando = true;
+    this.error = null;
+    this.apuService.subirInsumoBanco(this.subirDatos).subscribe({
+      next: (res: any) => this.ngZone.run(() => {
+        this.subirGuardando = false;
+        this.successMsg = res.mensaje;
+        this.subidos.add(idx);
+        this.subiendoIdx = null;
+        this.cdr.detectChanges();
+      }),
+      error: (err: any) => this.ngZone.run(() => {
+        this.subirGuardando = false;
+        this.error = err.error?.detail || 'No se pudo subir el insumo al banco';
+        this.cdr.detectChanges();
+      }),
+    });
+  }
+
+  expandedKeys = new Set<string>();
+
+  toggleItem(grupo: number, idx: number): void {
+    const key = `${grupo}:${idx}`;
+    if (this.expandedKeys.has(key)) {
+      this.expandedKeys.delete(key);
+    } else {
+      this.expandedKeys.add(key);
+    }
+  }
+
+  isExpanded(grupo: number, idx: number): boolean {
+    return this.expandedKeys.has(`${grupo}:${idx}`);
   }
 
   getGrupoNombre(grupo: number): string {

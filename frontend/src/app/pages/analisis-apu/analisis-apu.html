@@ -128,15 +128,6 @@
         </p>
       </div>
       <div class="detail-header-actions">
-        <button class="action-btn secondary" *ngIf="selectedSolicitud.analisis"
-                (click)="exportarAnalisis(selectedSolicitud.id!)" [disabled]="exportando">
-          <ng-container *ngIf="exportando">
-            <span class="material-symbols-outlined">hourglass_top</span> Exportando...
-          </ng-container>
-          <ng-container *ngIf="!exportando">
-            <span class="material-symbols-outlined">download</span> Exportar Excel
-          </ng-container>
-        </button>
         <button class="action-btn secondary" (click)="closeDetail()"><span class="material-symbols-outlined">close</span> Cerrar</button>
       </div>
     </div>
@@ -233,25 +224,36 @@
       </div>
 
       <div class="insumos-section" *ngIf="selectedSolicitud.insumos?.length">
-        <h3>Ítems Cotizados</h3>
-        <div class="table-responsive">
+        <h3 class="collapsible-h" (click)="showApuCotizado = !showApuCotizado">
+          <span class="material-symbols-outlined">{{ showApuCotizado ? 'expand_more' : 'chevron_right' }}</span>
+          APU cotizado <span class="count-label">({{ selectedSolicitud.insumos.length }} insumos)</span>
+        </h3>
+        <div class="table-responsive" *ngIf="showApuCotizado">
           <table class="premium-table">
             <thead>
               <tr>
                 <th>Cotiz.</th>
                 <th>Ítem</th>
-                <th>Descripción</th>
-                <th>Unidad</th>
-                <th class="numeric">Precio Unitario</th>
+                <th class="col-desc">Descripción</th>
+                <th>Tipo insumo</th>
+                <th class="col-insumo">Insumo</th>
+                <th>Und</th>
+                <th class="numeric">Rend.</th>
+                <th class="numeric">Vr. Unit. insumo</th>
+                <th class="numeric">Precio ítem</th>
               </tr>
             </thead>
             <tbody>
               <tr *ngFor="let ins of selectedSolicitud.insumos">
                 <td><span class="grupo-badge small">C{{ ins.grupo_cotizacion }}</span></td>
                 <td>{{ ins.item }}</td>
-                <td>{{ ins.items_descripcion }}</td>
-                <td>{{ ins.item_unidad }}</td>
-                <td class="numeric">${{ (ins.precio_unitario || 0) | number:'1.2-2' }}</td>
+                <td class="col-desc" [title]="ins.items_descripcion">{{ ins.items_descripcion }}</td>
+                <td>{{ ins.tipo_insumo || '—' }}</td>
+                <td class="col-insumo" [title]="ins.insumo_descripcion">{{ ins.insumo_descripcion || '—' }}</td>
+                <td>{{ ins.insumo_unidad || '—' }}</td>
+                <td class="numeric">{{ ins.rendimiento_insumo != null ? (ins.rendimiento_insumo | number:'1.0-4') : '—' }}</td>
+                <td class="numeric">{{ ins.precio_unitario_apu ? ('$' + (ins.precio_unitario_apu | number:'1.0-0')) : '—' }}</td>
+                <td class="numeric">${{ (ins.precio_unitario || 0) | number:'1.0-0' }}</td>
               </tr>
             </tbody>
           </table>
@@ -264,6 +266,16 @@
           <span class="recomendacion-global {{ recomendacionClass(selectedSolicitud.analisis?.recomendacion) }}" *ngIf="selectedSolicitud.analisis?.recomendacion">
             Recomendación global: {{ selectedSolicitud.analisis.recomendacion | uppercase }}
           </span>
+        </div>
+
+        <div class="modo-selector">
+          <span class="modo-label">Tipo de comparación:</span>
+          <div class="modo-toggle">
+            <button type="button" [class.active]="modoActual === 'apu'" [disabled]="cambiandoModo" (click)="cambiarModo(selectedSolicitud.id!, 'apu')">APU completo</button>
+            <button type="button" [class.active]="modoActual === 'insumos'" [disabled]="cambiandoModo" (click)="cambiarModo(selectedSolicitud.id!, 'insumos')">Solo insumos</button>
+          </div>
+          <span class="modo-hint" *ngIf="modoActual === 'insumos'">Comparación de precios entre proveedores — no se agrega ítem al proyecto.</span>
+          <span class="modo-spin" *ngIf="cambiandoModo">Re-analizando…</span>
         </div>
 
         <div class="analisis-placeholder" *ngIf="!selectedSolicitud.analisis">
@@ -286,7 +298,7 @@
           </div>
 
           <!-- ═══ STATS BAR (Diseño Moderno) ═══ -->
-          <div class="stats-grid" *ngIf="selectedSolicitud.analisis.items_analizados?.length">
+          <div class="stats-grid" *ngIf="modoActual === 'apu' && selectedSolicitud.analisis.items_analizados?.length">
             <div class="stat-card">
               <span class="stat-label">Total ítems</span>
               <span class="stat-value">{{ getStats(selectedSolicitud.analisis.items_analizados).total }}</span>
@@ -352,7 +364,7 @@
           </div>
 
           <!-- ═══ DETALLE POR COTIZACIÓN ═══ -->
-          <div class="grupos-detalle" *ngIf="selectedSolicitud.analisis.items_analizados?.length">
+          <div class="grupos-detalle" *ngIf="modoActual === 'apu' && selectedSolicitud.analisis.items_analizados?.length">
             <div class="grupo-analisis" *ngFor="let grupo of getGroupedItems(selectedSolicitud.analisis.items_analizados)">
               <div class="grupo-header">
                 <div class="grupo-info">
@@ -369,7 +381,7 @@
                       <th>Ítem</th>
                       <th>Descripción</th>
                       <th class="numeric">P. Ofertado</th>
-                      <th class="numeric">Mejor Banco</th>
+                      <th class="numeric">Ref. Banco</th>
                       <th class="numeric">Diferencia</th>
                       <th>Banco</th>
                       <th>Estruct.</th>
@@ -378,8 +390,12 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <tr *ngFor="let item of grupo.items" class="rec-{{ item.recomendacion }}-row">
-                      <td class="item-id">{{ item.item }}</td>
+                    <ng-container *ngFor="let item of grupo.items; let idx = index">
+                    <tr class="rec-{{ item.recomendacion }}-row item-row" [class.expanded]="isExpanded(grupo.grupo, idx)" (click)="toggleItem(grupo.grupo, idx)">
+                      <td class="item-id">
+                        <span class="expand-caret material-symbols-outlined">{{ isExpanded(grupo.grupo, idx) ? 'expand_more' : 'chevron_right' }}</span>
+                        {{ item.item }}
+                      </td>
                       <td class="desc-col">{{ item.descripcion }}</td>
                       <td class="numeric font-bold">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</td>
                       <td class="numeric">${{ (item.mejor_precio_banco || 0) | number:'1.0-0' }}</td>
@@ -406,13 +422,202 @@
                         <div class="obs-tooltip" *ngIf="item.observaciones">{{ item.observaciones }}</div>
                       </td>
                     </tr>
+
+                    <tr class="detalle-row" *ngIf="isExpanded(grupo.grupo, idx)">
+                      <td [attr.colspan]="9">
+                        <div class="comparacion">
+                          <div class="comp-col comp-cotizado">
+                            <h4>Insumos cotizados <span class="count">({{ item.insumos_cotizados?.length || 0 }})</span></h4>
+                            <table class="insumos-table comp-table" *ngIf="item.insumos_cotizados?.length; else sinInsumosCot">
+                              <thead><tr><th class="c-tipo">Tipo</th><th class="c-ins">Insumo</th><th class="c-und">Und</th><th class="numeric c-rend">Rend.</th><th class="numeric c-unit">Vr. Unit.</th><th class="numeric c-parc">Vr. Parcial</th></tr></thead>
+                              <tbody>
+                                <tr *ngFor="let ins of item.insumos_cotizados" [class.eq-yes]="ins.equivalente" [class.eq-no]="ins.equivalente === false">
+                                  <td>{{ ins.tipo_insumo || '—' }}</td>
+                                  <td class="c-ins">{{ ins.insumo_descripcion || '—' }}</td>
+                                  <td>{{ ins.insumo_unidad || '—' }}</td>
+                                  <td class="numeric">{{ ins.rendimiento_insumo != null ? (ins.rendimiento_insumo | number:'1.0-4') : '—' }}</td>
+                                  <td class="numeric">{{ ins.precio_unitario_apu ? ('$' + (ins.precio_unitario_apu | number:'1.0-0')) : '—' }}</td>
+                                  <td class="numeric">{{ ins.precio_parcial_apu ? ('$' + (ins.precio_parcial_apu | number:'1.0-0')) : '—' }}</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                            <ng-template #sinInsumosCot><p class="muted">No se extrajeron insumos para este ítem.</p></ng-template>
+                          </div>
+
+                          <div class="comp-col comp-banco">
+                            <h4>APUs similares en el banco <span class="count">({{ item.candidatos?.length || 0 }})</span></h4>
+                            <p class="muted" *ngIf="!item.candidatos?.length">No se encontraron APUs similares en el banco.</p>
+
+                            <div class="candidato-card" *ngFor="let c of item.candidatos" [class.match]="c.es_match_ia">
+                              <div class="candidato-head">
+                                <span class="cand-badge" *ngIf="c.es_match_ia">Equivalente (IA)</span>
+                                <span class="cand-proyecto">{{ c.nombre_proyecto || 'Proyecto sin dato' }}</span>
+                                <span class="cand-meta">{{ c.entidad || '—' }}<ng-container *ngIf="c.ciudad"> · {{ c.ciudad }}</ng-container></span>
+                                <span class="cand-meta" *ngIf="c.contratista">{{ c.contratista }}</span>
+                                <span class="cand-meta" *ngIf="c.numero_contrato">Contrato {{ c.numero_contrato }}</span>
+                                <span class="cand-meta" *ngIf="c.fecha">{{ c.fecha }}</span>
+                              </div>
+                              <p class="cand-desc" *ngIf="c.items_descripcion" [title]="c.items_descripcion">{{ c.items_descripcion }}</p>
+                              <div class="candidato-precios">
+                                <span>Ítem banco: <strong>{{ c.item || '—' }}</strong></span>
+                                <span>Precio: <strong>${{ (c.precio_unitario || 0) | number:'1.0-0' }}</strong>
+                                  <span class="ref-tag" *ngIf="c.es_referencia">referencia</span>
+                                </span>
+                                <span class="diff" [class.positive]="(c.diferencia_precio || 0) < 0" [class.negative]="(c.diferencia_precio || 0) > 0">
+                                  Dif: {{ c.diferencia_precio != null ? ('$' + (c.diferencia_precio | number:'1.0-0')) : '—' }}<ng-container *ngIf="c.diferencia_pct != null"> ({{ c.diferencia_pct }}%)</ng-container>
+                                </span>
+                                <span class="sim" *ngIf="c.similitud != null">Similitud {{ (c.similitud * 100) | number:'1.0-0' }}%</span>
+                              </div>
+                              <table class="insumos-table comp-table" *ngIf="c.insumos?.length">
+                                <thead><tr><th class="c-tipo">Tipo</th><th class="c-ins">Insumo</th><th class="c-und">Und</th><th class="numeric c-rend">Rend.</th><th class="numeric c-unit">Vr. Unit.</th><th class="numeric c-parc">Vr. Parcial</th></tr></thead>
+                                <tbody>
+                                  <tr *ngFor="let ins of c.insumos" [class.eq-yes]="ins.equivalente" [class.eq-no]="ins.equivalente === false">
+                                    <td>{{ ins.tipo_insumo || '—' }}</td>
+                                    <td class="c-ins">{{ ins.insumo_descripcion || '—' }}</td>
+                                    <td>{{ ins.insumo_unidad || '—' }}</td>
+                                    <td class="numeric">{{ ins.rendimiento_insumo != null ? (ins.rendimiento_insumo | number:'1.0-4') : '—' }}</td>
+                                    <td class="numeric">{{ ins.precio_unitario_apu != null ? ('$' + (ins.precio_unitario_apu | number:'1.0-0')) : '—' }}</td>
+                                    <td class="numeric">{{ ins.precio_parcial_apu != null ? ('$' + (ins.precio_parcial_apu | number:'1.0-0')) : '—' }}</td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                        <p class="obs-full" *ngIf="item.observaciones"><strong>Observación IA:</strong> {{ item.observaciones }}</p>
+                      </td>
+                    </tr>
+                    </ng-container>
                   </tbody>
                 </table>
               </div>
             </div>
           </div>
 
-          <div class="analisis-empty" *ngIf="!selectedSolicitud.analisis.items_analizados?.length">
+          <!-- ═══ MODO SOLO INSUMOS: comparación entre proveedores ═══ -->
+          <div class="insumos-proveedores" *ngIf="modoActual === 'insumos'">
+            <div class="analisis-empty" *ngIf="!selectedSolicitud.analisis.insumos_comparados?.length">
+              <p>No se detectaron insumos para comparar entre proveedores.</p>
+            </div>
+
+            <div class="insumo-card" *ngFor="let ins of selectedSolicitud.analisis.insumos_comparados; let idx = index">
+              <div class="insumo-card-head">
+                <div class="ins-title">
+                  <span class="ins-tipo" *ngIf="ins.tipo_insumo">{{ ins.tipo_insumo }}</span>
+                  <strong>{{ ins.descripcion }}</strong>
+                  <span class="ins-und" *ngIf="ins.unidad">({{ ins.unidad }})</span>
+                </div>
+                <div class="ins-head-right">
+                  <div class="ins-best" *ngIf="ins.mejor_precio != null">
+                    Mejor precio: <strong>${{ ins.mejor_precio | number:'1.0-0' }}</strong>
+                    <span *ngIf="ins.mejor_proveedor">· {{ ins.mejor_proveedor }}</span>
+                  </div>
+                  <span class="ins-subido" *ngIf="subidos.has(idx)"><span class="material-symbols-outlined">check_circle</span> En banco</span>
+                  <button class="action-btn small subir-btn" *ngIf="!subidos.has(idx) && subiendoIdx !== idx" (click)="abrirSubir(idx, ins)">
+                    <span class="material-symbols-outlined">library_add</span> Subir al banco
+                  </button>
+                </div>
+              </div>
+
+              <p class="ins-originales" *ngIf="ins.descripciones_originales?.length && ins.descripciones_originales.length > 1">
+                Agrupado por IA: {{ ins.descripciones_originales.join(' · ') }}
+              </p>
+
+              <div class="subir-form" *ngIf="subiendoIdx === idx">
+                <div class="subir-grid">
+                  <label>Descripción
+                    <input type="text" [(ngModel)]="subirDatos.insumo_descripcion" />
+                  </label>
+                  <label>Unidad
+                    <input type="text" [(ngModel)]="subirDatos.insumo_unidad" />
+                  </label>
+                  <label>Tipo
+                    <select [(ngModel)]="subirDatos.tipo_insumo">
+                      <option value="">—</option>
+                      <option *ngFor="let t of tipoInsumoOpciones" [value]="t">{{ t }}</option>
+                    </select>
+                  </label>
+                  <label>Código
+                    <input type="text" [(ngModel)]="subirDatos.codigo_insumo" />
+                  </label>
+                  <label>Precio unitario
+                    <input type="number" [(ngModel)]="subirDatos.precio_unitario_apu" />
+                  </label>
+                </div>
+                <p class="subir-hint">Proyecto, entidad e ítem quedan vacíos: es un insumo suelto de referencia.</p>
+                <div class="subir-actions">
+                  <button class="action-btn primary" [disabled]="subirGuardando" (click)="confirmarSubir(idx)">
+                    {{ subirGuardando ? 'Subiendo…' : 'Confirmar y subir' }}
+                  </button>
+                  <button class="action-btn secondary" [disabled]="subirGuardando" (click)="cancelarSubir()">Cancelar</button>
+                </div>
+              </div>
+
+              <div class="ins-cols">
+                <div class="ins-col">
+                  <h5>Proveedores <span class="count">({{ ins.proveedores?.length || 0 }})</span></h5>
+                  <table class="insumos-table">
+                    <thead>
+                      <tr>
+                        <th>Proveedor</th>
+                        <th class="numeric">Rend.</th>
+                        <th class="numeric">Vr. Unit.</th>
+                        <th class="numeric">Vr. Parcial</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let p of ins.proveedores" [class.best-row]="p.es_menor">
+                        <td>{{ p.proveedor }}</td>
+                        <td class="numeric">{{ p.rendimiento != null ? (p.rendimiento | number:'1.0-4') : '—' }}</td>
+                        <td class="numeric">{{ p.precio ? ('$' + (p.precio | number:'1.0-0')) : 'sin valor' }}<span class="best-tag" *ngIf="p.es_menor">menor</span></td>
+                        <td class="numeric">{{ p.precio_parcial ? ('$' + (p.precio_parcial | number:'1.0-0')) : '—' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="ins-col">
+                  <h5>
+                    Referencia en el banco <span class="count">({{ ins.banco_referencia?.length || 0 }})</span>
+                    <button type="button" class="info-btn" (click)="toggleInfoApu()" aria-label="Qué es Vr. Unit. APU y Vr. Parcial APU">
+                      <span class="material-symbols-outlined">info</span>
+                    </button>
+                  </h5>
+
+                  <div class="info-apu" *ngIf="showInfoApu">
+                    <p><strong>Vr. Unit. APU:</strong> precio unitario del insumo (lo que cuesta una unidad del insumo).</p>
+                    <p><strong>Vr. Parcial APU:</strong> aporte del insumo al precio del ítem = rendimiento × valor unitario.</p>
+                  </div>
+
+                  <p class="muted" *ngIf="!ins.banco_referencia?.length">Sin referencia en el banco de APUs.</p>
+                  <table class="insumos-table" *ngIf="ins.banco_referencia?.length">
+                    <thead>
+                      <tr>
+                        <th>Proyecto</th>
+                        <th>Entidad</th>
+                        <th>Insumo</th>
+                        <th class="numeric">Rend.</th>
+                        <th class="numeric">Vr. Unit. APU</th>
+                        <th class="numeric">Vr. Parcial APU</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let r of ins.banco_referencia">
+                        <td>{{ r.nombre_proyecto || '—' }}</td>
+                        <td>{{ r.entidad || '—' }}<ng-container *ngIf="r.ciudad"> · {{ r.ciudad }}</ng-container></td>
+                        <td>{{ r.insumo_descripcion || '—' }}<ng-container *ngIf="r.insumo_unidad"> ({{ r.insumo_unidad }})</ng-container></td>
+                        <td class="numeric">{{ r.rendimiento_insumo != null ? (r.rendimiento_insumo | number:'1.0-4') : '—' }}</td>
+                        <td class="numeric">{{ r.precio_unitario_apu ? ('$' + (r.precio_unitario_apu | number:'1.0-0')) : 'sin valor' }}</td>
+                        <td class="numeric">{{ r.precio_parcial_apu ? ('$' + (r.precio_parcial_apu | number:'1.0-0')) : '—' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="analisis-empty" *ngIf="modoActual === 'apu' && !selectedSolicitud.analisis.items_analizados?.length">
             <p>El análisis fue ejecutado pero no se encontraron datos detallados por ítem. Solo está disponible el resumen de la IA.</p>
           </div>
         </ng-container>

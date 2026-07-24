@@ -1001,3 +1001,508 @@
 
   .grupos-list { gap: 0.4rem; }
 }
+
+/* ── Fila de ítem expandible + comparación de insumos ─────────────── */
+.analisis-table .item-row {
+  cursor: pointer;
+
+  &:hover { background: #f8fafc; }
+
+  &.expanded { background: #fff7f2; }
+
+  .item-id {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+  }
+
+  .expand-caret {
+    font-size: 18px;
+    color: var(--accent-primary);
+    line-height: 1;
+  }
+}
+
+.analisis-table .detalle-row > td {
+  background: #fbfcfe;
+  padding: 16px;
+  border-bottom: 2px solid #eef2f7;
+}
+
+.comparacion {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: stretch;
+
+  h4 {
+    margin: 0 0 8px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--text-main);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+
+    .count { color: var(--text-muted); font-weight: 500; }
+  }
+
+  .muted { color: var(--text-muted); font-size: 0.8rem; }
+}
+
+.insumos-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  background: #fff;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  overflow: hidden;
+
+  th {
+    text-align: left;
+    background: #f4f7fa;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 6px 8px;
+    text-transform: uppercase;
+    font-size: 0.65rem;
+    letter-spacing: 0.03em;
+  }
+
+  td {
+    padding: 6px 8px;
+    border-top: 1px solid #f2f5f9;
+    vertical-align: top;
+  }
+
+  .numeric { text-align: right; white-space: nowrap; }
+}
+
+.candidato-card {
+  border: 1px solid #e6ebf1;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #fff;
+
+  &.match {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 1px var(--accent-primary) inset;
+    background: #fff8f4;
+  }
+
+  .candidato-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-bottom: 6px;
+  }
+
+  .cand-badge {
+    background: var(--accent-primary);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 7px;
+    border-radius: 999px;
+  }
+
+  .cand-proyecto {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-main);
+  }
+
+  .cand-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    &::before { content: '·'; margin-right: 8px; color: #cbd5e1; }
+    &:first-of-type::before { content: none; }
+  }
+
+  .candidato-precios {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+
+    strong { color: var(--text-main); }
+
+    .diff.positive strong, .diff.positive { color: #059669; }
+    .diff.negative { color: #dc2626; }
+    .sim { color: var(--accent-info); }
+  }
+}
+
+.obs-full {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: #f4f7fa;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text-main);
+}
+
+@media (max-width: 900px) {
+  .comparacion { grid-template-columns: 1fr; }
+}
+
+/* ── Selector de modo (APU completo / Solo insumos) ───────────────── */
+.modo-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 4px 0 16px;
+}
+
+.modo-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.modo-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  overflow: hidden;
+  background: #fff;
+
+  button {
+    border: none;
+    background: none;
+    padding: 6px 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+
+    &.active {
+      background: var(--accent-primary);
+      color: #fff;
+    }
+
+    &:disabled { opacity: 0.6; cursor: default; }
+  }
+}
+
+.modo-hint {
+  font-size: 0.75rem;
+  color: var(--accent-primary);
+}
+
+.modo-spin {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Modo solo insumos: tarjetas por insumo ───────────────────────── */
+.insumos-proveedores {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.insumo-card {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px 16px;
+
+  .insumo-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eef2f7;
+  }
+
+  .ins-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+
+    strong { font-size: 0.92rem; color: var(--text-main); }
+    .ins-und { color: var(--text-muted); font-size: 0.78rem; }
+  }
+
+  .ins-tipo {
+    background: #eef2f7;
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+
+  .ins-best {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    strong { color: #059669; }
+  }
+
+  .ins-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+    gap: 16px;
+    align-items: start;
+  }
+
+  h5 {
+    margin: 0 0 6px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+
+    .count { font-weight: 500; }
+  }
+
+  .muted { color: var(--text-muted); font-size: 0.8rem; }
+
+  .insumos-table tr.best-row td { background: #ecfdf5; font-weight: 600; }
+
+  .best-tag {
+    margin-left: 6px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #059669;
+    background: #d1fae5;
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+
+  .numeric.positive { color: #059669; }
+  .numeric.negative { color: #dc2626; }
+}
+
+@media (max-width: 900px) {
+  .insumo-card .ins-cols { grid-template-columns: 1fr; }
+}
+
+/* ── Subir insumo al banco ────────────────────────────────────────── */
+.insumo-card .ins-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.insumo-card .subir-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fff;
+  border: 1px solid var(--accent-primary);
+  color: var(--accent-primary);
+
+  .material-symbols-outlined { font-size: 1rem; }
+
+  &:hover { background: #fff4ee; }
+}
+
+.insumo-card .ins-subido {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #059669;
+  font-size: 0.78rem;
+  font-weight: 600;
+
+  .material-symbols-outlined { font-size: 1rem; }
+}
+
+.insumo-card .ins-originales {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.subir-form {
+  border: 1px dashed var(--accent-primary);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  background: #fffaf6;
+}
+
+.subir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+
+  label {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  input, select {
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 400;
+    color: var(--text-main);
+    background: #fff;
+
+    &:focus { outline: none; border-color: var(--accent-primary); }
+  }
+}
+
+.subir-hint {
+  margin: 10px 0 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.subir-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* ── Botón de información Vr. Unit/Parcial APU ─────────────────────── */
+.insumo-card h5 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.info-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--accent-primary);
+  display: inline-flex;
+  padding: 0;
+  line-height: 1;
+
+  .material-symbols-outlined { font-size: 1rem; }
+
+  &:hover { color: var(--accent-primary-hover); }
+}
+
+.info-apu {
+  background: #fff8f4;
+  border: 1px solid #f6d3bf;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+
+  p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-main);
+    line-height: 1.4;
+
+    & + p { margin-top: 4px; }
+
+    strong { color: var(--accent-primary); }
+  }
+}
+
+/* ── Ítems cotizados: acotar columnas largas ──────────────────────── */
+.premium-table {
+  .col-desc {
+    max-width: 300px;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .col-insumo {
+    max-width: 220px;
+    white-space: normal;
+    word-break: break-word;
+  }
+}
+
+/* ── Acotar ancho de la columna "Insumo" en las tablas de comparación ─ */
+.comparacion .insumos-table th:nth-child(2),
+.comparacion .insumos-table td:nth-child(2) {
+  max-width: 340px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Modo insumos: columna "Insumo" (3ª) de la referencia del banco */
+.insumo-card .insumos-table th:nth-child(3),
+.insumo-card .insumos-table td:nth-child(3) {
+  max-width: 280px;
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* ── Descripción del ítem del banco en cada candidato APU ─────────── */
+.candidato-card .cand-desc {
+  margin: 4px 0 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  max-width: 720px;
+}
+
+/* ── Encabezado colapsable "APU cotizado" ─────────────────────────── */
+.collapsible-h {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+
+  .material-symbols-outlined { color: var(--accent-primary); font-size: 1.3rem; }
+  .count-label { font-weight: 500; color: var(--text-muted); font-size: 0.85rem; }
+}
+
+/* ── Columnas alineadas en tablas de comparación ──────────────────── */
+.comp-table {
+  table-layout: fixed;
+  width: 100%;
+
+  .c-tipo { width: 110px; }
+  .c-und  { width: 64px; }
+  .c-rend { width: 92px; }
+  .c-unit { width: 112px; }
+  .c-parc { width: 112px; }
+  .c-ins  { white-space: normal; word-break: break-word; }
+}
+
+/* ── Colores: verde equivalente, rojo faltante ────────────────────── */
+.insumos-table tr.eq-yes td { background: #ecfdf5; }
+.insumos-table tr.eq-yes td:first-child { box-shadow: inset 3px 0 0 #10b981; }
+.insumos-table tr.eq-no td { background: #fef2f2; }
+.insumos-table tr.eq-no td:first-child { box-shadow: inset 3px 0 0 #ef4444; }
+
+/* ── Badge "referencia" ───────────────────────────────────────────── */
+.ref-tag {
+  margin-left: 6px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent-primary);
+  padding: 1px 8px;
+  border-radius: 999px;
+}

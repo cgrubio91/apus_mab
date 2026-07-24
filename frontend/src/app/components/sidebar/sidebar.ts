@@ -20,8 +20,14 @@ export class Sidebar implements OnInit, OnDestroy {
 
   @Input() isMobileOpen = false;
   @Output() closeMobileEvent = new EventEmitter<void>();
+  @Output() collapsedChange = new EventEmitter<boolean>();
 
   isCollapsed = false;
+
+  toggleCollapse(): void {
+    this.isCollapsed = !this.isCollapsed;
+    this.collapsedChange.emit(this.isCollapsed);
+  }
   apuExpanded = true;
   showNotifPanel = false;
   private routerSub?: Subscription;

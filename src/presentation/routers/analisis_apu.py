@@ -20,6 +20,8 @@ from src.application.use_cases.manage_analisis import (
     aprobar_subgerente,
     firmar_legal,
     seleccionar_proyecto,
+    set_tipo_comparacion,
+    subir_insumo_al_banco,
     get_aprendizaje_rechazos,
 )
 from src.presentation.auth import get_current_user, require_role, get_optional_user
@@ -27,6 +29,19 @@ from src.presentation.auth import get_current_user, require_role, get_optional_u
 
 class SeleccionarProyectoRequest(BaseModel):
     proyecto_id: int
+
+
+class TipoComparacionRequest(BaseModel):
+    tipo: str
+
+
+class SubirInsumoRequest(BaseModel):
+    insumo_descripcion: str
+    insumo_unidad: Optional[str] = None
+    tipo_insumo: Optional[str] = None
+    codigo_insumo: Optional[str] = None
+    precio_unitario_apu: Optional[float] = None
+    observacion: Optional[str] = None
 
 log = logging.getLogger("mapus.presentation.analisis")
 router = APIRouter()
@@ -154,6 +169,28 @@ async def seleccionar_proyecto_endpoint(solicitud_id: int, payload: SeleccionarP
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         log.exception("Error seleccionando proyecto para solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.patch("/analisis-apu/{solicitud_id}/tipo", tags=["Análisis APU"])
+async def cambiar_tipo_comparacion(solicitud_id: int, payload: TipoComparacionRequest) -> dict:
+    try:
+        return set_tipo_comparacion(solicitud_id, payload.tipo)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error cambiando tipo de comparación de solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.post("/analisis-apu/insumo-banco", tags=["Análisis APU"])
+async def subir_insumo_banco(payload: SubirInsumoRequest) -> dict:
+    try:
+        return subir_insumo_al_banco(payload.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error subiendo insumo al banco")
         raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 

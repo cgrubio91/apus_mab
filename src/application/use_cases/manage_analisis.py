@@ -9,7 +9,11 @@ from datetime import date, timedelta
 from typing import Optional
 
 from src.application.use_cases.notificaciones import notificar_transicion
-from src.infrastructure.database.repositories.analisis_repository import analisis_repo
+from src.infrastructure.database.repositories.analisis_repository import (
+    analisis_repo,
+    _tokenizar,
+    _similitud_tokens,
+)
 from src.infrastructure.ai.provider import ai_provider
 
 log = logging.getLogger("mapus.application.analisis")
@@ -25,8 +29,53 @@ ESTADOS = [
 ]
 
 
+def _detectar_modo(insumos: list[dict]) -> str:
+    """Adivina si la solicitud es un 'APU completo' (ítem + insumos con rendimiento)
+    o 'solo insumos' (comparación de precios entre proveedores). El analista puede
+    corregirlo luego con set_tipo_comparacion()."""
+    if not insumos:
+        return "apu"
+    from collections import defaultdict
+    por_item: dict = defaultdict(int)
+    con_rendimiento = 0
+    for ins in insumos:
+        clave = (
+            ins.get("grupo_cotizacion", 1),
+            (ins.get("item") or "").strip(),
+            (ins.get("items_descripcion") or "").strip(),
+        )
+        por_item[clave] += 1
+        if ins.get("rendimiento_insumo") is not None:
+            con_rendimiento += 1
+    avg_insumos = len(insumos) / max(len(por_item), 1)
+    frac_rendimiento = con_rendimiento / len(insumos)
+    # Un APU tiene ítems descompuestos en varios insumos con rendimiento.
+    return "apu" if (avg_insumos >= 2 and frac_rendimiento >= 0.3) else "insumos"
+
+
 def crear_solicitud(grupos_insumos: list[dict], proyecto_id: Optional[int] = None) -> int:
-    return analisis_repo.crear_solicitud(grupos_insumos, proyecto_id)
+    todos = []
+    for grupo in grupos_insumos:
+        gidx = grupo.get("grupo_cotizacion", 1)
+        for ins in grupo.get("insumos", []):
+            fila = dict(ins)
+            fila.setdefault("grupo_cotizacion", gidx)
+            todos.append(fila)
+    tipo = _detectar_modo(todos)
+    return analisis_repo.crear_solicitud(grupos_insumos, proyecto_id, tipo)
+
+
+def set_tipo_comparacion(solicitud_id: int, tipo: str) -> dict:
+    if tipo not in ("apu", "insumos"):
+        raise ValueError("Tipo de comparación inválido (usa 'apu' o 'insumos')")
+    solicitud = analisis_repo.get_solicitud(solicitud_id)
+    if not solicitud:
+        raise ValueError(f"Solicitud {solicitud_id} no encontrada")
+    if solicitud.get("estado") == "aprobado_legal":
+        raise ValueError("No se puede cambiar el modo de una solicitud ya firmada legalmente")
+    analisis_repo.actualizar_tipo_comparacion(solicitud_id, tipo)
+    etiqueta = "APU completo" if tipo == "apu" else "Solo insumos (proveedores)"
+    return {"success": True, "tipo_comparacion": tipo, "mensaje": f"Modo actualizado a: {etiqueta}."}
 
 
 def seleccionar_proyecto(solicitud_id: int, proyecto_id: int) -> dict:
@@ -59,15 +108,37 @@ def realizar_analisis(solicitud_id: int) -> dict:
     if not insumos:
         raise ValueError("La solicitud no tiene insumos para analizar")
 
-    items_analizados = []
-    for ins in insumos:
-        resultado = _analizar_item_con_banco(ins)
-        items_analizados.append(resultado)
+    # Determina el modo: si no está fijado, se auto-detecta y se persiste.
+    tipo = solicitud.get("tipo_comparacion")
+    if not tipo:
+        tipo = _detectar_modo(insumos)
+        analisis_repo.actualizar_tipo_comparacion(solicitud_id, tipo)
 
-    comparacion_grupos = analisis_repo._analizar_mejor_grupo(insumos, items_analizados)
-    resumen, recomendacion = _generar_resumen_ia(insumos, items_analizados, comparacion_grupos)
-
-    analisis_json = json.dumps({"items": items_analizados, "comparacion_grupos": comparacion_grupos}, default=str)
+    if tipo == "insumos":
+        # Modo 'solo insumos': se comparan precios entre proveedores (no se crea ítem en el proyecto).
+        insumos_comparados = _analizar_insumos_proveedores(insumos)
+        # La IA confirma cuáles referencias del banco son realmente el mismo insumo.
+        insumos_comparados = _confirmar_referencias_ia(insumos_comparados)
+        comparacion_grupos = _comparar_proveedores(insumos)
+        resumen, recomendacion = _generar_resumen_insumos(insumos_comparados, comparacion_grupos)
+        analisis_json = json.dumps({
+            "modo": "insumos",
+            "items": [],
+            "insumos_comparados": insumos_comparados,
+            "comparacion_grupos": comparacion_grupos,
+        }, default=str)
+        items_analizados = []
+    else:
+        # Modo 'APU completo': la unidad de análisis es el ítem con sus insumos.
+        apus_cotizados = _agrupar_por_item(insumos)
+        items_analizados = [_analizar_apu_con_banco(apu) for apu in apus_cotizados]
+        comparacion_grupos = _comparar_cotizaciones(items_analizados)
+        resumen, recomendacion = _generar_resumen_ia(apus_cotizados, items_analizados, comparacion_grupos)
+        analisis_json = json.dumps({
+            "modo": "apu",
+            "items": items_analizados,
+            "comparacion_grupos": comparacion_grupos,
+        }, default=str)
 
     analisis_repo.guardar_analisis(solicitud_id, analisis_json, resumen, recomendacion)
     analisis_repo.actualizar_estado(solicitud_id, "analizado")
@@ -95,44 +166,424 @@ def realizar_analisis(solicitud_id: int) -> dict:
     }
 
 
-def _analizar_item_con_banco(ins: dict) -> dict:
-    descripcion = ins.get("items_descripcion", "")
-    precio_ofertado = float(ins.get("precio_unitario") or 0)
+def _agrupar_por_item(insumos: list[dict]) -> list[dict]:
+    """Agrupa las filas de insumo de la solicitud en APUs (un APU por ítem/cotización).
+
+    Cada APU resultante tiene su cabecera (ítem, descripción, unidad, precio ofertado)
+    y la lista de insumos que lo componen.
+    """
+    grupos: dict = {}
+    orden: list = []
+    for ins in insumos:
+        clave = (
+            ins.get("grupo_cotizacion", 1),
+            (ins.get("item") or "").strip(),
+            (ins.get("items_descripcion") or "").strip(),
+        )
+        if clave not in grupos:
+            grupos[clave] = {
+                "grupo_cotizacion": ins.get("grupo_cotizacion", 1),
+                "nombre_archivo": ins.get("nombre_archivo", ""),
+                "item": (ins.get("item") or "").strip(),
+                "descripcion": (ins.get("items_descripcion") or "").strip(),
+                "unidad": (ins.get("item_unidad") or "").strip(),
+                "precio_ofertado": 0.0,
+                "insumos": [],
+            }
+            orden.append(clave)
+        apu = grupos[clave]
+        precio = float(ins.get("precio_unitario") or 0)
+        # El precio del ítem se repite en cada fila de insumo: nos quedamos con el mayor válido.
+        if precio > apu["precio_ofertado"]:
+            apu["precio_ofertado"] = precio
+        if ins.get("codigo_insumo") or ins.get("insumo_descripcion") or ins.get("rendimiento_insumo") is not None:
+            apu["insumos"].append({
+                "tipo_insumo": ins.get("tipo_insumo") or "",
+                "codigo_insumo": ins.get("codigo_insumo") or "",
+                "insumo_descripcion": ins.get("insumo_descripcion") or "",
+                "insumo_unidad": ins.get("insumo_unidad") or "",
+                "rendimiento_insumo": ins.get("rendimiento_insumo"),
+                "precio_unitario_apu": ins.get("precio_unitario_apu"),
+                "precio_parcial_apu": ins.get("precio_parcial_apu"),
+            })
+    return [grupos[k] for k in orden]
+
+
+def _analizar_apu_con_banco(apu: dict) -> dict:
+    descripcion = apu.get("descripcion", "")
+    precio_ofertado = float(apu.get("precio_ofertado") or 0)
 
     resultado = {
-        "item": ins.get("item", ""),
+        # Campos de nivel ítem (compatibles con export y firma legal):
+        "item": apu.get("item", ""),
         "descripcion": descripcion,
-        "unidad": ins.get("item_unidad", ""),
+        "unidad": apu.get("unidad", ""),
         "precio_ofertado": precio_ofertado,
+        "grupo_cotizacion": apu.get("grupo_cotizacion", 1),
+        "nombre_archivo": apu.get("nombre_archivo", ""),
         "mejor_precio_banco": None,
         "diferencia_precio": None,
+        "diferencia_pct": None,
         "existe_en_banco": False,
         "item_banco_encontrado": None,
         "estructura_insumos_coincide": None,
         "rendimiento_coincide": None,
         "observaciones": "Sin descripción para comparar" if not descripcion else "",
         "recomendacion": "pendiente",
-        "grupo_cotizacion": ins.get("grupo_cotizacion", 1),
+        # Detalle nuevo:
+        "insumos_cotizados": apu.get("insumos", []),
+        "candidatos": [],
     }
 
     if not descripcion:
         return resultado
 
-    banco_records = analisis_repo.buscar_en_banco(descripcion)
-    resultado["existe_en_banco"] = len(banco_records) > 0
+    candidatos = analisis_repo.buscar_apus_similares(descripcion)
+    resultado["existe_en_banco"] = len(candidatos) > 0
 
-    if banco_records:
-        mejor_precio = min(
-            float(r.get("precio_unitario") or float("inf"))
-            for r in banco_records
-            if r.get("precio_unitario") is not None
-        )
-        resultado["mejor_precio_banco"] = mejor_precio
-        resultado["diferencia_precio"] = round(precio_ofertado - mejor_precio, 2)
-        resultado["item_banco_encontrado"] = banco_records[0].get("item", "")
+    if candidatos:
+        for c in candidatos:
+            pb = float(c.get("precio_unitario") or 0)
+            c["diferencia_precio"] = round(precio_ofertado - pb, 2) if pb else None
+            c["diferencia_pct"] = round((precio_ofertado - pb) / pb * 100, 1) if pb else None
+            c["es_match_ia"] = False
+            # Marca cada insumo del candidato: verde si el APU cotizado lo tiene, rojo si no.
+            _marcar_equivalencias(c.get("insumos"), apu.get("insumos"))
 
-    resultado = _analisis_con_ia(ins, banco_records, resultado)
+        # La REFERENCIA es el APU más similar (candidatos vienen ordenados por similitud).
+        _fijar_referencia(resultado, candidatos[0], precio_ofertado)
+        candidatos[0]["es_referencia"] = True
+        resultado["candidatos"] = candidatos
+        # Marca los insumos cotizados contra el candidato más similar.
+        _marcar_equivalencias(resultado["insumos_cotizados"], candidatos[0].get("insumos"))
+
+    resultado = _analisis_apu_con_ia(apu, candidatos, resultado)
     return resultado
+
+
+def _fijar_referencia(resultado: dict, candidato: dict, precio_ofertado: float) -> None:
+    """Fija el APU del banco usado como referencia (precio, ítem, diferencia)."""
+    pb = float(candidato.get("precio_unitario") or 0)
+    resultado["item_banco_encontrado"] = candidato.get("item", "")
+    resultado["mejor_precio_banco"] = pb or None
+    if pb:
+        resultado["diferencia_precio"] = round(precio_ofertado - pb, 2)
+        resultado["diferencia_pct"] = round((precio_ofertado - pb) / pb * 100, 1)
+    else:
+        resultado["diferencia_precio"] = None
+        resultado["diferencia_pct"] = None
+
+
+def _marcar_equivalencias(a_marcar: list, referencia: list, umbral: float = 0.34) -> None:
+    """Marca cada insumo de `a_marcar` con `equivalente=True` si hay un insumo parecido
+    en `referencia` (por similitud de descripción). Verde = equivalente, rojo = no está."""
+    if not a_marcar:
+        return
+    ref_tokens = [_tokenizar(r.get("insumo_descripcion") or "") for r in (referencia or [])]
+    for ins in a_marcar:
+        ti = _tokenizar(ins.get("insumo_descripcion") or "")
+        mejor = max((_similitud_tokens(ti, tr) for tr in ref_tokens), default=0.0)
+        ins["equivalente"] = mejor >= umbral
+
+
+def _comparar_cotizaciones(items_analizados: list[dict]) -> dict:
+    """Compara las cotizaciones (grupos) por precio total y promedio de sus ítems."""
+    grupos: dict = {}
+    for it in items_analizados:
+        g = it.get("grupo_cotizacion", 1)
+        if g not in grupos:
+            grupos[g] = {"total": 0.0, "count": 0, "archivo": it.get("nombre_archivo") or f"Cotización {g}"}
+        grupos[g]["total"] += float(it.get("precio_ofertado") or 0)
+        grupos[g]["count"] += 1
+
+    mejor_grupo = None
+    mejor_promedio = float("inf")
+    for g, info in grupos.items():
+        info["promedio"] = info["total"] / info["count"] if info["count"] else 0
+        if info["promedio"] < mejor_promedio:
+            mejor_promedio = info["promedio"]
+            mejor_grupo = g
+
+    return {"mejor_grupo": mejor_grupo, "grupos": grupos, "total_grupos": len(grupos)}
+
+
+_TIPOS_INSUMO_VALIDOS = ["Materiales", "Equipos", "Mano de obra", "Transporte", "Herramienta", "Indirectos", "Otro"]
+
+
+def _agrupar_insumos_texto(lineas: list[dict]) -> list[dict]:
+    """Agrupación de respaldo por descripción normalizada (sin IA)."""
+    grupos: dict = {}
+    orden: list = []
+    for idx, l in enumerate(lineas):
+        clave = l["desc"].lower()
+        if clave not in grupos:
+            grupos[clave] = {"canonical": l["desc"], "unidad": l["unidad"], "tipo": l["tipo"], "indices": []}
+            orden.append(clave)
+        grupos[clave]["indices"].append(idx)
+    return [grupos[k] for k in orden]
+
+
+def _agrupar_insumos_ia(lineas: list[dict]) -> list[dict]:
+    """Agrupa con IA las líneas de insumo que corresponden al MISMO insumo aunque los
+    proveedores las describan distinto, y sugiere nombre canónico, unidad y tipo.
+    Cae a agrupación por texto si la IA falla."""
+    entrada = [
+        {"i": idx, "desc": l["desc"], "und": l["unidad"], "proveedor": l["proveedor"]}
+        for idx, l in enumerate(lineas)
+    ]
+    prompt = f"""Eres un experto en insumos de construcción civil.
+Tienes líneas de insumo cotizadas por distintos proveedores. Agrupa las que corresponden al
+MISMO insumo aunque estén descritas diferente (ej.: "cemento gris" y "cemento portland tipo I"
+son el mismo insumo). Para cada grupo entrega un nombre canónico claro, la unidad y el tipo
+(uno de: {", ".join(_TIPOS_INSUMO_VALIDOS)}).
+
+LÍNEAS (usa el índice "i" para referirte a cada una):
+{json.dumps(entrada, ensure_ascii=False)}
+
+Responde SOLO con JSON válido:
+{{"grupos": [{{"canonical": "nombre claro", "unidad": "und", "tipo": "Materiales", "indices": [0, 2]}}]}}
+Cada índice debe aparecer en exactamente un grupo. NO incluyas texto adicional."""
+    try:
+        respuesta = ai_provider.generate_text(prompt, system="Eres un experto en insumos de construcción.", timeout=120)
+        respuesta = respuesta.strip()
+        if respuesta.startswith("```"):
+            respuesta = respuesta.split("\n", 1)[-1].rsplit("```", 1)[0]
+        data = json.loads(respuesta)
+        grupos = data.get("grupos", [])
+        vistos: set = set()
+        salida = []
+        for g in grupos:
+            indices = [i for i in g.get("indices", []) if isinstance(i, int) and 0 <= i < len(lineas) and i not in vistos]
+            if not indices:
+                continue
+            vistos.update(indices)
+            salida.append({
+                "canonical": (g.get("canonical") or lineas[indices[0]]["desc"]).strip(),
+                "unidad": (g.get("unidad") or lineas[indices[0]]["unidad"] or "").strip(),
+                "tipo": (g.get("tipo") or lineas[indices[0]]["tipo"] or "").strip(),
+                "indices": indices,
+            })
+        # Cualquier línea que la IA olvidó se agrega como su propio grupo.
+        faltantes = [i for i in range(len(lineas)) if i not in vistos]
+        for i in faltantes:
+            salida.append({"canonical": lineas[i]["desc"], "unidad": lineas[i]["unidad"], "tipo": lineas[i]["tipo"], "indices": [i]})
+        return salida or _agrupar_insumos_texto(lineas)
+    except Exception as e:
+        log.warning("Agrupación IA de insumos falló, se usa texto: %s", e)
+        return _agrupar_insumos_texto(lineas)
+
+
+def _analizar_insumos_proveedores(insumos: list[dict]) -> list[dict]:
+    """Modo 'solo insumos': la IA agrupa el mismo insumo entre proveedores y se compara
+    su precio, más una referencia del banco de APUs con proyecto y entidad. En este modo
+    el precio del insumo viaja en `precio_unitario`."""
+    lineas = []
+    for ins in insumos:
+        desc = (ins.get("insumo_descripcion") or ins.get("items_descripcion") or "").strip()
+        if not desc:
+            continue
+        # Precio del INSUMO (no del ítem): si el archivo es un APU, el precio del
+        # insumo viaja en precio_unitario_apu; si es una lista de insumos sueltos,
+        # viaja en precio_unitario. Se toma el primero disponible.
+        precio_insumo = ins.get("precio_unitario_apu")
+        if precio_insumo is None:
+            precio_insumo = ins.get("precio_unitario")
+        lineas.append({
+            "desc": desc,
+            "unidad": (ins.get("insumo_unidad") or ins.get("item_unidad") or "").strip(),
+            "codigo": (ins.get("codigo_insumo") or "").strip(),
+            "tipo": ins.get("tipo_insumo") or "",
+            "grupo": ins.get("grupo_cotizacion", 1),
+            "proveedor": ins.get("nombre_archivo") or f"Cotización {ins.get('grupo_cotizacion', 1)}",
+            "precio": float(precio_insumo or 0),
+            "rendimiento": ins.get("rendimiento_insumo"),
+            "precio_parcial": ins.get("precio_parcial_apu"),
+        })
+    if not lineas:
+        return []
+
+    clusters = _agrupar_insumos_ia(lineas)
+
+    resultado = []
+    for cl in clusters:
+        miembros = [lineas[i] for i in cl["indices"]]
+        proveedores = [
+            {
+                "grupo": m["grupo"], "proveedor": m["proveedor"], "precio": m["precio"],
+                "rendimiento": m.get("rendimiento"), "precio_parcial": m.get("precio_parcial"),
+            }
+            for m in miembros
+        ]
+        precios = [p["precio"] for p in proveedores if p["precio"] > 0]
+        mejor = min(precios) if precios else None
+        for p in proveedores:
+            p["es_menor"] = mejor is not None and p["precio"] == mejor and p["precio"] > 0
+
+        referencias = analisis_repo.buscar_insumos_similares(cl["canonical"], max_ref=12)
+        for r in referencias:
+            pb = float(r.get("precio_unitario_apu") or 0)
+            r["diferencia"] = round(mejor - pb, 2) if (mejor is not None and pb) else None
+            r["diferencia_pct"] = round((mejor - pb) / pb * 100, 1) if (mejor is not None and pb) else None
+
+        codigo = next((m["codigo"] for m in miembros if m["codigo"]), "")
+        tipo = cl.get("tipo") or next((m["tipo"] for m in miembros if m["tipo"]), "")
+        unidad = cl.get("unidad") or next((m["unidad"] for m in miembros if m["unidad"]), "")
+        resultado.append({
+            "descripcion": cl["canonical"],
+            "unidad": unidad,
+            "codigo": codigo,
+            "tipo_insumo": tipo,
+            # Sugerencia editable para subir el insumo al banco:
+            "sugerencia": {
+                "insumo_descripcion": cl["canonical"],
+                "insumo_unidad": unidad,
+                "tipo_insumo": tipo,
+                "codigo_insumo": codigo,
+                "precio_unitario_apu": mejor,
+            },
+            "descripciones_originales": sorted({m["desc"] for m in miembros}),
+            "proveedores": proveedores,
+            "mejor_precio": mejor,
+            "mejor_proveedor": next((p["proveedor"] for p in proveedores if p.get("es_menor")), None),
+            "banco_referencia": referencias,
+            "mejor_precio_banco": min(
+                (float(r.get("precio_unitario_apu") or 0) for r in referencias if r.get("precio_unitario_apu")),
+                default=None,
+            ),
+            "existe_en_banco": len(referencias) > 0,
+        })
+    return resultado
+
+
+def _confirmar_referencias_ia(insumos_comparados: list[dict]) -> list[dict]:
+    """La IA lee los candidatos del banco y deja SOLO los que son realmente el mismo
+    insumo (descarta los que apenas comparten una palabra). Una sola llamada para toda
+    la solicitud; si la IA falla, se dejan los resultados heurísticos sin cambios."""
+    payload = []
+    for i, ins in enumerate(insumos_comparados):
+        refs = ins.get("banco_referencia") or []
+        if not refs:
+            continue
+        payload.append({
+            "i": i,
+            "insumo": ins.get("descripcion"),
+            "unidad": ins.get("unidad"),
+            "candidatos": [
+                {"j": j, "desc": r.get("insumo_descripcion"), "und": r.get("insumo_unidad")}
+                for j, r in enumerate(refs)
+            ],
+        })
+    if not payload:
+        return insumos_comparados
+
+    prompt = f"""Eres un experto en insumos de construcción civil.
+Para cada insumo, revisa sus CANDIDATOS del banco y quédate SOLO con los que son
+REALMENTE el mismo insumo (mismo material/equipo). Descarta los que solo comparten
+una palabra pero son otra cosa (ej.: si el insumo es "Carrotanque de agua", descarta
+"Agua" a secas o "Riego por aspersión").
+
+IMPORTANTE: considera equivalentes las variantes de escritura, espaciado, mayúsculas,
+abreviaturas y sinónimos técnicos (ej.: "minicargador" = "mini cargador" = "MINICARGADOR 40HP";
+"retroexcavadora" = "retro excavadora"; "m3" = "M3"). No las descartes por diferencias de forma.
+
+DATOS (usa los índices "i" del insumo y "j" del candidato):
+{json.dumps(payload, ensure_ascii=False)}
+
+Responde SOLO con JSON válido:
+{{"resultados": [{{"i": 0, "validos": [0, 2]}}]}}
+Donde "validos" son los índices j de los candidatos correctos (lista vacía si ninguno).
+NO incluyas texto adicional."""
+    try:
+        respuesta = ai_provider.generate_text(prompt, system="Eres un experto en insumos de construcción.", timeout=120)
+        respuesta = respuesta.strip()
+        if respuesta.startswith("```"):
+            respuesta = respuesta.split("\n", 1)[-1].rsplit("```", 1)[0]
+        data = json.loads(respuesta)
+        mapa = {}
+        for r in data.get("resultados", []):
+            if isinstance(r.get("i"), int):
+                mapa[r["i"]] = {j for j in r.get("validos", []) if isinstance(j, int)}
+    except Exception as e:
+        log.warning("Confirmación IA de referencias de insumos falló: %s", e)
+        return insumos_comparados
+
+    for i, ins in enumerate(insumos_comparados):
+        refs = ins.get("banco_referencia") or []
+        if not refs or i not in mapa:
+            continue
+        validos = mapa[i]
+        ins["banco_referencia"] = [r for j, r in enumerate(refs) if j in validos]
+        ins["existe_en_banco"] = len(ins["banco_referencia"]) > 0
+        precios = [float(r["precio_unitario_apu"]) for r in ins["banco_referencia"] if r.get("precio_unitario_apu")]
+        ins["mejor_precio_banco"] = min(precios) if precios else None
+    return insumos_comparados
+
+
+def subir_insumo_al_banco(datos: dict) -> dict:
+    """Inserta un insumo suelto en el banco de APUs (columnas de ítem/proyecto vacías)."""
+    descripcion = (datos.get("insumo_descripcion") or "").strip()
+    if not descripcion:
+        raise ValueError("La descripción del insumo es obligatoria")
+
+    from src.infrastructure.database.repositories.apu_repository import insert_apus_batch
+
+    fila = {
+        "insumo_descripcion": descripcion,
+        "insumo_unidad": (datos.get("insumo_unidad") or "").strip() or None,
+        "tipo_insumo": (datos.get("tipo_insumo") or "").strip() or None,
+        "codigo_insumo": (datos.get("codigo_insumo") or "").strip() or None,
+        "precio_unitario_apu": datos.get("precio_unitario_apu"),
+        "observacion": (datos.get("observacion") or "Insumo cargado desde comparación de proveedores").strip(),
+    }
+    resultado = insert_apus_batch([fila])
+    if resultado.get("status") != "success":
+        raise RuntimeError("No se pudo insertar el insumo en el banco")
+    creado = resultado.get("count", 0) > 0
+    return {
+        "success": True,
+        "creado": creado,
+        "mensaje": "Insumo agregado al banco de APUs." if creado else "El insumo ya existía en el banco (no se duplicó).",
+    }
+
+
+def _comparar_proveedores(insumos: list[dict]) -> dict:
+    """Compara los proveedores (grupos) por precio total ofertado de sus insumos."""
+    grupos: dict = {}
+    for ins in insumos:
+        g = ins.get("grupo_cotizacion", 1)
+        if g not in grupos:
+            grupos[g] = {"total": 0.0, "count": 0, "archivo": ins.get("nombre_archivo") or f"Cotización {g}"}
+        precio_insumo = ins.get("precio_unitario_apu")
+        if precio_insumo is None:
+            precio_insumo = ins.get("precio_unitario")
+        grupos[g]["total"] += float(precio_insumo or 0)
+        grupos[g]["count"] += 1
+
+    mejor_grupo = None
+    mejor_total = float("inf")
+    for g, info in grupos.items():
+        info["promedio"] = info["total"] / info["count"] if info["count"] else 0
+        if info["total"] < mejor_total:
+            mejor_total = info["total"]
+            mejor_grupo = g
+    return {"mejor_grupo": mejor_grupo, "grupos": grupos, "total_grupos": len(grupos)}
+
+
+def _generar_resumen_insumos(insumos_comparados: list, comparacion_grupos: dict) -> tuple:
+    total = len(insumos_comparados)
+    con_banco = sum(1 for i in insumos_comparados if i.get("existe_en_banco"))
+    n_proveedores = comparacion_grupos.get("total_grupos", 0)
+    mejor = comparacion_grupos.get("mejor_grupo")
+    mejor_archivo = ""
+    if mejor is not None:
+        mejor_archivo = comparacion_grupos.get("grupos", {}).get(mejor, {}).get("archivo", f"Cotización {mejor}")
+    resumen = (
+        f"Comparación de {total} insumo(s) entre {n_proveedores} proveedor(es). "
+        f"{con_banco} con referencia en el banco de APUs."
+    )
+    if mejor_archivo:
+        resumen += f" Proveedor con menor precio total: {mejor_archivo}."
+    return resumen, "revisar"
 
 
 def _contexto_aprendizaje_rechazos(limit: int = 10) -> str:
@@ -157,35 +608,66 @@ tenlos en cuenta al evaluar y menciona en observaciones si alguno aplica):
 """
 
 
-def _analisis_con_ia(insumo: dict, banco_records: list, resultado: dict) -> dict:
-    tiene_banco = len(banco_records) > 0
-    prompt_banco = json.dumps(banco_records, default=str, indent=2) if tiene_banco else "NO HAY registros similares en el banco de APUs."
+def _resumen_insumos_para_ia(insumos: list, con_precio: bool) -> list:
+    """Compacta la lista de insumos para el prompt (máx 25 líneas)."""
+    salida = []
+    for i in (insumos or [])[:25]:
+        fila = {
+            "tipo": i.get("tipo_insumo"),
+            "desc": i.get("insumo_descripcion"),
+            "und": i.get("insumo_unidad"),
+            "rend": i.get("rendimiento_insumo"),
+        }
+        if con_precio and i.get("precio_unitario_apu") is not None:
+            fila["precio"] = i.get("precio_unitario_apu")
+        salida.append(fila)
+    return salida
+
+
+def _analisis_apu_con_ia(apu: dict, candidatos: list, resultado: dict) -> dict:
+    tiene_banco = len(candidatos) > 0
     contexto_rechazos = _contexto_aprendizaje_rechazos()
+
+    cotizado = {
+        "item": apu.get("item"),
+        "descripcion": apu.get("descripcion"),
+        "unidad": apu.get("unidad"),
+        "precio_ofertado": apu.get("precio_ofertado"),
+        "insumos": _resumen_insumos_para_ia(apu.get("insumos"), con_precio=False),
+    }
+    banco = []
+    for idx, c in enumerate(candidatos[:4]):
+        banco.append({
+            "indice": idx,
+            "proyecto": c.get("nombre_proyecto"),
+            "entidad": c.get("entidad"),
+            "ciudad": c.get("ciudad"),
+            "item": c.get("item"),
+            "descripcion": c.get("items_descripcion"),
+            "precio_unitario": c.get("precio_unitario"),
+            "insumos": _resumen_insumos_para_ia(c.get("insumos"), con_precio=True),
+        })
+    prompt_banco = json.dumps(banco, default=str, ensure_ascii=False, indent=2) if tiene_banco \
+        else "NO HAY APUs similares en el banco."
 
     prompt = f"""Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU).
 
-ÍTEM COTIZADO:
-- Código: {insumo.get('item', 'N/A')}
-- Descripción: {insumo.get('items_descripcion', 'N/A')}
-- Unidad: {insumo.get('item_unidad', 'N/A')}
-- Precio Unitario: ${insumo.get('precio_unitario', 'N/A')}
-- Código Insumo: {insumo.get('codigo_insumo', 'N/A')}
-- Descripción Insumo: {insumo.get('insumo_descripcion', 'N/A')}
-- Unidad Insumo: {insumo.get('insumo_unidad', 'N/A')}
-- Rendimiento: {insumo.get('rendimiento_insumo', 'N/A')}
-- Tipo Insumo: {insumo.get('tipo_insumo', 'N/A')}
+APU COTIZADO (a evaluar):
+{json.dumps(cotizado, default=str, ensure_ascii=False, indent=2)}
 
-DATOS DEL BANCO DE APUs:
+APUs CANDIDATOS DEL BANCO (posibles equivalentes, con su proyecto y entidad):
 {prompt_banco}
 {contexto_rechazos}
 INSTRUCCIONES:
-- Si HAY datos en el banco, compáralos (estructura de insumos, rendimientos, precios).
-- Si NO HAY datos similares en el banco, evalúa el precio del ítem según tu criterio profesional.
+- Determina qué candidato del banco corresponde al MISMO trabajo (por descripción e insumos), si alguno.
+- Si hay un equivalente, compara la ESTRUCTURA de insumos (mismos tipos/materiales), los RENDIMIENTOS y los PRECIOS.
+- Si NO hay equivalente en el banco, evalúa el precio del ítem con tu criterio profesional.
 
-Analiza y responde SOLO con un JSON válido con estos campos:
-- estructura_insumos_coincide: true/false (si hay banco; null si no hay)
-- rendimiento_coincide: true/false (si hay banco; null si no hay)
-- observaciones: string con explicación breve
+Responde SOLO con un JSON válido:
+- mejor_candidato_indice: entero con el "indice" del candidato equivalente, o null si ninguno
+- estructura_insumos_coincide: true/false (si hay equivalente; null si no)
+- rendimiento_coincide: true/false (si hay equivalente; null si no)
+- observaciones: string breve explicando la comparación (diferencias de precio/rendimiento relevantes)
 - recomendacion: "aprobar" o "rechazar" o "revisar"
 
 NO incluyas texto adicional, solo el JSON."""
@@ -201,15 +683,23 @@ NO incluyas texto adicional, solo el JSON."""
         if analisis.get("observaciones"):
             resultado["observaciones"] = analisis["observaciones"]
         resultado["recomendacion"] = analisis.get("recomendacion", "revisar")
+        idx = analisis.get("mejor_candidato_indice")
+        if isinstance(idx, int) and 0 <= idx < len(resultado["candidatos"]):
+            resultado["candidatos"][idx]["es_match_ia"] = True
+            # Si la IA confirma un equivalente, ese pasa a ser la referencia.
+            for c in resultado["candidatos"]:
+                c["es_referencia"] = False
+            resultado["candidatos"][idx]["es_referencia"] = True
+            _fijar_referencia(resultado, resultado["candidatos"][idx], resultado.get("precio_ofertado") or 0)
     except Exception as e:
-        log.exception("Error en análisis IA para ítem %s: %s", insumo.get("item"), e)
+        log.exception("Error en análisis IA para APU %s: %s", apu.get("item"), e)
         resultado["observaciones"] = "No se pudo completar el análisis automático"
         resultado["recomendacion"] = "revisar"
 
     return resultado
 
 
-def _generar_resumen_ia(insumos: list, items_analizados: list, comparacion_grupos: dict = None) -> tuple:
+def _generar_resumen_ia(apus_cotizados: list, items_analizados: list, comparacion_grupos: dict = None) -> tuple:
     total_items = len(items_analizados)
     recomendaciones = [i.get("recomendacion", "") for i in items_analizados]
     aprobar = sum(1 for r in recomendaciones if r == "aprobar")
@@ -240,7 +730,19 @@ Para revisión manual: {revisar}
 {grupo_info}
 
 Detalle del análisis:
-{json.dumps(items_analizados, default=str, indent=2)}
+{json.dumps([
+    {
+        "item": i.get("item"),
+        "descripcion": i.get("descripcion"),
+        "precio_ofertado": i.get("precio_ofertado"),
+        "mejor_precio_banco": i.get("mejor_precio_banco"),
+        "diferencia_precio": i.get("diferencia_precio"),
+        "existe_en_banco": i.get("existe_en_banco"),
+        "recomendacion": i.get("recomendacion"),
+        "observaciones": i.get("observaciones"),
+    }
+    for i in items_analizados
+], default=str, indent=2)}
 
 Responde SOLO con un JSON:
 {{"resumen": "texto del resumen", "recomendacion": "aprobar|rechazar|revisar"}}"""
@@ -369,6 +871,13 @@ def _crear_items_presupuesto(solicitud_id: int, conn) -> int:
     solicitud = analisis_repo.get_solicitud(solicitud_id)
     if not solicitud:
         return 0
+
+    # Modo 'solo insumos': es una comparación de precios entre proveedores, NO un APU.
+    # No se incorpora nada al presupuesto (al proyecto solo se agregan ítems con su APU).
+    if (solicitud.get("tipo_comparacion") or "apu") == "insumos":
+        log.info("Solicitud %d en modo 'insumos' — no se crean ítems en el proyecto", solicitud_id)
+        return 0
+
     analisis_data = solicitud.get("analisis") or {}
     items_analizados = analisis_data.get("items_analizados") or []
 

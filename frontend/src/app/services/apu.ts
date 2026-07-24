@@ -286,6 +286,20 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/analizar`, {});
   }
 
+  setTipoComparacion(solicitudId: number, tipo: 'apu' | 'insumos'): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/analisis-apu/${solicitudId}/tipo`, { tipo });
+  }
+
+  subirInsumoBanco(payload: {
+    insumo_descripcion?: string;
+    insumo_unidad?: string | null;
+    tipo_insumo?: string | null;
+    codigo_insumo?: string | null;
+    precio_unitario_apu?: number | null;
+  }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/insumo-banco`, payload);
+  }
+
   getAnalisisApuList(estado?: string): Observable<any> {
     const params: any = {};
     if (estado) params.estado = estado;

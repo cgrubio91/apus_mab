@@ -91,6 +91,8 @@ class AprobarRequest(BaseModel):
 
 
 class RechazarRequest(BaseModel):
-    responsable_rol: str
-    responsable_nombre: str
+    # El rol y nombre del responsable se toman del usuario autenticado (token),
+    # no del body; se dejan opcionales por compatibilidad.
+    responsable_rol: str | None = None
+    responsable_nombre: str | None = None
     motivo: str
