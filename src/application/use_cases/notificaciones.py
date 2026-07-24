@@ -8,7 +8,7 @@ generan de forma perezosa al consultar, deduplicados por clave_unica.
 """
 
 import logging
-from datetime import date
+from datetime import date, timezone
 
 from src.infrastructure.database.connection import execute_query
 
@@ -87,7 +87,11 @@ def notificar_transicion(solicitud_id: int, nuevo_estado: str, actor_nombre: str
     if not entry:
         return
     rol, titulo, mensaje = entry
-    crear_notificacion(rol, titulo, mensaje, tipo="flujo", solicitud_id=solicitud_id)
+    # clave_unica evita duplicados al re-analizar la misma solicitud (mismo estado).
+    crear_notificacion(
+        rol, titulo, mensaje, tipo="flujo", solicitud_id=solicitud_id,
+        clave_unica=f"flujo:{solicitud_id}:{nuevo_estado}",
+    )
 
 
 def _generar_recordatorios() -> None:
@@ -157,8 +161,13 @@ def get_notificaciones(user: dict) -> dict:
 
     for r in rows:
         r["leida"] = bool(r["leida"])
-        if r.get("created_at") and hasattr(r["created_at"], "isoformat"):
-            r["created_at"] = r["created_at"].isoformat()
+        created = r.get("created_at")
+        if created is not None and hasattr(created, "isoformat"):
+            # created_at es UTC (MySQL); se marca como tal para que el navegador lo
+            # muestre en la hora local del usuario.
+            if getattr(created, "tzinfo", None) is None:
+                created = created.replace(tzinfo=timezone.utc)
+            r["created_at"] = created.isoformat()
 
     no_leidas = sum(1 for r in rows if not r["leida"])
     return {"notificaciones": rows, "no_leidas": no_leidas}

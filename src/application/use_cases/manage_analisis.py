@@ -420,7 +420,12 @@ def _analizar_insumos_proveedores(insumos: list[dict]) -> list[dict]:
         for p in proveedores:
             p["es_menor"] = mejor is not None and p["precio"] == mejor and p["precio"] > 0
 
-        referencias = analisis_repo.buscar_insumos_similares(cl["canonical"], max_ref=12)
+        # Busca con el nombre canónico Y las descripciones originales de los proveedores
+        # (evita perder valorizados cuando el canónico junta palabras: "minicargador" vs
+        # "mini cargador"). Así la búsqueda incluye tokens sueltos como "cargador".
+        textos = {cl["canonical"]}
+        textos.update(m["desc"] for m in miembros if m.get("desc"))
+        referencias = analisis_repo.buscar_insumos_similares(" ".join(textos), max_ref=12)
         for r in referencias:
             pb = float(r.get("precio_unitario_apu") or 0)
             r["diferencia"] = round(mejor - pb, 2) if (mejor is not None and pb) else None

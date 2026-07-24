@@ -27,6 +27,12 @@ services:
     restart: unless-stopped
     ports:
       - "10000:10000"
+    # Dev: monta el código y usa --reload para que los cambios de backend apliquen
+    # al instante, sin reconstruir la imagen. (Quitar en producción.)
+    volumes:
+      - ./src:/app/src
+      - ./main.py:/app/main.py
+    command: uvicorn src.presentation.main:app --host 0.0.0.0 --port 10000 --reload
     environment:
       DB_HOST: mysql
       DB_PORT: 3306
