@@ -1,6 +1,7 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ApuService, FilterOptions, HistoricoPunto } from '../../services/apu';
 
 @Component({
@@ -80,6 +81,16 @@ export class HistoricoPrecios implements OnInit {
 
   formatCOP(value: number): string {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value);
+  }
+
+  private router = inject(Router);
+
+  /** Abre el Banco de APUs filtrado por el insumo, ciudad y proyecto buscados. */
+  verRegistros(p: HistoricoPunto): void {
+    const queryParams: Record<string, string> = { q: this.insumo.trim() };
+    if (this.ciudad) queryParams['ciudad'] = this.ciudad;
+    if (this.proyecto) queryParams['proyecto'] = this.proyecto;
+    this.router.navigate(['/consulta-apus'], { queryParams });
   }
 
   trackByPeriodo(_i: number, p: HistoricoPunto): string {

@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Tuple, Optional
 import mysql.connector
 
 from src.infrastructure.database.connection import get_db_connection
+from src.infrastructure.geo import canonicalizar_ciudad
 
 log = logging.getLogger("mapus.infrastructure.apu_repo")
 
@@ -108,7 +109,7 @@ class ApuMySQLRepository:
             row = (
                 _std_field(item, "fecha_aprobacion_apu", is_date=True),
                 _std_field(item, "fecha_analisis_apu", is_date=True),
-                _std_field(item, "ciudad"),
+                canonicalizar_ciudad(_std_field(item, "ciudad"), _std_field(item, "entidad")),
                 _std_field(item, "pais"),
                 _std_field(item, "entidad"),
                 _std_field(item, "contratista"),
@@ -170,7 +171,7 @@ class ApuMySQLRepository:
                         row = (
                             _std_field(item, "fecha_aprobacion_apu", is_date=True),
                             _std_field(item, "fecha_analisis_apu", is_date=True),
-                            _std_field(item, "ciudad"),
+                            canonicalizar_ciudad(_std_field(item, "ciudad"), _std_field(item, "entidad")),
                             _std_field(item, "pais"),
                             _std_field(item, "entidad"),
                             _std_field(item, "contratista"),
@@ -328,6 +329,25 @@ class ApuMySQLRepository:
             SELECT tipo_insumo, COUNT(*) as apu_count
             FROM apus GROUP BY tipo_insumo ORDER BY apu_count DESC
         """
+        # La entidad/ciudad "IDU" (Instituto de Desarrollo Urbano) corresponde a Bogotá.
+        # Se normaliza en una subconsulta para no violar ONLY_FULL_GROUP_BY (MySQL 8).
+        ciudad_query = """
+            SELECT ciudad_norm AS ciudad, COUNT(*) AS apu_count
+            FROM (
+                SELECT CASE
+                           WHEN UPPER(TRIM(COALESCE(entidad, ''))) = 'IDU'
+                             OR UPPER(TRIM(COALESCE(ciudad, ''))) = 'IDU'
+                           THEN 'Bogotá'
+                           ELSE TRIM(ciudad)
+                       END AS ciudad_norm
+                FROM apus
+                WHERE (ciudad IS NOT NULL AND TRIM(ciudad) <> '')
+                   OR UPPER(TRIM(COALESCE(entidad, ''))) = 'IDU'
+            ) t
+            WHERE ciudad_norm IS NOT NULL AND ciudad_norm <> ''
+            GROUP BY ciudad_norm
+            ORDER BY apu_count DESC LIMIT 60
+        """
         try:
             with get_db_connection() as conn:
                 with conn.cursor(dictionary=True) as cursor:
@@ -336,42 +356,43 @@ class ApuMySQLRepository:
                     cursor.execute(breakdown_query)
                     rows = cursor.fetchall()
                     breakdown = {r['tipo_insumo'] or 'Sin tipo': r['apu_count'] for r in rows}
+                    cursor.execute(ciudad_query)
+                    por_ciudad = {r['ciudad']: r['apu_count'] for r in cursor.fetchall() if r['ciudad']}
                     return {
                         'total_apus': summary.get('total_apus', 0),
                         'total_projects': summary.get('total_projects', 0),
                         'total_cities': summary.get('total_cities', 0),
                         'completitud_datos': round(float(summary.get('completitud_datos') or 0.0), 1),
                         'apus_por_tipo_insumo': breakdown,
+                        'apus_por_ciudad': por_ciudad,
                     }
         except mysql.connector.Error:
             log.exception("Database error in get_dashboard_stats")
             raise
 
     def get_filter_options(self) -> dict[str, list[str]]:
-        query = """
-            SELECT
-                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT ciudad), ''), '[]') as ciudad,
-                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT entidad), ''), '[]') as entidad,
-                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT contratista), ''), '[]') as contratista,
-                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT tipo_insumo), ''), '[]') as tipo_insumo,
-                COALESCE(NULLIF(GROUP_CONCAT(DISTINCT pais), ''), '[]') as pais
-            FROM apus;
-        """
+        # Claves en plural para que coincidan con lo que espera el frontend
+        # (incluye proyectos). Se usan SELECT DISTINCT por campo para evitar el
+        # truncado de GROUP_CONCAT (group_concat_max_len).
+        campos = {
+            "ciudades": "ciudad",
+            "proyectos": "nombre_proyecto",
+            "entidades": "entidad",
+            "contratistas": "contratista",
+            "tipos_insumo": "tipo_insumo",
+        }
+        resultado: dict[str, list[str]] = {clave: [] for clave in campos}
         try:
             with get_db_connection() as conn:
-                with conn.cursor(dictionary=True) as cursor:
-                    cursor.execute(query)
-                    row = cursor.fetchone()
-                    if not row:
-                        return {"ciudad": [], "entidad": [], "contratista": [], "tipo_insumo": [], "pais": []}
-                    options = {
-                        "ciudad": sorted(row["ciudad"].split(",")) if row["ciudad"] != "[]" else [],
-                        "entidad": sorted(row["entidad"].split(",")) if row["entidad"] != "[]" else [],
-                        "contratista": sorted(row["contratista"].split(",")) if row["contratista"] != "[]" else [],
-                        "tipo_insumo": sorted(row["tipo_insumo"].split(",")) if row["tipo_insumo"] != "[]" else [],
-                        "pais": sorted(row["pais"].split(",")) if row["pais"] != "[]" else [],
-                    }
-                    return options
+                with conn.cursor() as cursor:
+                    for clave, col in campos.items():
+                        cursor.execute(
+                            f"SELECT DISTINCT {col} FROM apus "
+                            f"WHERE {col} IS NOT NULL AND TRIM({col}) <> '' "
+                            f"ORDER BY {col} LIMIT 1000"
+                        )
+                        resultado[clave] = [r[0].strip() for r in cursor.fetchall() if r[0]]
+            return resultado
         except mysql.connector.Error:
             log.exception("Database error in get_filter_options")
             raise

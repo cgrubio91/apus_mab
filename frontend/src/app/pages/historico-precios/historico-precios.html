@@ -1,7 +1,6 @@
 <div class="historico-container">
   <header class="page-header">
     <div>
-      <span class="breadcrumb">MAPUS · WORKSPACE</span>
       <h1>Histórico de Precios</h1>
       <p>Evolución mensual del precio de un insumo en el banco de APUs.</p>
     </div>
@@ -94,7 +93,11 @@
               <td>{{ formatCOP(p.precio_promedio) }}</td>
               <td>{{ formatCOP(p.precio_minimo) }}</td>
               <td>{{ formatCOP(p.precio_maximo) }}</td>
-              <td>{{ p.registros }}</td>
+              <td>
+                <button class="registros-link" (click)="verRegistros(p)" title="Ver estos registros en el Banco de APUs">
+                  {{ p.registros }} <span class="material-symbols-outlined">open_in_new</span>
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>

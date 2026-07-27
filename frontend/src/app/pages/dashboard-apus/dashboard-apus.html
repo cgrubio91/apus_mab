@@ -2,7 +2,6 @@
   <!-- Top Header with Title and Action -->
   <header class="dashboard-header animate-fade-in">
     <div class="header-titles">
-      <span class="breadcrumb">MAPUS · WORKSPACE</span>
       <h1>Dashboard de Proyectos</h1>
       <p>Visión consolidada de los Análisis de Precios Unitarios extraídos y costos directos por proyecto.</p>
     </div>
@@ -87,34 +86,34 @@
         </div>
       </div>
 
-      <!-- Data Quality / IA Precision Section -->
-      <div class="grid-card distribution-card">
+      <!-- Ubicación geográfica de los APUs -->
+      <div class="grid-card map-card">
         <div class="card-header">
-          <h3>Calidad de Extracción</h3>
-          <span class="header-desc">Campos clave completados en el banco de APUs</span>
+          <h3>Ubicación de los APUs</h3>
+          <span class="header-desc">Distribución por ciudad en Colombia</span>
         </div>
 
-        <div class="distribution-list">
-          <div class="dist-item">
-            <div class="dist-info">
-              <span class="dist-name">Proyectos distintos</span>
-              <span class="dist-value">{{ stats.totalProyectos }}</span>
-            </div>
+        <div class="map-body">
+          <div class="map-wrap">
+            <svg [attr.viewBox]="'0 0 ' + mapW + ' ' + mapH" class="colombia-map" preserveAspectRatio="xMidYMid meet">
+              <path [attr.d]="borderPath" class="map-border"></path>
+              <circle *ngFor="let c of ciudadesGeo" [attr.cx]="c.x" [attr.cy]="c.y" [attr.r]="c.r" class="map-bubble">
+                <title>{{ c.ciudad }}: {{ c.count }} APUs</title>
+              </circle>
+            </svg>
           </div>
 
-          <div class="dist-item">
-            <div class="dist-info">
-              <span class="dist-name">Ciudades distintas</span>
-              <span class="dist-value">{{ stats.totalCiudades }}</span>
+          <div class="map-legend" *ngIf="ciudadesGeo.length">
+            <span class="legend-title">Top ciudades</span>
+            <div class="legend-item" *ngFor="let c of ciudadesGeo.slice(0, 8)">
+              <span class="legend-dot"></span>
+              <span class="legend-name">{{ c.ciudad }}</span>
+              <strong class="legend-count">{{ c.count }}</strong>
             </div>
           </div>
-
-          <div class="dist-item">
-            <div class="dist-info">
-              <span class="dist-name">Precisión IA</span>
-              <span class="dist-value">{{ stats.precisionIA }}%</span>
-            </div>
-          </div>
+          <p class="map-empty" *ngIf="!ciudadesGeo.length">
+            No se reconocieron ubicaciones geográficas de las ciudades del banco.
+          </p>
         </div>
       </div>
     </div>

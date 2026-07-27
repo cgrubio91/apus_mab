@@ -188,10 +188,10 @@ async def historico_precios(
         condiciones = ["insumo_descripcion LIKE %s", "precio_unitario_apu IS NOT NULL", "precio_unitario_apu > 0"]
         params: list = [f"%{insumo}%"]
         if ciudad:
-            condiciones.append("ciudad = %s")
+            condiciones.append("TRIM(ciudad) = TRIM(%s)")
             params.append(ciudad)
         if nombre_proyecto:
-            condiciones.append("nombre_proyecto = %s")
+            condiciones.append("TRIM(nombre_proyecto) = TRIM(%s)")
             params.append(nombre_proyecto)
 
         rows = await asyncio.to_thread(

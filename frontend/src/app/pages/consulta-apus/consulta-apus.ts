@@ -1,6 +1,7 @@
-import { Component, OnInit, OnDestroy, HostListener, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { ApuService, ApuRecord, FilterOptions } from '../../services/apu';
 
 interface ColumnDef {
@@ -70,7 +71,16 @@ export class ConsultaApus implements OnInit, OnDestroy {
     private cdr: ChangeDetectorRef
   ) {}
 
+  private route = inject(ActivatedRoute);
+
   ngOnInit(): void {
+    // Prefiltro desde query params (p. ej. al venir de "registros" en Histórico).
+    const qp = this.route.snapshot.queryParams;
+    if (qp['q']) this.searchText = qp['q'];
+    if (qp['ciudad']) this.filters['ciudad'] = qp['ciudad'];
+    if (qp['proyecto']) this.filters['nombre_proyecto'] = qp['proyecto'];
+    if (qp['insumo'] && !this.searchText) this.searchText = qp['insumo'];
+
     this.loadFilterOptions();
     this.loadApus();
   }
