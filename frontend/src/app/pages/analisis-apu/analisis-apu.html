@@ -559,6 +559,7 @@
                     <thead>
                       <tr>
                         <th>Proveedor</th>
+                        <th>Und</th>
                         <th class="numeric">Rend.</th>
                         <th class="numeric">Vr. Unit.</th>
                         <th class="numeric">Vr. Parcial</th>
@@ -567,6 +568,7 @@
                     <tbody>
                       <tr *ngFor="let p of ins.proveedores" [class.best-row]="p.es_menor">
                         <td>{{ p.proveedor }}</td>
+                        <td>{{ ins.unidad || '—' }}</td>
                         <td class="numeric">{{ p.rendimiento != null ? (p.rendimiento | number:'1.0-4') : '—' }}</td>
                         <td class="numeric">{{ p.precio ? ('$' + (p.precio | number:'1.0-0')) : 'sin valor' }}<span class="best-tag" *ngIf="p.es_menor">menor</span></td>
                         <td class="numeric">{{ p.precio_parcial ? ('$' + (p.precio_parcial | number:'1.0-0')) : '—' }}</td>
@@ -595,6 +597,7 @@
                         <th>Proyecto</th>
                         <th>Entidad</th>
                         <th>Insumo</th>
+                        <th>Und</th>
                         <th class="numeric">Rend.</th>
                         <th class="numeric">Vr. Unit. APU</th>
                         <th class="numeric">Vr. Parcial APU</th>
@@ -604,7 +607,8 @@
                       <tr *ngFor="let r of ins.banco_referencia">
                         <td>{{ r.nombre_proyecto || '—' }}</td>
                         <td>{{ r.entidad || '—' }}<ng-container *ngIf="r.ciudad"> · {{ r.ciudad }}</ng-container></td>
-                        <td>{{ r.insumo_descripcion || '—' }}<ng-container *ngIf="r.insumo_unidad"> ({{ r.insumo_unidad }})</ng-container></td>
+                        <td>{{ r.insumo_descripcion || '—' }}</td>
+                        <td>{{ r.insumo_unidad || '—' }}</td>
                         <td class="numeric">{{ r.rendimiento_insumo != null ? (r.rendimiento_insumo | number:'1.0-4') : '—' }}</td>
                         <td class="numeric">{{ r.precio_unitario_apu ? ('$' + (r.precio_unitario_apu | number:'1.0-0')) : 'sin valor' }}</td>
                         <td class="numeric">{{ r.precio_parcial_apu ? ('$' + (r.precio_parcial_apu | number:'1.0-0')) : '—' }}</td>
