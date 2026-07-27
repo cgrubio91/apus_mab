@@ -307,61 +307,105 @@ class AnalisisMySQLRepository:
             if owns_conn and conn:
                 conn.close()
 
-    def buscar_insumos_similares(self, descripcion: str, max_ref: int = 5) -> list:
-        """Referencias de precio de un insumo en el banco, con su proyecto y entidad.
-
-        Usado en el modo 'solo insumos' para comparar el precio ofertado por los
-        proveedores contra lo que ya existe en el banco de APUs.
-        """
+    def buscar_insumos_candidatos(self, descripcion: str, max_desc: int = 15) -> list:
+        """Descripciones DISTINTAS del banco parecidas al insumo, con flags de
+        completitud (si existe alguna fila con unidad / con valor). Trabaja sobre
+        descripciones distintas para que los duplicados y outliers no tapen la buena.
+        Devuelve [{descripcion, tiene_unidad, tiene_valor, similitud}] ordenado."""
         if not descripcion:
             return []
         objetivo = _tokenizar(descripcion)
         if not objetivo:
             return []
-        # Se busca por CUALQUIER palabra significativa (tolera variantes como
-        # "minicargador" vs "mini cargador"); luego se re-ordena por similitud y la IA
-        # confirma cuáles son realmente el mismo insumo (en el use case).
         palabras = sorted(objetivo, key=len, reverse=True)[:6]
-        condiciones = " OR ".join(["insumo_descripcion LIKE %s" for _ in palabras])
-        params = [f"%{p}%" for p in palabras]
+        principal = palabras[0]
+
+        _sql = """SELECT insumo_descripcion,
+                         MAX(CASE WHEN insumo_unidad IS NOT NULL AND TRIM(insumo_unidad) <> '' THEN 1 ELSE 0 END) AS tiene_unidad,
+                         MAX(CASE WHEN precio_unitario_apu > 0 THEN 1 ELSE 0 END) AS tiene_valor,
+                         COUNT(*) AS n
+                  FROM apus
+                  WHERE {cond}
+                  GROUP BY insumo_descripcion
+                  LIMIT 500"""
         with get_db_connection() as conn:
             with conn.cursor(dictionary=True) as cursor:
-                # Se incluyen también insumos SIN precio (existen en el banco aunque no
-                # tengan valor); las filas con precio válido se muestran primero.
-                cursor.execute(
-                    f"""SELECT insumo_descripcion, insumo_unidad, tipo_insumo,
-                               rendimiento_insumo, precio_unitario_apu, precio_parcial_apu,
-                               nombre_proyecto, entidad, ciudad, contratista,
-                               MAX(fecha_aprobacion_apu) AS fecha
-                        FROM apus
-                        WHERE {condiciones}
-                        GROUP BY insumo_descripcion, insumo_unidad, tipo_insumo,
-                                 rendimiento_insumo, precio_unitario_apu, precio_parcial_apu,
-                                 nombre_proyecto, entidad, ciudad, contratista
-                        ORDER BY (precio_unitario_apu IS NULL OR precio_unitario_apu <= 0) ASC,
-                                 precio_unitario_apu DESC
-                        LIMIT 250""",
-                    params,
-                )
+                cursor.execute(_sql.format(cond="insumo_descripcion LIKE %s"), [f"%{principal}%"])
+                descs = cursor.fetchall()
+                if not descs and len(palabras) > 1:
+                    cond = " OR ".join(["insumo_descripcion LIKE %s" for _ in palabras])
+                    cursor.execute(_sql.format(cond=cond), [f"%{p}%" for p in palabras])
+                    descs = cursor.fetchall()
+        if not descs:
+            return []
+        for d in descs:
+            d["similitud"] = round(_similitud_tokens(objetivo, _tokenizar(d.get("insumo_descripcion", ""))), 3)
+        descs = [d for d in descs if d["similitud"] > 0]
+        # Similitud primero; entre parecidos, las que tienen unidad+valor arriba.
+        descs.sort(
+            key=lambda d: (d["similitud"], (d.get("tiene_valor") or 0) + (d.get("tiene_unidad") or 0), d.get("n", 0)),
+            reverse=True,
+        )
+        return descs[:max_desc]
+
+    def referencias_de_descripciones(self, descripciones: list, max_total: int = 12) -> list:
+        """Filas reales de referencia (con proyecto, entidad, unidad, valor) para las
+        descripciones dadas. Prioriza las que tienen UNIDAD y VALOR."""
+        descripciones = [d for d in (descripciones or []) if d]
+        if not descripciones:
+            return []
+        marcadores = ",".join(["%s"] * len(descripciones))
+        sql = f"""SELECT insumo_descripcion, insumo_unidad, tipo_insumo, rendimiento_insumo,
+                         precio_unitario_apu, precio_parcial_apu, nombre_proyecto, entidad,
+                         ciudad, contratista, fecha_aprobacion_apu AS fecha
+                  FROM apus
+                  WHERE insumo_descripcion IN ({marcadores})
+                  ORDER BY (insumo_unidad IS NOT NULL AND TRIM(insumo_unidad) <> '') DESC,
+                           (precio_unitario_apu > 0) DESC,
+                           precio_unitario_apu DESC
+                  LIMIT %s"""
+        with get_db_connection() as conn:
+            with conn.cursor(dictionary=True) as cursor:
+                cursor.execute(sql, [*descripciones, max_total * 5])
                 filas = cursor.fetchall()
-                if not filas:
-                    return []
-                for f in filas:
-                    f["_score"] = _similitud_tokens(objetivo, _tokenizar(f.get("insumo_descripcion", "")))
-                filas = [f for f in filas if f["_score"] > 0]
-                # Prioriza las referencias CON valor, luego por similitud y precio.
-                filas.sort(
-                    key=lambda f: (
-                        1 if (f.get("precio_unitario_apu") and float(f["precio_unitario_apu"]) > 0) else 0,
-                        f["_score"],
-                        float(f.get("precio_unitario_apu") or 0),
-                    ),
-                    reverse=True,
-                )
-                top = filas[:max_ref]
-                for f in top:
-                    f["similitud"] = round(f.pop("_score", 0.0), 3)
-                return top
+
+        vistos = set()
+        top = []
+        for f in filas:
+            clave = (f.get("insumo_descripcion"), f.get("nombre_proyecto"),
+                     f.get("insumo_unidad"), f.get("precio_unitario_apu"))
+            if clave in vistos:
+                continue
+            vistos.add(clave)
+            f["similitud"] = None
+            top.append(f)
+            if len(top) >= max_total:
+                break
+        return top
+
+    def buscar_insumos_similares(self, descripcion: str, max_ref: int = 12) -> list:
+        """Descripciones distintas parecidas → filas reales de referencia, ordenadas
+        por SIMILITUD, luego por lo más COMPLETO (unidad+valor+rend.), luego precio."""
+        candidatos = self.buscar_insumos_candidatos(descripcion, max_desc=max_ref)
+        descripciones = [c["insumo_descripcion"] for c in candidatos]
+        refs = self.referencias_de_descripciones(descripciones, max_total=max_ref * 2)
+        # Similitud calculada directo por fila (robusto ante may/min y espacios).
+        objetivo = _tokenizar(descripcion)
+        for r in refs:
+            r["similitud"] = round(_similitud_tokens(objetivo, _tokenizar(r.get("insumo_descripcion", ""))), 3)
+
+        def _compl(r: dict) -> int:
+            n = 0
+            if r.get("precio_unitario_apu") and float(r["precio_unitario_apu"]) > 0:
+                n += 1
+            if r.get("insumo_unidad") and str(r["insumo_unidad"]).strip():
+                n += 1
+            if r.get("rendimiento_insumo") is not None:
+                n += 1
+            return n
+
+        refs.sort(key=lambda r: (round(r["similitud"], 3), _compl(r), float(r.get("precio_unitario_apu") or 0)), reverse=True)
+        return refs[:max_ref]
 
     def existe_proyecto(self, proyecto_id: int) -> bool:
         rows = execute_query("SELECT id FROM proyectos WHERE id = %s", (proyecto_id,))
@@ -490,9 +534,17 @@ class AnalisisMySQLRepository:
                     texto = (c.get("items_descripcion") or "") + " " + (c.get("insumos_texto") or "")
                     c["_score"] = _similitud_tokens(objetivo, _tokenizar(texto))
                 candidatos = [c for c in candidatos if c["_score"] > 0]
-                # Prioriza: similitud, luego los que tienen valor, luego nº de insumos.
+
+                def _completitud_apu(c: dict) -> int:
+                    """APU más completo: con valor, con unidad de ítem y más insumos."""
+                    n = int(c.get("tiene_valor", 0) or 0)
+                    if c.get("item_unidad") and str(c["item_unidad"]).strip():
+                        n += 1
+                    return n
+
+                # Prioriza: similitud, luego lo MÁS COMPLETO (valor + unidad), luego nº de insumos.
                 candidatos.sort(
-                    key=lambda c: (c["_score"], c.get("tiene_valor", 0) or 0, c.get("num_insumos", 0)),
+                    key=lambda c: (round(c["_score"], 3), _completitud_apu(c), c.get("num_insumos", 0)),
                     reverse=True,
                 )
                 top = candidatos[:max_candidatos]
@@ -515,7 +567,22 @@ class AnalisisMySQLRepository:
                     c["similitud"] = round(c.pop("_score", 0.0), 3)
                     c.pop("insumos_texto", None)
                     c.pop("tiene_valor", None)
-                return top
+                    return top
+
+    def eliminar_solicitud(self, solicitud_id: int) -> bool:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM aprendizaje_rechazos WHERE analisis_id IN (SELECT id FROM analisis_apu WHERE solicitud_id = %s)",
+                        (solicitud_id,),
+                    )
+                    cursor.execute("DELETE FROM solicitudes_apu WHERE id = %s", (solicitud_id,))
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception:
+            log.exception("Error eliminando solicitud %d", solicitud_id)
+            raise
 
 
 analisis_repo = AnalisisMySQLRepository()

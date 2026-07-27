@@ -624,6 +624,61 @@ export class AnalisisApu implements OnInit {
     });
   }
 
+  // ── Selección múltiple ────────────────────────────────────────
+  selectedIds = new Set<number>();
+
+  toggleId(id: number): void {
+    if (this.selectedIds.has(id)) {
+      this.selectedIds.delete(id);
+    } else {
+      this.selectedIds.add(id);
+    }
+  }
+
+  toggleAll(event: any): void {
+    const checked = event.target.checked;
+    if (checked) {
+      this.solicitudes.forEach(s => { if (s.id) this.selectedIds.add(s.id); });
+    } else {
+      this.selectedIds.clear();
+    }
+  }
+
+  allSelected(): boolean {
+    return this.solicitudes.length > 0 && this.solicitudes.every(s => s.id && this.selectedIds.has(s.id));
+  }
+
+  eliminarSeleccionadas(): void {
+    const ids = Array.from(this.selectedIds);
+    if (ids.length === 0) return;
+    const confirmMsg = `¿Eliminar ${ids.length} solicitud(es)? Esta acción no se puede deshacer.`;
+    if (!confirm(confirmMsg)) return;
+    this.loading = true;
+    let completed = 0;
+    let errors = 0;
+    ids.forEach(id => {
+      this.apuService.deleteSolicitud(id).subscribe({
+        next: () => {
+          completed++;
+          if (completed + errors === ids.length) this._finishDelete();
+        },
+        error: () => {
+          errors++;
+          if (completed + errors === ids.length) this._finishDelete();
+        },
+      });
+    });
+  }
+
+  private _finishDelete(): void {
+    this.ngZone.run(() => {
+      this.selectedIds.clear();
+      this.loading = false;
+      this.loadSolicitudes();
+      this.cdr.detectChanges();
+    });
+  }
+
   expandedKeys = new Set<string>();
 
   toggleItem(grupo: number, idx: number): void {

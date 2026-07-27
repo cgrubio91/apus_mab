@@ -23,6 +23,7 @@ from src.application.use_cases.manage_analisis import (
     set_tipo_comparacion,
     subir_insumo_al_banco,
     get_aprendizaje_rechazos,
+    eliminar_solicitud,
 )
 from src.presentation.auth import get_current_user, require_role, get_optional_user
 
@@ -345,6 +346,17 @@ async def exportar_analisis(solicitud_id: int):
         raise
     except Exception:
         log.exception("Error exportando análisis %s", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.delete("/analisis-apu/{solicitud_id}", tags=["Análisis APU"])
+async def eliminar_solicitud_endpoint(solicitud_id: int, user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return eliminar_solicitud(solicitud_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error eliminando solicitud %d", solicitud_id)
         raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 

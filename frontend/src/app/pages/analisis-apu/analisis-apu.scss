@@ -294,6 +294,17 @@
   }
 }
 
+.col-check {
+  width: 40px;
+  text-align: center;
+}
+
+.table-actions-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
 .empty-row {
   text-align: center;
   padding: 40px !important;

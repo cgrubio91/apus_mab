@@ -420,11 +420,12 @@ def _analizar_insumos_proveedores(insumos: list[dict]) -> list[dict]:
         for p in proveedores:
             p["es_menor"] = mejor is not None and p["precio"] == mejor and p["precio"] > 0
 
-        # Busca con el nombre canónico Y las descripciones originales de los proveedores
-        # (evita perder valorizados cuando el canónico junta palabras: "minicargador" vs
-        # "mini cargador"). Así la búsqueda incluye tokens sueltos como "cargador".
-        textos = {cl["canonical"]}
-        textos.update(m["desc"] for m in miembros if m.get("desc"))
+        # Busca con las descripciones ORIGINALES de los proveedores (no el nombre
+        # canónico de la IA, que junta palabras: "minicargador"). Así la palabra
+        # distintiva es real ("cargador", "retroexcavadora") y no un compuesto.
+        textos = {m["desc"] for m in miembros if m.get("desc")}
+        if not textos:
+            textos = {cl["canonical"]}
         referencias = analisis_repo.buscar_insumos_similares(" ".join(textos), max_ref=12)
         for r in referencias:
             pb = float(r.get("precio_unitario_apu") or 0)
@@ -462,45 +463,52 @@ def _analizar_insumos_proveedores(insumos: list[dict]) -> list[dict]:
 
 
 def _confirmar_referencias_ia(insumos_comparados: list[dict]) -> list[dict]:
-    """La IA lee los candidatos del banco y deja SOLO los que son realmente el mismo
-    insumo (descarta los que apenas comparten una palabra). Una sola llamada para toda
-    la solicitud; si la IA falla, se dejan los resultados heurísticos sin cambios."""
+    """La IA decide, sobre las DESCRIPCIONES DISTINTAS del banco, cuáles son realmente
+    el mismo insumo (maneja las muchas variantes: escritura, espaciado, abreviaturas,
+    sinónimos técnicos, capacidades/potencias). Una sola llamada; si la IA falla o no
+    confirma nada, se conservan los resultados heurísticos (no destructivo)."""
     payload = []
     for i, ins in enumerate(insumos_comparados):
         refs = ins.get("banco_referencia") or []
         if not refs:
             continue
-        payload.append({
-            "i": i,
-            "insumo": ins.get("descripcion"),
-            "unidad": ins.get("unidad"),
-            "candidatos": [
-                {"j": j, "desc": r.get("insumo_descripcion"), "und": r.get("insumo_unidad")}
-                for j, r in enumerate(refs)
-            ],
-        })
+        # Descripciones DISTINTAS presentes en las referencias (no filas duplicadas).
+        distintas = []
+        vistas = set()
+        for r in refs:
+            d = (r.get("insumo_descripcion") or "").strip()
+            if d and d.lower() not in vistas:
+                vistas.add(d.lower())
+                distintas.append(d)
+        payload.append({"i": i, "insumo": ins.get("descripcion"), "unidad": ins.get("unidad"),
+                        "opciones": [{"k": k, "desc": d} for k, d in enumerate(distintas)]})
+        ins["_distintas"] = distintas
     if not payload:
+        for ins in insumos_comparados:
+            ins.pop("_distintas", None)
         return insumos_comparados
 
-    prompt = f"""Eres un experto en insumos de construcción civil.
-Para cada insumo, revisa sus CANDIDATOS del banco y quédate SOLO con los que son
-REALMENTE el mismo insumo (mismo material/equipo). Descarta los que solo comparten
-una palabra pero son otra cosa (ej.: si el insumo es "Carrotanque de agua", descarta
-"Agua" a secas o "Riego por aspersión").
+    prompt = f"""Eres un ingeniero experto en insumos de construcción civil (equipos, materiales,
+mano de obra, transporte). Para cada INSUMO, mira las OPCIONES de descripción del banco y
+elige SOLO las que se refieren REALMENTE al mismo insumo.
 
-IMPORTANTE: considera equivalentes las variantes de escritura, espaciado, mayúsculas,
-abreviaturas y sinónimos técnicos (ej.: "minicargador" = "mini cargador" = "MINICARGADOR 40HP";
-"retroexcavadora" = "retro excavadora"; "m3" = "M3"). No las descartes por diferencias de forma.
+Criterios:
+- Considera equivalentes las variantes de forma: mayúsculas/minúsculas, espaciado, tildes,
+  abreviaturas, sinónimos técnicos y diferencias de marca o de capacidad/potencia menores
+  (ej.: "minicargador" = "mini cargador" = "MINICARGADOR 40HP"; "retroexcavadora sobre oruga" =
+  "retro excavadora oruga"; "cemento gris" = "cemento portland tipo I").
+- DESCARTA lo que solo comparte una palabra genérica pero es otra cosa (ej.: para
+  "Retroexcavadora sobre oruga" descarta "Martillo de hinca montado sobre oruga"; para
+  "Carrotanque de agua" descarta "Agua" a secas).
 
-DATOS (usa los índices "i" del insumo y "j" del candidato):
+INSUMOS Y OPCIONES (usa "i" del insumo y "k" de la opción):
 {json.dumps(payload, ensure_ascii=False)}
 
 Responde SOLO con JSON válido:
-{{"resultados": [{{"i": 0, "validos": [0, 2]}}]}}
-Donde "validos" son los índices j de los candidatos correctos (lista vacía si ninguno).
-NO incluyas texto adicional."""
+{{"resultados": [{{"i": 0, "validas": [0, 2]}}]}}
+"validas" = índices k de las descripciones correctas (lista vacía si ninguna). Sin texto extra."""
     try:
-        respuesta = ai_provider.generate_text(prompt, system="Eres un experto en insumos de construcción.", timeout=120)
+        respuesta = ai_provider.generate_text(prompt, system="Eres un ingeniero experto en insumos de construcción.", timeout=120)
         respuesta = respuesta.strip()
         if respuesta.startswith("```"):
             respuesta = respuesta.split("\n", 1)[-1].rsplit("```", 1)[0]
@@ -508,19 +516,30 @@ NO incluyas texto adicional."""
         mapa = {}
         for r in data.get("resultados", []):
             if isinstance(r.get("i"), int):
-                mapa[r["i"]] = {j for j in r.get("validos", []) if isinstance(j, int)}
+                mapa[r["i"]] = {k for k in r.get("validas", []) if isinstance(k, int)}
     except Exception as e:
         log.warning("Confirmación IA de referencias de insumos falló: %s", e)
+        for ins in insumos_comparados:
+            ins.pop("_distintas", None)
         return insumos_comparados
 
     for i, ins in enumerate(insumos_comparados):
+        distintas = ins.pop("_distintas", None)
         refs = ins.get("banco_referencia") or []
-        if not refs or i not in mapa:
+        if not refs or distintas is None or i not in mapa:
             continue
-        validos = mapa[i]
-        ins["banco_referencia"] = [r for j, r in enumerate(refs) if j in validos]
-        ins["existe_en_banco"] = len(ins["banco_referencia"]) > 0
-        precios = [float(r["precio_unitario_apu"]) for r in ins["banco_referencia"] if r.get("precio_unitario_apu")]
+        validas = mapa[i]
+        if not validas:
+            continue  # no destructivo: conservar heurísticos
+        descs_ok = {distintas[k].lower() for k in validas if 0 <= k < len(distintas)}
+        if not descs_ok:
+            continue
+        filtrados = [r for r in refs if (r.get("insumo_descripcion") or "").strip().lower() in descs_ok]
+        if not filtrados:
+            continue
+        ins["banco_referencia"] = filtrados
+        ins["existe_en_banco"] = True
+        precios = [float(r["precio_unitario_apu"]) for r in filtrados if r.get("precio_unitario_apu")]
         ins["mejor_precio_banco"] = min(precios) if precios else None
     return insumos_comparados
 
@@ -917,3 +936,13 @@ def _crear_items_presupuesto(solicitud_id: int, conn) -> int:
 
 def get_aprendizaje_rechazos(limit: int = 20) -> list:
     return analisis_repo.get_aprendizaje_rechazos(limit)
+
+
+def eliminar_solicitud(solicitud_id: int) -> dict:
+    solicitud = analisis_repo.get_solicitud(solicitud_id)
+    if not solicitud:
+        raise ValueError(f"Solicitud {solicitud_id} no encontrada")
+    if solicitud.get("estado") in ("aprobado_legal",):
+        raise ValueError("No se puede eliminar una solicitud ya firmada legalmente")
+    analisis_repo.eliminar_solicitud(solicitud_id)
+    return {"success": True, "mensaje": f"Solicitud #{solicitud_id} eliminada correctamente."}

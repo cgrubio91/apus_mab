@@ -330,6 +330,10 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/analisis-apu/${solicitudId}/firmar-legal`, {});
   }
 
+  deleteSolicitud(solicitudId: number): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/analisis-apu/${solicitudId}`);
+  }
+
   // ── Notificaciones ──────────────────────────────────────────────
   getNotificaciones(): Observable<{ success: boolean; notificaciones: Notificacion[]; no_leidas: number }> {
     return this.http.get<{ success: boolean; notificaciones: Notificacion[]; no_leidas: number }>(

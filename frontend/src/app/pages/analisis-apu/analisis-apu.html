@@ -74,10 +74,17 @@
       </select>
     </div>
 
+    <div class="table-actions-bar" *ngIf="selectedIds.size > 0">
+      <button class="action-btn danger" (click)="eliminarSeleccionadas()">
+        <span class="material-symbols-outlined">delete</span> Eliminar seleccionadas ({{ selectedIds.size }})
+      </button>
+    </div>
+
     <div class="table-container" *ngIf="!loading">
       <table class="solicitudes-table">
         <thead>
           <tr>
+            <th class="col-check"><input type="checkbox" (change)="toggleAll($event)" [checked]="allSelected()" /></th>
             <th>#</th>
             <th>Contratista</th>
             <th>Proyecto</th>
@@ -90,6 +97,7 @@
         </thead>
         <tbody>
           <tr *ngFor="let s of solicitudes">
+            <td class="col-check"><input type="checkbox" [checked]="selectedIds.has(s.id!)" (change)="toggleId(s.id!)" /></td>
             <td>{{ s.id }}</td>
             <td>{{ s.contratista }}</td>
             <td>{{ s.nombre_proyecto }}</td>
@@ -104,7 +112,7 @@
             </td>
           </tr>
           <tr *ngIf="solicitudes.length === 0">
-            <td colspan="8" class="empty-row">No hay solicitudes registradas</td>
+            <td colspan="9" class="empty-row">No hay solicitudes registradas</td>
           </tr>
         </tbody>
       </table>
