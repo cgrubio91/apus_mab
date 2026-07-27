@@ -1,5 +1,6 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { ApuService } from '../../services/apu';
 
 interface CiudadGeo {
@@ -10,13 +11,12 @@ interface CiudadGeo {
   r: number;
 }
 
-// Lienzo del mapa
-const MAP_W = 320;
-const MAP_H = 440;
-const PAD = 14;
-// Caja de proyección (aprox. límites de Colombia)
-const LON_MIN = -79.2, LON_MAX = -66.7;
-const LAT_MIN = -4.5, LAT_MAX = 12.8;
+interface MapaColombia {
+  w: number;
+  h: number;
+  bounds: [number, number, number, number]; // minLon, minLat, maxLon, maxLat
+  paths: string[];
+}
 
 // Coordenadas [lon, lat] de las principales ciudades de Colombia (provistas por IA).
 const CITY_COORDS: Record<string, [number, number]> = {
@@ -37,23 +37,11 @@ const CITY_COORDS: Record<string, [number, number]> = {
   'chia': [-74.03, 4.86], 'soacha': [-74.22, 4.58], 'bello': [-75.55, 6.34],
   'itagui': [-75.61, 6.18], 'envigado': [-75.59, 6.17], 'rionegro': [-75.37, 6.15],
   'floridablanca': [-73.09, 7.06], 'giron': [-73.17, 7.07], 'piedecuesta': [-73.05, 6.99],
-  'monteria cordoba': [-75.88, 8.75], 'san andres': [-81.70, 12.58], 'arauca': [-70.76, 7.09],
-  'inirida': [-67.92, 3.87], 'mitu': [-70.23, 1.25], 'puerto carreno': [-67.49, 6.19],
-  'san jose del guaviare': [-72.64, 2.57], 'caucasia': [-75.20, 7.98], 'la dorada': [-74.66, 5.45],
-  'espinal': [-74.88, 4.15], 'honda': [-74.74, 5.20], 'chiquinquira': [-73.82, 5.62],
+  'arauca': [-70.76, 7.09], 'inirida': [-67.92, 3.87], 'mitu': [-70.23, 1.25],
+  'puerto carreno': [-67.49, 6.19], 'san jose del guaviare': [-72.64, 2.57], 'caucasia': [-75.20, 7.98],
+  'la dorada': [-74.66, 5.45], 'espinal': [-74.88, 4.15], 'honda': [-74.74, 5.20],
+  'chiquinquira': [-73.82, 5.62],
 };
-
-// Contorno simplificado de Colombia como puntos [lon, lat] (recorrido horario).
-const COLOMBIA_BORDER: [number, number][] = [
-  [-77.4, 8.6], [-76.9, 8.0], [-75.7, 9.4], [-74.9, 11.0], [-73.4, 11.2],
-  [-72.2, 11.8], [-71.1, 12.4], [-71.9, 11.6], [-72.9, 11.1], [-72.4, 9.3],
-  [-72.5, 7.9], [-72.0, 7.0], [-70.1, 6.9], [-69.4, 6.1], [-67.9, 6.2],
-  [-67.4, 5.3], [-67.9, 4.2], [-67.3, 2.7], [-67.1, 1.2], [-69.2, 1.7],
-  [-69.8, 1.0], [-69.6, -0.6], [-70.0, -2.2], [-70.7, -3.8], [-69.9, -4.2],
-  [-71.2, -2.3], [-72.9, -1.5], [-74.8, -0.2], [-76.4, 0.4], [-77.5, 0.6],
-  [-78.6, 1.4], [-78.9, 2.5], [-77.9, 3.9], [-77.4, 5.6], [-77.9, 7.2],
-  [-77.4, 8.6],
-];
 
 @Component({
   selector: 'app-dashboard-apus',
@@ -73,10 +61,15 @@ export class DashboardApus implements OnInit {
   isLoading = true;
   errorMessage = '';
 
-  mapW = MAP_W;
-  mapH = MAP_H;
-  borderPath = '';
+  // Mapa
+  mapW = 340;
+  mapH = 465;
+  deptPaths: string[] = [];
+  private bounds: [number, number, number, number] | null = null;
+  private porCiudadRaw: Record<string, number> = {};
   ciudadesGeo: CiudadGeo[] = [];
+
+  private http = inject(HttpClient);
 
   constructor(
     private apuService: ApuService,
@@ -84,8 +77,22 @@ export class DashboardApus implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.borderPath = this.buildBorderPath();
+    this.loadMapa();
     this.loadStats();
+  }
+
+  private loadMapa(): void {
+    this.http.get<MapaColombia>('geo/colombia-paths.json').subscribe({
+      next: (m) => {
+        this.mapW = m.w;
+        this.mapH = m.h;
+        this.deptPaths = m.paths || [];
+        this.bounds = m.bounds;
+        this.rebuildGeo();
+        this.cdr.markForCheck();
+      },
+      error: () => { /* sin mapa: las burbujas no se proyectan */ },
+    });
   }
 
   loadStats(): void {
@@ -97,7 +104,8 @@ export class DashboardApus implements OnInit {
         this.stats.totalCiudades = data.total_cities || 0;
 
         this.stats.apusPorTipoInsumo = data.apus_por_tipo_insumo || {};
-        this.ciudadesGeo = this.buildCiudadesGeo(data.apus_por_ciudad || {});
+        this.porCiudadRaw = data.apus_por_ciudad || {};
+        this.rebuildGeo();
         this.isLoading = false;
         this.cdr.markForCheck();
       },
@@ -110,35 +118,30 @@ export class DashboardApus implements OnInit {
   }
 
   private proj(lon: number, lat: number): [number, number] {
-    const x = PAD + ((lon - LON_MIN) / (LON_MAX - LON_MIN)) * (MAP_W - 2 * PAD);
-    const y = PAD + ((LAT_MAX - lat) / (LAT_MAX - LAT_MIN)) * (MAP_H - 2 * PAD);
+    const b = this.bounds!;
+    const PAD = 8;
+    const x = PAD + ((lon - b[0]) / (b[2] - b[0])) * (this.mapW - 2 * PAD);
+    const y = PAD + ((b[3] - lat) / (b[3] - b[1])) * (this.mapH - 2 * PAD);
     return [Math.round(x * 10) / 10, Math.round(y * 10) / 10];
-  }
-
-  private buildBorderPath(): string {
-    return COLOMBIA_BORDER
-      .map(([lon, lat], i) => {
-        const [x, y] = this.proj(lon, lat);
-        return `${i === 0 ? 'M' : 'L'}${x} ${y}`;
-      })
-      .join(' ') + ' Z';
   }
 
   private normalizar(nombre: string): string {
     return (nombre || '')
       .toLowerCase()
       .normalize('NFD').replace(/[̀-ͯ]/g, '') // quita tildes
-      .replace(/\bd\.?\s?c\.?\b/g, '')                  // "D.C."
+      .replace(/\bd\.?\s?c\.?\b/g, '')
       .replace(/distrito.*$/g, '')
       .replace(/[^a-z\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
   }
 
-  private buildCiudadesGeo(porCiudad: Record<string, number>): CiudadGeo[] {
+  private rebuildGeo(): void {
+    if (!this.bounds || !Object.keys(this.porCiudadRaw).length) return;
+
     // Unifica variantes del mismo nombre (Bogotá / BOGOTA / Bogotá D.C. → una sola).
     const agrupado = new Map<string, { count: number; coord: [number, number] }>();
-    for (const [ciudad, count] of Object.entries(porCiudad)) {
+    for (const [ciudad, count] of Object.entries(this.porCiudadRaw)) {
       const norm = this.normalizar(ciudad);
       const directo = CITY_COORDS[norm];
       const primera = CITY_COORDS[norm.split(' ')[0]];
@@ -156,8 +159,7 @@ export class DashboardApus implements OnInit {
       const r = 4 + Math.sqrt(count / max) * 16;
       geo.push({ ciudad: this.nombreCanonico(key), count, x, y, r: Math.round(r * 10) / 10 });
     }
-    // Los más grandes al fondo para que los pequeños queden visibles encima.
-    return geo.sort((a, b) => b.r - a.r);
+    this.ciudadesGeo = geo.sort((a, b) => b.r - a.r);
   }
 
   private nombreCanonico(norm: string): string {

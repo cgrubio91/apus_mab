@@ -96,7 +96,7 @@
         <div class="map-body">
           <div class="map-wrap">
             <svg [attr.viewBox]="'0 0 ' + mapW + ' ' + mapH" class="colombia-map" preserveAspectRatio="xMidYMid meet">
-              <path [attr.d]="borderPath" class="map-border"></path>
+              <path *ngFor="let d of deptPaths" [attr.d]="d" class="map-border"></path>
               <circle *ngFor="let c of ciudadesGeo" [attr.cx]="c.x" [attr.cy]="c.y" [attr.r]="c.r" class="map-bubble">
                 <title>{{ c.ciudad }}: {{ c.count }} APUs</title>
               </circle>
