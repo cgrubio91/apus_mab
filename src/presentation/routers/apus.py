@@ -185,8 +185,21 @@ async def historico_precios(
     from src.infrastructure.database.connection import execute_query
 
     try:
-        condiciones = ["insumo_descripcion LIKE %s", "precio_unitario_apu IS NOT NULL", "precio_unitario_apu > 0"]
-        params: list = [f"%{insumo}%"]
+        # Búsqueda inteligente por palabras clave (igual que Análisis APU): encuentra
+        # las descripciones del banco más parecidas y agrega sus precios por mes.
+        from src.infrastructure.database.repositories.analisis_repository import analisis_repo
+        candidatos = await asyncio.to_thread(analisis_repo.buscar_insumos_candidatos, insumo, 25)
+        descripciones = [c["insumo_descripcion"] for c in candidatos if c.get("insumo_descripcion")]
+
+        condiciones = ["precio_unitario_apu IS NOT NULL", "precio_unitario_apu > 0"]
+        params: list = []
+        if descripciones:
+            marcadores = ",".join(["%s"] * len(descripciones))
+            condiciones.append(f"insumo_descripcion IN ({marcadores})")
+            params.extend(descripciones)
+        else:
+            condiciones.append("insumo_descripcion LIKE %s")
+            params.append(f"%{insumo}%")
         if ciudad:
             condiciones.append("TRIM(ciudad) = TRIM(%s)")
             params.append(ciudad)
@@ -263,6 +276,44 @@ async def listar_proyectos_mapus() -> dict:
     except Exception:
         log.exception("Error listando proyectos MAPUS")
         raise HTTPException(status_code=500, detail="Error al cargar proyectos.")
+
+
+@router.get("/proyectos-mapus/{proyecto_id}/items", tags=["APUs"])
+async def detalle_items_proyecto(proyecto_id: int) -> dict:
+    """Árbol de ítems del presupuesto de un proyecto. Los ítems cargados desde un APU
+    aprobado (apu_solicitud_id no nulo) traen la fecha y el responsable de la firma legal."""
+    from src.infrastructure.database.connection import execute_query
+
+    try:
+        rows = await asyncio.to_thread(
+            execute_query,
+            """SELECT ip.id, ip.parent_id, ip.nivel, ip.codigo, ip.nombre,
+                      ip.unidad_medida, ip.cantidad_presupuestada, ip.valor_unitario,
+                      ip.valor_presupuestado, ip.orden, ip.tipo_item, ip.apu_solicitud_id,
+                      h.aprobado_por, h.aprobado_rol, h.aprobado_en
+               FROM item_proyecto ip
+               LEFT JOIN (
+                   SELECT solicitud_id,
+                          MAX(created_at) AS aprobado_en,
+                          SUBSTRING_INDEX(GROUP_CONCAT(responsable_nombre ORDER BY created_at DESC), ',', 1) AS aprobado_por,
+                          SUBSTRING_INDEX(GROUP_CONCAT(responsable_rol ORDER BY created_at DESC), ',', 1) AS aprobado_rol
+                   FROM historial_aprobaciones
+                   WHERE accion = 'aprobado_legal'
+                   GROUP BY solicitud_id
+               ) h ON h.solicitud_id = ip.apu_solicitud_id
+               WHERE ip.proyecto = %s
+               ORDER BY ip.orden, ip.id""",
+            (proyecto_id,),
+        )
+        proy = await asyncio.to_thread(
+            execute_query,
+            "SELECT id, id_proy, descripcion, presupuesto_total FROM proyectos WHERE id = %s",
+            (proyecto_id,),
+        )
+        return {"success": True, "proyecto": (proy or [None])[0], "items": rows or []}
+    except Exception:
+        log.exception("Error obteniendo detalle del proyecto %d", proyecto_id)
+        raise HTTPException(status_code=500, detail="Error al cargar el detalle del proyecto.")
 
 
 class CrearProyectoRequest(BaseModel):

@@ -133,6 +133,10 @@ export class ApuService {
     return this.http.get(`${this.baseUrl}/proyectos-mapus`);
   }
 
+  getProyectoDetalle(proyectoId: number): Observable<any> {
+    return this.http.get(`${this.baseUrl}/proyectos-mapus/${proyectoId}/items`);
+  }
+
   crearProyecto(data: any): Observable<any> {
     return this.http.post(`${this.baseUrl}/proyectos-mapus`, data);
   }

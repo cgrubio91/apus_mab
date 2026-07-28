@@ -531,27 +531,86 @@
               </p>
 
               <div class="subir-form" *ngIf="subiendoIdx === idx">
-                <div class="subir-grid">
-                  <label>Descripción
-                    <input type="text" [(ngModel)]="subirDatos.insumo_descripcion" />
-                  </label>
-                  <label>Unidad
-                    <input type="text" [(ngModel)]="subirDatos.insumo_unidad" />
-                  </label>
-                  <label>Tipo
-                    <select [(ngModel)]="subirDatos.tipo_insumo">
-                      <option value="">—</option>
-                      <option *ngFor="let t of tipoInsumoOpciones" [value]="t">{{ t }}</option>
-                    </select>
-                  </label>
-                  <label>Código
-                    <input type="text" [(ngModel)]="subirDatos.codigo_insumo" />
-                  </label>
-                  <label>Precio unitario
-                    <input type="number" [(ngModel)]="subirDatos.precio_unitario_apu" />
-                  </label>
+                <p class="subir-hint">Se prellenaron los datos que se pudieron extraer del documento. Completa o corrige los que falten.</p>
+
+                <div class="subir-fieldset">
+                  <span class="subir-legend">Insumo</span>
+                  <div class="subir-grid">
+                    <label>Descripción <span class="req">*</span>
+                      <input type="text" [(ngModel)]="subirDatos.insumo_descripcion" />
+                    </label>
+                    <label>Unidad
+                      <input type="text" [(ngModel)]="subirDatos.insumo_unidad" placeholder="m3, kg, h…" />
+                    </label>
+                    <label>Tipo
+                      <select [(ngModel)]="subirDatos.tipo_insumo">
+                        <option value="">—</option>
+                        <option *ngFor="let t of tipoInsumoOpciones" [value]="t">{{ t }}</option>
+                      </select>
+                    </label>
+                    <label>Código
+                      <input type="text" [(ngModel)]="subirDatos.codigo_insumo" />
+                    </label>
+                    <label>Rendimiento
+                      <input type="number" [(ngModel)]="subirDatos.rendimiento_insumo" />
+                    </label>
+                    <label>Vr. unitario insumo
+                      <input type="number" [(ngModel)]="subirDatos.precio_unitario_apu" />
+                    </label>
+                    <label>Vr. parcial
+                      <input type="number" [(ngModel)]="subirDatos.precio_parcial_apu" />
+                    </label>
+                  </div>
                 </div>
-                <p class="subir-hint">Proyecto, entidad e ítem quedan vacíos: es un insumo suelto de referencia.</p>
+
+                <button type="button" class="subir-toggle" (click)="subirAvanzado = !subirAvanzado">
+                  <span class="material-symbols-outlined">{{ subirAvanzado ? 'expand_less' : 'expand_more' }}</span>
+                  {{ subirAvanzado ? 'Ocultar' : 'Agregar' }} ítem, proyecto y entidad
+                </button>
+
+                <ng-container *ngIf="subirAvanzado">
+                  <div class="subir-fieldset">
+                    <span class="subir-legend">Ítem / APU</span>
+                    <div class="subir-grid">
+                      <label>Código ítem
+                        <input type="text" [(ngModel)]="subirDatos.item" />
+                      </label>
+                      <label>Unidad ítem
+                        <input type="text" [(ngModel)]="subirDatos.item_unidad" />
+                      </label>
+                      <label>Vr. unitario ítem
+                        <input type="number" [(ngModel)]="subirDatos.precio_unitario" />
+                      </label>
+                      <label class="col-full">Descripción del ítem
+                        <input type="text" [(ngModel)]="subirDatos.items_descripcion" />
+                      </label>
+                    </div>
+                  </div>
+                  <div class="subir-fieldset">
+                    <span class="subir-legend">Proyecto / entidad</span>
+                    <div class="subir-grid">
+                      <label>Proyecto
+                        <input type="text" [(ngModel)]="subirDatos.nombre_proyecto" />
+                      </label>
+                      <label>Entidad
+                        <input type="text" [(ngModel)]="subirDatos.entidad" />
+                      </label>
+                      <label>Ciudad
+                        <input type="text" [(ngModel)]="subirDatos.ciudad" />
+                      </label>
+                      <label>Contratista
+                        <input type="text" [(ngModel)]="subirDatos.contratista" />
+                      </label>
+                      <label>N.º contrato
+                        <input type="text" [(ngModel)]="subirDatos.numero_contrato" />
+                      </label>
+                      <label>Fecha aprobación
+                        <input type="date" [(ngModel)]="subirDatos.fecha_aprobacion_apu" />
+                      </label>
+                    </div>
+                  </div>
+                </ng-container>
+
                 <div class="subir-actions">
                   <button class="action-btn primary" [disabled]="subirGuardando" (click)="confirmarSubir(idx)">
                     {{ subirGuardando ? 'Subiendo…' : 'Confirmar y subir' }}

@@ -37,11 +37,27 @@ class TipoComparacionRequest(BaseModel):
 
 
 class SubirInsumoRequest(BaseModel):
+    # Insumo
     insumo_descripcion: str
     insumo_unidad: Optional[str] = None
     tipo_insumo: Optional[str] = None
     codigo_insumo: Optional[str] = None
+    rendimiento_insumo: Optional[float] = None
     precio_unitario_apu: Optional[float] = None
+    precio_parcial_apu: Optional[float] = None
+    # Ítem / APU al que pertenece
+    item: Optional[str] = None
+    items_descripcion: Optional[str] = None
+    item_unidad: Optional[str] = None
+    precio_unitario: Optional[float] = None
+    # Proyecto / entidad (contexto del documento)
+    nombre_proyecto: Optional[str] = None
+    entidad: Optional[str] = None
+    ciudad: Optional[str] = None
+    pais: Optional[str] = None
+    contratista: Optional[str] = None
+    numero_contrato: Optional[str] = None
+    fecha_aprobacion_apu: Optional[str] = None
     observacion: Optional[str] = None
 
 log = logging.getLogger("mapus.presentation.analisis")

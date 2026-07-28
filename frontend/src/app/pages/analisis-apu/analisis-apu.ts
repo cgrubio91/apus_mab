@@ -121,11 +121,27 @@ export interface BancoRefInsumo {
 }
 
 export interface SugerenciaInsumo {
+  // Insumo
   insumo_descripcion?: string;
   insumo_unidad?: string;
   tipo_insumo?: string;
   codigo_insumo?: string;
+  rendimiento_insumo?: number | null;
   precio_unitario_apu?: number | null;
+  precio_parcial_apu?: number | null;
+  // Ítem / APU al que pertenece
+  item?: string;
+  items_descripcion?: string;
+  item_unidad?: string;
+  precio_unitario?: number | null;
+  // Proyecto / entidad (contexto del documento)
+  nombre_proyecto?: string;
+  entidad?: string;
+  ciudad?: string;
+  pais?: string;
+  contratista?: string;
+  numero_contrato?: string;
+  fecha_aprobacion_apu?: string;
 }
 
 export interface InsumoComparado {
@@ -584,16 +600,51 @@ export class AnalisisApu implements OnInit {
   subirGuardando = false;
   subidos = new Set<number>();
 
+  subirAvanzado = false;
+
   abrirSubir(idx: number, ins: InsumoComparado): void {
     this.subiendoIdx = idx;
+    this.subirAvanzado = false;
     const s = ins.sugerencia || {};
+    // Insumo crudo extraído del documento (trae rendimiento, item, precio_parcial…)
+    const raw = this.buscarInsumoCrudo(ins);
+    // Referencia del banco más parecida (para sugerir proyecto/entidad/ciudad)
+    const ref = (ins.banco_referencia || [])[0] || {};
+    const sol: Partial<SolicitudApu> = this.selectedSolicitud || {};
     this.subirDatos = {
-      insumo_descripcion: s.insumo_descripcion ?? ins.descripcion ?? '',
-      insumo_unidad: s.insumo_unidad ?? ins.unidad ?? '',
-      tipo_insumo: s.tipo_insumo ?? ins.tipo_insumo ?? '',
-      codigo_insumo: s.codigo_insumo ?? ins.codigo ?? '',
-      precio_unitario_apu: s.precio_unitario_apu ?? ins.mejor_precio ?? null,
+      insumo_descripcion: s.insumo_descripcion ?? ins.descripcion ?? raw?.insumo_descripcion ?? '',
+      insumo_unidad: s.insumo_unidad ?? ins.unidad ?? raw?.insumo_unidad ?? '',
+      tipo_insumo: s.tipo_insumo ?? ins.tipo_insumo ?? raw?.tipo_insumo ?? '',
+      codigo_insumo: s.codigo_insumo ?? ins.codigo ?? raw?.codigo_insumo ?? '',
+      rendimiento_insumo: raw?.rendimiento_insumo ?? null,
+      precio_unitario_apu: s.precio_unitario_apu ?? raw?.precio_unitario_apu ?? ins.mejor_precio ?? null,
+      precio_parcial_apu: raw?.precio_parcial_apu ?? null,
+      // Ítem / APU
+      item: raw?.item ?? '',
+      items_descripcion: raw?.items_descripcion ?? '',
+      item_unidad: raw?.item_unidad ?? '',
+      precio_unitario: raw?.precio_unitario ?? null,
+      // Proyecto / entidad: primero lo del documento, si no, la referencia del banco
+      nombre_proyecto: sol.nombre_proyecto ?? ref.nombre_proyecto ?? '',
+      contratista: sol.contratista ?? ref.contratista ?? '',
+      entidad: ref.entidad ?? '',
+      ciudad: ref.ciudad ?? '',
+      pais: '',
+      numero_contrato: '',
+      fecha_aprobacion_apu: '',
     };
+  }
+
+  /** Ubica el insumo crudo extraído que corresponde al insumo comparado, para
+   * arrastrar rendimiento, item y precios que la vista agregada no conserva. */
+  private buscarInsumoCrudo(ins: InsumoComparado): SolicitudInsumo | undefined {
+    const insumos = this.selectedSolicitud?.insumos || [];
+    const objetivo = (ins.descripcion || '').trim().toLowerCase();
+    const candidatos = ins.descripciones_originales?.map((d) => d.trim().toLowerCase()) || [];
+    return insumos.find((r) => {
+      const d = (r.insumo_descripcion || '').trim().toLowerCase();
+      return d && (d === objetivo || candidatos.includes(d));
+    });
   }
 
   cancelarSubir(): void {

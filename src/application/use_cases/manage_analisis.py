@@ -206,6 +206,17 @@ def _agrupar_por_item(insumos: list[dict]) -> list[dict]:
                 "precio_unitario_apu": ins.get("precio_unitario_apu"),
                 "precio_parcial_apu": ins.get("precio_parcial_apu"),
             })
+
+    # Fallback: si la IA no extrajo precio_unitario del ítem, se calcula de los insumos.
+    for apu in grupos.values():
+        if apu["precio_ofertado"] == 0.0 and apu["insumos"]:
+            total = sum(
+                float(i.get("precio_parcial_apu") or 0) or
+                (float(i.get("rendimiento_insumo") or 0) * float(i.get("precio_unitario_apu") or 0))
+                for i in apu["insumos"]
+            )
+            if total > 0:
+                apu["precio_ofertado"] = round(total, 2)
     return [grupos[k] for k in orden]
 
 
@@ -552,13 +563,33 @@ def subir_insumo_al_banco(datos: dict) -> dict:
 
     from src.infrastructure.database.repositories.apu_repository import insert_apus_batch
 
+    def _txt(k):
+        v = datos.get(k)
+        return v.strip() if isinstance(v, str) and v.strip() else None
+
     fila = {
+        # Insumo
         "insumo_descripcion": descripcion,
-        "insumo_unidad": (datos.get("insumo_unidad") or "").strip() or None,
-        "tipo_insumo": (datos.get("tipo_insumo") or "").strip() or None,
-        "codigo_insumo": (datos.get("codigo_insumo") or "").strip() or None,
+        "insumo_unidad": _txt("insumo_unidad"),
+        "tipo_insumo": _txt("tipo_insumo"),
+        "codigo_insumo": _txt("codigo_insumo"),
+        "rendimiento_insumo": datos.get("rendimiento_insumo"),
         "precio_unitario_apu": datos.get("precio_unitario_apu"),
-        "observacion": (datos.get("observacion") or "Insumo cargado desde comparación de proveedores").strip(),
+        "precio_parcial_apu": datos.get("precio_parcial_apu"),
+        # Ítem / APU
+        "item": _txt("item"),
+        "items_descripcion": _txt("items_descripcion"),
+        "item_unidad": _txt("item_unidad"),
+        "precio_unitario": datos.get("precio_unitario"),
+        # Proyecto / entidad
+        "nombre_proyecto": _txt("nombre_proyecto"),
+        "entidad": _txt("entidad"),
+        "ciudad": _txt("ciudad"),
+        "pais": _txt("pais"),
+        "contratista": _txt("contratista"),
+        "numero_contrato": _txt("numero_contrato"),
+        "fecha_aprobacion_apu": _txt("fecha_aprobacion_apu"),
+        "observacion": (datos.get("observacion") or "Insumo cargado manualmente al banco").strip(),
     }
     resultado = insert_apus_batch([fila])
     if resultado.get("status") != "success":
@@ -912,6 +943,7 @@ def _crear_items_presupuesto(solicitud_id: int, conn) -> int:
         return 0
 
     creados = 0
+    total_agregado = 0.0
     items_vistos = set()
     for item in items_analizados:
         codigo = (item.get("item") or "").strip()
@@ -929,8 +961,19 @@ def _crear_items_presupuesto(solicitud_id: int, conn) -> int:
                 unidad, precio, conn=conn,
             )
             creados += 1
+            total_agregado += precio
         except Exception:
             log.exception("Error creando item_proyecto para %s", codigo)
+
+    if creados > 0:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """UPDATE proyectos
+                   SET presupuesto_total = COALESCE(presupuesto_total, 0) + %s
+                   WHERE id = %s""",
+                (total_agregado, proyecto_id),
+            )
+        log.info("Proyecto %d: presupuesto_total incrementado en %.2f", proyecto_id, total_agregado)
     return creados
 
 

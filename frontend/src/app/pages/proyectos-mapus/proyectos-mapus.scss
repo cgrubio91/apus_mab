@@ -401,3 +401,101 @@
     th, td { padding: 0.5rem; }
   }
 }
+
+/* ===== Presupuesto desplegable ===== */
+.proyecto-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+  &:hover { background: rgba(0, 0, 0, 0.02); }
+  &.expanded { background: rgba(var(--accent-primary-rgb, 234, 88, 12), 0.06); }
+  .chevron {
+    font-size: 18px;
+    vertical-align: middle;
+    margin-right: 4px;
+    color: var(--text-muted);
+    transition: transform 0.18s ease;
+    &.open { transform: rotate(90deg); color: var(--accent-primary); }
+  }
+}
+
+.detalle-row > td { padding: 0 !important; background: var(--bg-subtle, #fafafa); }
+
+.detalle-panel {
+  padding: 18px 22px 24px;
+  border-top: 1px solid var(--border-color);
+}
+
+.detalle-loading, .detalle-error {
+  display: flex; align-items: center; gap: 10px;
+  color: var(--text-muted); font-size: 14px; padding: 14px 4px;
+}
+.detalle-error { color: #dc2626; }
+.spinner.sm { width: 18px; height: 18px; border-width: 2px; }
+
+.apu-section {
+  background: var(--bg-card);
+  border: 1px solid rgba(22, 163, 74, 0.3);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.apu-section-head, .base-head {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  h4 { margin: 0; font-size: 14px; font-weight: 700; color: var(--text-main); }
+  .material-symbols-outlined { font-size: 20px; }
+}
+.apu-section-head .material-symbols-outlined { color: #16a34a; }
+.apu-total {
+  margin-left: auto; font-weight: 700; font-size: 13px; color: #16a34a;
+  background: rgba(22, 163, 74, 0.1); padding: 3px 10px; border-radius: 999px;
+}
+.base-head { margin-top: 4px; .material-symbols-outlined { color: var(--accent-primary); } }
+.cap-count, .cap-count { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+.detalle-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+  th {
+    text-align: left; font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--text-muted); padding: 6px 10px; border-bottom: 1px solid var(--border-color);
+  }
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border-color); color: var(--text-main); }
+  tr:last-child td { border-bottom: none; }
+  td.mono { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+  td.strong { font-weight: 700; }
+  .apu-item { background: rgba(22, 163, 74, 0.04); }
+}
+.np-badge {
+  font-size: 9px; font-weight: 700; background: var(--accent-primary); color: #fff;
+  padding: 1px 5px; border-radius: 4px; margin-left: 4px; vertical-align: middle;
+}
+
+.capitulo { margin-bottom: 4px; border: 1px solid var(--border-color); border-radius: var(--radius-md); overflow: hidden; background: var(--bg-card); }
+.capitulo-head {
+  display: flex; align-items: center; gap: 6px; padding: 9px 12px; cursor: pointer;
+  transition: background 0.15s ease;
+  &:hover { background: rgba(0, 0, 0, 0.02); }
+  .chevron { font-size: 18px; color: var(--text-muted); transition: transform 0.18s ease; &.open { transform: rotate(90deg); } }
+  .cap-nombre { font-weight: 600; font-size: 13px; color: var(--text-main); }
+  .cap-valor { margin-left: auto; font-weight: 700; font-size: 13px; color: var(--text-main); font-variant-numeric: tabular-nums; }
+}
+.capitulo .detalle-table { border-top: 1px solid var(--border-color); }
+.capitulo .detalle-table th { padding-left: 14px; }
+.capitulo .detalle-table td:first-child { padding-left: 14px; }
+
+.aprob-col { position: relative; text-align: center; }
+.info-btn {
+  background: none; border: none; cursor: pointer; color: var(--accent-primary);
+  padding: 2px; border-radius: 6px; line-height: 0;
+  .material-symbols-outlined { font-size: 18px; }
+  &:hover, &.active { background: rgba(var(--accent-primary-rgb, 234, 88, 12), 0.12); }
+}
+.aprob-popover {
+  position: absolute; right: 0; top: 100%; z-index: 20; width: 260px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  padding: 12px 14px; text-align: left;
+  p { margin: 0 0 6px; font-size: 12.5px; color: var(--text-main); }
+  .rol { color: var(--text-muted); }
+  .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 6px; margin-bottom: 0; }
+}
