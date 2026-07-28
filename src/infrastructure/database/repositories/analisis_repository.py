@@ -543,21 +543,32 @@ class AnalisisMySQLRepository:
 
     def buscar_apus_similares(self, descripcion: str, insumos_desc: Optional[list] = None,
                               max_candidatos: int = 5, max_insumos: int = 40) -> list:
-        """Devuelve los APUs del banco más parecidos al ítem cotizado."""
-        objetivo = _tokenizar(descripcion or "")
-        for d in (insumos_desc or []):
-            objetivo |= _tokenizar(d or "")
-        if not objetivo:
-            return []
-        objetivo_exp = _expandir_compuestos(objetivo)
+        """Devuelve los APUs del banco más parecidos al ítem cotizado.
 
-        # Usa tokens originales + expansiones largas (>=5) para evitar ruido (ej. "mini").
-        expansion_larga = {t for t in (objetivo_exp - objetivo) if len(t) >= 5}
-        palabras = sorted(objetivo | expansion_larga, key=len, reverse=True)[:12]
+        Criterio de emparejamiento (en orden de prioridad):
+          1. Descripción del ítem (que hable del mismo trabajo).
+          2. Estructura del APU: mayor cantidad de insumos similares.
+        El precio/rendimiento/unidad se comparan después, ya sobre el equivalente elegido.
+        """
+        # Tokens del ITEM (criterio primario) separados de los tokens de INSUMOS (secundario).
+        tokens_item = _tokenizar(descripcion or "")
+        if not tokens_item:
+            return []
+        tokens_item_exp = _expandir_compuestos(tokens_item)
+
+        tokens_insumos: set = set()
+        for d in (insumos_desc or []):
+            tokens_insumos |= _tokenizar(d or "")
+
+        # El pool de candidatos se arma con la DESCRIPCIÓN DEL ÍTEM (no con los insumos),
+        # para no traer APUs de otro trabajo que solo comparten un equipo (ej. minicargador).
+        expansion_larga = {t for t in (tokens_item_exp - tokens_item) if len(t) >= 5}
+        palabras = sorted(tokens_item | expansion_larga, key=len, reverse=True)[:12]
+        # Tokens distintivos del ítem para exigir que el candidato hable del mismo trabajo.
+        tokens_distintivos = [t for t in tokens_item if len(t) >= 5] or list(tokens_item)
 
         like_item = " OR ".join(["items_descripcion LIKE %s" for _ in palabras])
-        like_ins = " OR ".join(["insumo_descripcion LIKE %s" for _ in palabras])
-        params = [f"%{p}%" for p in palabras] + [f"%{p}%" for p in palabras]
+        params = [f"%{p}%" for p in palabras]
 
         with get_db_connection() as conn:
             with conn.cursor(dictionary=True) as cursor:
@@ -572,7 +583,7 @@ class AnalisisMySQLRepository:
                                MAX(CASE WHEN rendimiento_insumo IS NOT NULL AND rendimiento_insumo > 0 THEN 1 ELSE 0 END) AS tiene_rendimiento,
                                GROUP_CONCAT(DISTINCT insumo_descripcion SEPARATOR ' | ') AS insumos_texto
                         FROM apus
-                        WHERE ({like_item}) OR ({like_ins})
+                        WHERE ({like_item})
                         GROUP BY numero_contrato, link_documento, item, items_descripcion,
                                  item_unidad, nombre_proyecto, entidad, ciudad, contratista
                         ORDER BY num_insumos DESC
@@ -583,19 +594,33 @@ class AnalisisMySQLRepository:
                 if not candidatos:
                     return []
 
-                mejor_token = max(objetivo, key=len) if objetivo else ""
+                # Tokens de cada insumo cotizado, para medir cuántos tienen homólogo en el candidato.
+                insumos_objetivo = [_tokenizar(d or "") for d in (insumos_desc or [])]
+                insumos_objetivo = [t for t in insumos_objetivo if t]
 
                 for c in candidatos:
-                    texto = (c.get("items_descripcion") or "") + " " + (c.get("insumos_texto") or "")
-                    tokens_cand = _tokenizar(texto)
-                    tokens_cand_exp = _expandir_compuestos(tokens_cand)
-                    c["_score"] = _similitud_tokens(objetivo_exp, tokens_cand_exp)
-                    item_text = (c.get("items_descripcion") or "") + " " + (c.get("insumos_texto") or "")
-                    c["_match_mejor"] = bool(mejor_token) and _coincidencia_compuesta(mejor_token, item_text)
+                    # (1) PRIMARIO: parecido de la DESCRIPCIÓN DEL ÍTEM (mismo trabajo).
+                    desc_cand = c.get("items_descripcion") or ""
+                    tokens_desc_cand = _expandir_compuestos(_tokenizar(desc_cand))
+                    c["_sim_item"] = _similitud_tokens(tokens_item_exp, tokens_desc_cand)
+                    # El candidato debe hablar del mismo trabajo: algún token distintivo del ítem
+                    # aparece en SU DESCRIPCIÓN (no en sus insumos).
+                    c["_habla_del_item"] = any(
+                        _coincidencia_compuesta(t, desc_cand) for t in tokens_distintivos
+                    )
+                    # (2) SECUNDARIO: estructura del APU — nº de insumos cotizados con homólogo.
+                    tokens_ins_cand = _expandir_compuestos(_tokenizar(c.get("insumos_texto") or ""))
+                    coincidentes = 0
+                    for tset in insumos_objetivo:
+                        principal = max(tset, key=len)
+                        if principal in tokens_ins_cand or _similitud_tokens(tset, tokens_ins_cand) >= 0.15:
+                            coincidentes += 1
+                    c["_insumos_match"] = coincidentes
 
+                # Solo candidatos cuya DESCRIPCIÓN DE ÍTEM se parezca al ítem cotizado.
                 candidatos = [
                     c for c in candidatos
-                    if c["_score"] > 0 and c["_match_mejor"]
+                    if c["_sim_item"] > 0 and c["_habla_del_item"]
                 ]
 
                 def _completitud_apu(c: dict) -> int:
@@ -606,8 +631,10 @@ class AnalisisMySQLRepository:
                         n += 1
                     return n
 
+                # Orden: 1º descripción del ítem, 2º estructura (insumos similares), luego completitud.
                 candidatos.sort(
-                    key=lambda c: (round(c["_score"], 3), _completitud_apu(c), c.get("num_insumos", 0)),
+                    key=lambda c: (round(c["_sim_item"], 3), c["_insumos_match"],
+                                   _completitud_apu(c), c.get("num_insumos", 0)),
                     reverse=True,
                 )
                 top = candidatos[:max_candidatos]
@@ -626,11 +653,12 @@ class AnalisisMySQLRepository:
                          c.get("items_descripcion"), c.get("nombre_proyecto"), max_insumos),
                     )
                     c["insumos"] = cursor.fetchall()
-                    c["similitud"] = round(c.pop("_score", 0.0), 3)
+                    c["similitud"] = round(c.pop("_sim_item", 0.0), 3)
+                    c["insumos_coincidentes"] = c.pop("_insumos_match", 0)
                     c.pop("insumos_texto", None)
                     c.pop("tiene_valor", None)
                     c.pop("tiene_rendimiento", None)
-                    c.pop("_match_mejor", None)
+                    c.pop("_habla_del_item", None)
                 return top
 
     def eliminar_solicitud(self, solicitud_id: int) -> bool:

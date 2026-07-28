@@ -1559,3 +1559,80 @@
   padding: 1px 8px;
   border-radius: 999px;
 }
+
+/* ===== Tabla de análisis compacta + datos fijos reubicados ===== */
+.analisis-table-compacta {
+  th.th-desc { width: auto; }
+  .desc-col { white-space: normal; line-height: 1.35; }
+  td.item-id { white-space: nowrap; }
+
+  .precio-resumen {
+    text-align: right;
+    white-space: nowrap;
+    .pr-ofertado { font-weight: 700; color: var(--text-main); }
+    .pr-sub {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+      &.muted { font-style: italic; }
+    }
+    .diff {
+      font-weight: 700;
+      &.positive { color: #16a34a; }
+      &.negative { color: #dc2626; }
+    }
+  }
+
+  .rec-cell {
+    position: relative;
+    white-space: nowrap;
+    .mini-ind {
+      display: inline-flex;
+      gap: 2px;
+      margin-left: 6px;
+      vertical-align: middle;
+      .status-icon { font-size: 16px; }
+    }
+  }
+}
+
+.resumen-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 2px 14px;
+  border-bottom: 1px dashed var(--border-color);
+  margin-bottom: 14px;
+
+  .chip {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 5px 12px;
+    background: #f8f9fb;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    min-width: 92px;
+  }
+  .chip-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-weight: 700;
+  }
+  .chip-val {
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: var(--text-main);
+    font-variant-numeric: tabular-nums;
+    &.ok { color: #16a34a; }
+    &.bad { color: #dc2626; }
+    &.diff.positive { color: #16a34a; }
+    &.diff.negative { color: #dc2626; }
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .resumen-chips .chip { background: rgba(255,255,255,0.03); }
+}

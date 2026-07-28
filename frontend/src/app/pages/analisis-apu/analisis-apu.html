@@ -382,18 +382,13 @@
               </div>
 
               <div class="table-responsive">
-                <table class="analisis-table">
+                <table class="analisis-table analisis-table-compacta">
                   <thead>
                     <tr>
-                      <th>Ítem</th>
-                      <th>Descripción</th>
-                      <th class="numeric">P. Ofertado</th>
-                      <th class="numeric">Ref. Banco</th>
-                      <th class="numeric">Diferencia</th>
-                      <th>Banco</th>
-                      <th>Estruct.</th>
-                      <th>Rendim.</th>
-                      <th>Recomendación</th>
+                      <th class="th-item">Ítem</th>
+                      <th class="th-desc">Descripción del ítem</th>
+                      <th class="numeric th-precio">Oferta vs Banco</th>
+                      <th class="th-rec">Recomendación</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -404,34 +399,41 @@
                         {{ item.item }}
                       </td>
                       <td class="desc-col">{{ item.descripcion }}</td>
-                      <td class="numeric font-bold">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</td>
-                      <td class="numeric">${{ (item.mejor_precio_banco || 0) | number:'1.0-0' }}</td>
-                      <td class="numeric diff-cell" [class.positive]="(item.diferencia_precio || 0) < 0" [class.negative]="(item.diferencia_precio || 0) > 0">
-                        {{ item.diferencia_precio ? '$' + (item.diferencia_precio | number:'1.0-0') : '-' }}
+                      <td class="numeric precio-resumen">
+                        <div class="pr-ofertado">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</div>
+                        <div class="pr-sub" *ngIf="item.existe_en_banco">
+                          banco ${{ (item.mejor_precio_banco || 0) | number:'1.0-0' }}
+                          <span class="diff" *ngIf="item.diferencia_precio" [class.positive]="(item.diferencia_precio || 0) < 0" [class.negative]="(item.diferencia_precio || 0) > 0">
+                            {{ (item.diferencia_precio || 0) < 0 ? '▼' : '▲' }} ${{ (item.diferencia_precio || 0) | number:'1.0-0' }}
+                          </span>
+                        </div>
+                        <div class="pr-sub muted" *ngIf="!item.existe_en_banco">sin ref. en banco</div>
                       </td>
-                      <td>
-                        <span class="badge mini" [class.badge-success]="item.existe_en_banco" [class.badge-secondary]="!item.existe_en_banco">
-                          {{ item.existe_en_banco ? 'Sí' : 'No' }}
-                        </span>
-                      </td>
-                      <td>
-                        <span class="status-icon material-symbols-outlined" [class.icon-success]="item.estructura_insumos_coincide" [class.icon-danger]="item.estructura_insumos_coincide === false" [class.icon-secondary]="item.estructura_insumos_coincide === null">
-                          {{ item.estructura_insumos_coincide === true ? 'check' : item.estructura_insumos_coincide === false ? 'close' : 'remove' }}
-                        </span>
-                      </td>
-                      <td>
-                        <span class="status-icon material-symbols-outlined" [class.icon-success]="item.rendimiento_coincide" [class.icon-danger]="item.rendimiento_coincide === false" [class.icon-secondary]="item.rendimiento_coincide === null">
-                          {{ item.rendimiento_coincide === true ? 'check' : item.rendimiento_coincide === false ? 'close' : 'remove' }}
-                        </span>
-                      </td>
-                      <td>
+                      <td class="rec-cell">
                         <span class="rec-badge {{ recomendacionClass(item.recomendacion) }}">{{ item.recomendacion }}</span>
+                        <span class="mini-ind" title="Estructura de insumos / Rendimiento">
+                          <span class="status-icon material-symbols-outlined" [class.icon-success]="item.estructura_insumos_coincide" [class.icon-danger]="item.estructura_insumos_coincide === false" [class.icon-secondary]="item.estructura_insumos_coincide === null">
+                            {{ item.estructura_insumos_coincide === true ? 'account_tree' : item.estructura_insumos_coincide === false ? 'close' : 'remove' }}
+                          </span>
+                          <span class="status-icon material-symbols-outlined" [class.icon-success]="item.rendimiento_coincide" [class.icon-danger]="item.rendimiento_coincide === false" [class.icon-secondary]="item.rendimiento_coincide === null">
+                            {{ item.rendimiento_coincide === true ? 'speed' : item.rendimiento_coincide === false ? 'close' : 'remove' }}
+                          </span>
+                        </span>
                         <div class="obs-tooltip" *ngIf="item.observaciones">{{ item.observaciones }}</div>
                       </td>
                     </tr>
 
                     <tr class="detalle-row" *ngIf="isExpanded(grupo.grupo, idx)">
-                      <td [attr.colspan]="9">
+                      <td [attr.colspan]="4">
+                        <!-- Datos fijos del APU general, reubicados como tira compacta -->
+                        <div class="resumen-chips">
+                          <span class="chip"><span class="chip-label">P. Ofertado</span><span class="chip-val">${{ (item.precio_ofertado || 0) | number:'1.0-0' }}</span></span>
+                          <span class="chip"><span class="chip-label">Ref. Banco</span><span class="chip-val">${{ (item.mejor_precio_banco || 0) | number:'1.0-0' }}</span></span>
+                          <span class="chip"><span class="chip-label">Diferencia</span><span class="chip-val diff" [class.positive]="(item.diferencia_precio || 0) < 0" [class.negative]="(item.diferencia_precio || 0) > 0">{{ item.diferencia_precio ? '$' + (item.diferencia_precio | number:'1.0-0') : '—' }}</span></span>
+                          <span class="chip"><span class="chip-label">En banco</span><span class="chip-val">{{ item.existe_en_banco ? 'Sí' : 'No' }}</span></span>
+                          <span class="chip"><span class="chip-label">Estructura</span><span class="chip-val" [class.ok]="item.estructura_insumos_coincide" [class.bad]="item.estructura_insumos_coincide === false">{{ item.estructura_insumos_coincide === true ? 'Coincide' : item.estructura_insumos_coincide === false ? 'Difiere' : '—' }}</span></span>
+                          <span class="chip"><span class="chip-label">Rendimiento</span><span class="chip-val" [class.ok]="item.rendimiento_coincide" [class.bad]="item.rendimiento_coincide === false">{{ item.rendimiento_coincide === true ? 'Coincide' : item.rendimiento_coincide === false ? 'Difiere' : '—' }}</span></span>
+                        </div>
                         <div class="comparacion">
                           <div class="comp-col comp-cotizado">
                             <h4>Insumos cotizados <span class="count">({{ item.insumos_cotizados?.length || 0 }})</span></h4>
