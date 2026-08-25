@@ -1,0 +1,213 @@
+<div class="constructor-container">
+  <header class="page-header">
+    <h2>Constructor de APU</h2>
+    <p class="subtitle">
+      El residente define la actividad, la IA propone la estructura con datos del banco,
+      el contratista registra sus precios y se envía a análisis.
+    </p>
+  </header>
+
+  <ol class="wizard-steps">
+    <li [class.active]="paso >= 1" [class.done]="paso > 1">1 · Actividad</li>
+    <li [class.active]="paso >= 2" [class.done]="paso > 2">2 · Estructura IA</li>
+    <li [class.active]="paso >= 3" [class.done]="paso > 3">3 · Precios</li>
+    <li [class.active]="paso >= 4">4 · Análisis</li>
+  </ol>
+
+  <div class="alert error" *ngIf="errorMessage">
+    <span>{{ errorMessage }}</span>
+    <button class="alert-close" (click)="errorMessage = ''">×</button>
+  </div>
+  <div class="alert success" *ngIf="successMessage">
+    <span>{{ successMessage }}</span>
+    <button class="alert-close" (click)="successMessage = ''">×</button>
+  </div>
+  <div class="alert info" *ngIf="isLoading"><span>Procesando…</span></div>
+
+  <!-- PASO 1: Actividad -->
+  <section class="card" *ngIf="paso === 1">
+    <h3>1 · Define la actividad o ítem</h3>
+    <div class="form-grid">
+      <label class="full">
+        Actividad / descripción del ítem *
+        <textarea rows="2" [(ngModel)]="descripcionActividad"
+          placeholder='Ej.: "Construcción de pilotes de concreto de 60 cm en Medellín"'></textarea>
+      </label>
+      <label>
+        Unidad del ítem
+        <input type="text" [(ngModel)]="unidadActividad" placeholder="m, m³, und…" maxlength="20" />
+      </label>
+      <label>
+        Código del ítem (opcional)
+        <input type="text" [(ngModel)]="codigoItem" placeholder="Se genera NPC-{id} si se deja vacío" />
+      </label>
+      <label>
+        Ciudad / zona de la obra
+        <select [(ngModel)]="ciudad">
+          <option value="">Sin especificar</option>
+          <option *ngFor="let c of ciudades" [value]="c">{{ c }}</option>
+        </select>
+      </label>
+    </div>
+    <div class="actions">
+      <button class="action-btn primary" (click)="crearYSugerir()" [disabled]="isLoading">
+        Crear borrador y proponer estructura
+      </button>
+    </div>
+    <div class="continuar">
+      ¿Tienes un borrador en curso?
+      <input type="number" [(ngModel)]="continuarId" placeholder="N° solicitud" min="1" />
+      <button class="action-btn" (click)="continuarBorrador()" [disabled]="!continuarId || isLoading">Continuar</button>
+    </div>
+  </section>
+
+  <!-- PASO 2: Propuesta IA -->
+  <ng-container *ngIf="paso === 2">
+    <section class="card" *ngIf="preguntasIa.length">
+      <h3>La IA necesita más información</h3>
+      <div class="pregunta" *ngFor="let p of preguntasIa; let i = index">
+        <span class="pregunta-texto">{{ p }}</span>
+        <input type="text" [(ngModel)]="respuestasPreguntas[i]" placeholder="Tu respuesta…" />
+      </div>
+      <div class="actions">
+        <button class="action-btn primary" (click)="refinar()" [disabled]="isLoading">Responder y refinar</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h3>2 · Estructura propuesta {{ totalInsumos ? '(' + totalInsumos + ' insumos)' : '' }}</h3>
+      <p class="notas-ia" *ngIf="propuesta?.notas">{{ propuesta.notas }}</p>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th></th><th>Tipo</th><th>Descripción</th><th>Und.</th>
+              <th>Rendimiento</th><th>Precio banco</th><th>Fuente</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let f of filas; let i = index" [class.row-off]="!f.incluir">
+              <td><input type="checkbox" [(ngModel)]="f.incluir" /></td>
+              <td>
+                <select [(ngModel)]="f.tipo_insumo">
+                  <option *ngFor="let t of tiposInsumo" [value]="t">{{ t }}</option>
+                </select>
+              </td>
+              <td><input type="text" [(ngModel)]="f.descripcion" /></td>
+              <td><input type="text" [(ngModel)]="f.unidad" class="w-und" /></td>
+              <td><input type="number" step="0.01" min="0" [(ngModel)]="f.rendimiento" class="w-num" /></td>
+              <td class="precio-banco">
+                <span *ngIf="f.precio !== null; else sinPrecioRef">{{ f.precio | number:'1.0-0' }}</span>
+                <ng-template #sinPrecioRef><span class="muted">sin ref.</span></ng-template>
+              </td>
+              <td class="fuente" [title]="f.fuente">{{ f.fuente || '—' }}</td>
+              <td><button class="icon-btn" title="Quitar fila" (click)="eliminarFila(i)">✕</button></td>
+            </tr>
+            <tr *ngIf="!filas.length"><td colspan="8" class="muted center">Sin propuesta todavía.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="referencias" *ngIf="referenciasUsadas.length">
+        <h4>Referencias usadas del banco</h4>
+        <ul>
+          <li *ngFor="let r of referenciasUsadas">
+            <strong>{{ r.descripcion || r.item }}</strong>
+            — {{ r.ciudad || 's/ciudad' }} · {{ r.fecha || 's/fecha' }}
+            · vigencia: {{ r.recencia }}
+            <span *ngIf="r.precio_unitario"> · ${{ r.precio_unitario | number:'1.0-0' }}</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="actions spread">
+        <button class="action-btn" (click)="agregarFilaVacia()">+ Agregar insumo</button>
+        <div>
+          <button class="action-btn" (click)="generarSugerencia()" [disabled]="isLoading">Regenerar propuesta</button>
+          <button class="action-btn primary" (click)="aplicarEstructura()" [disabled]="isLoading">
+            Aplicar estructura
+          </button>
+        </div>
+      </div>
+    </section>
+  </ng-container>
+
+  <!-- PASO 3: Precios del contratista -->
+  <section class="card" *ngIf="paso === 3">
+    <h3>3 · Precios del contratista</h3>
+    <p class="hint">
+      Registra los precios actualizados según cotizaciones. Los precios en cero no se envían al análisis.
+    </p>
+
+    <div class="file-input-wrapper">
+      <input type="file" id="cotizacionInput" accept=".pdf,.xlsx,.xls"
+             (change)="onArchivoCotizacion($event)" [disabled]="isLoading" />
+      <label for="cotizacionInput" class="custom-file-btn">Cargar cotización (PDF/Excel)</label>
+      <span class="muted">— empareja las filas con la estructura automáticamente</span>
+    </div>
+
+    <div class="sin-coincidencia" *ngIf="sinCoincidencia.length">
+      <h4>Filas de la cotización sin coincidencia (revísalas):</h4>
+      <ul>
+        <li *ngFor="let f of sinCoincidencia">{{ f.insumo_descripcion }} — ${{ f.precio_unitario_apu || f.precio_unitario | number:'1.0-0' }}</li>
+      </ul>
+    </div>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Descripción</th><th>Und.</th><th>Rendimiento</th>
+            <th>Precio banco</th><th>Precio contratista *</th><th>Fuente banco</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let ins of insumosBorrador">
+            <td>{{ ins.insumo_descripcion }}</td>
+            <td>{{ ins.insumo_unidad || '—' }}</td>
+            <td>{{ ins.rendimiento_insumo ?? '—' }}</td>
+            <td>
+              <span *ngIf="ins.precio_banco != null; else sref">{{ ins.precio_banco | number:'1.0-0' }}</span>
+              <ng-template #sref><span class="muted">sin ref.</span></ng-template>
+            </td>
+            <td>
+              <input type="number" min="0" [(ngModel)]="preciosContratista[ins.id]" class="w-num" />
+            </td>
+            <td class="fuente" [title]="ins.fuente_precio">{{ ins.fuente_precio || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="actions spread">
+      <span class="muted">Con precio: {{ conPrecio }} de {{ insumosBorrador.length }}</span>
+      <button class="action-btn primary" (click)="guardarPrecios()" [disabled]="isLoading">Guardar precios</button>
+    </div>
+    <div class="actions">
+      <button class="action-btn primary big" (click)="paso = 4" [disabled]="!insumosBorrador.length">
+        Revisar y enviar a análisis →
+      </button>
+    </div>
+  </section>
+
+  <!-- PASO 4: Envío a análisis -->
+  <section class="card" *ngIf="paso === 4">
+    <h3>4 · Enviar a análisis comparativo</h3>
+    <ul class="resumen">
+      <li>Solicitud: <strong>#{{ solicitudId }}</strong></li>
+      <li>Actividad: <strong>{{ descripcionActividad }}</strong></li>
+      <li>Insumos: <strong>{{ insumosBorrador.length }}</strong> · Con precio: <strong>{{ conPrecio }}</strong></li>
+      <li>Ciudad: <strong>{{ ciudad || 'no indicada' }}</strong></li>
+    </ul>
+    <label class="check-line">
+      <input type="checkbox" [(ngModel)]="omitirSinPrecio" />
+      Descartar los insumos que queden sin precio antes de analizar
+    </label>
+    <div class="actions spread">
+      <button class="action-btn" (click)="paso = 3">← Volver a precios</button>
+      <button class="action-btn primary big" (click)="enviarAnalisis()" [disabled]="isLoading">
+        Enviar a análisis
+      </button>
+    </div>
+  </section>
+</div>

@@ -16,6 +16,7 @@ log = logging.getLogger("mapus.application.notificaciones")
 
 # Rol que debe actuar según el estado actual de la solicitud (para recordatorios).
 ROL_RESPONSABLE_POR_ESTADO = {
+    "borrador": "analista",
     "pendiente_analisis": "analista",
     "analizado": "analista",
     "nuevas_cotizaciones": "contraparte",

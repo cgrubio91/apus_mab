@@ -338,6 +338,55 @@ export class ApuService {
     return this.http.delete(`${this.baseUrl}/analisis-apu/${solicitudId}`);
   }
 
+  // ── Constructor de APU (flujo del residente) ────────────────────
+  crearBorrador(payload: {
+    descripcion_actividad: string;
+    unidad_actividad?: string | null;
+    codigo_item?: string | null;
+    ciudad?: string | null;
+    proyecto_id?: number | null;
+  }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu`, payload);
+  }
+
+  sugerirEstructura(solicitudId: number): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/sugerir`, {});
+  }
+
+  refinarPropuesta(solicitudId: number, conversacion: { rol: 'ia' | 'usuario'; texto: string }[]): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/refinar`, { conversacion });
+  }
+
+  aplicarEstructura(solicitudId: number, propuesta: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/estructura`, { propuesta });
+  }
+
+  agregarInsumoBorrador(solicitudId: number, insumo: {
+    tipo_insumo: string; descripcion: string; unidad?: string;
+    rendimiento?: number | null; precio?: number | null; fuente?: string;
+  }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/insumos`, insumo);
+  }
+
+  eliminarInsumoBorrador(solicitudId: number, insumoId: number): Observable<any> {
+    return this.http.delete(`${this.baseUrl}/constructor-apu/${solicitudId}/insumos/${insumoId}`);
+  }
+
+  registrarPrecios(solicitudId: number, precios: { insumo_id: number; precio: number }[]): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/precios`, { precios });
+  }
+
+  cargarPreciosArchivo(solicitudId: number, file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/precios-archivo`, formData);
+  }
+
+  enviarAAnalisis(solicitudId: number, omitirSinPrecio = false): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/enviar-analisis`,
+      { omitir_sin_precio: omitirSinPrecio });
+  }
+
   // ── Notificaciones ──────────────────────────────────────────────
   getNotificaciones(): Observable<{ success: boolean; notificaciones: Notificacion[]; no_leidas: number }> {
     return this.http.get<{ success: boolean; notificaciones: Notificacion[]; no_leidas: number }>(

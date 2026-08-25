@@ -1,6 +1,7 @@
 import { Component, OnInit, ChangeDetectorRef, NgZone, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 import { ApuService } from '../../services/apu';
 import { AuthService } from '../../services/auth.service';
@@ -199,7 +200,7 @@ export interface ProyectoMapus {
 @Component({
   selector: 'app-analisis-apu',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './analisis-apu.html',
   styleUrl: './analisis-apu.scss',
 })

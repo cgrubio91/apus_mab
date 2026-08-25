@@ -42,6 +42,30 @@
   margin-bottom: 16px;
 }
 
+.flujo-nuevo-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  font-size: 14px;
+
+  span {
+    display: block;
+    color: #4b5563;
+    margin-top: 2px;
+  }
+
+  a {
+    text-decoration: none;
+    white-space: nowrap;
+  }
+}
+
 .upload-card {
   background: white;
   border: 1px solid #e5e7eb;

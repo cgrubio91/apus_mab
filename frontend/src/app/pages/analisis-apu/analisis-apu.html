@@ -2,7 +2,7 @@
   <header class="page-header animate-fade-in">
     <div class="header-titles">
       <h1>Análisis APU</h1>
-      <p>Carga una o varias cotizaciones de nuevos APUs y recibe una preaprobación con análisis comparativo contra el banco de APUs. Los datos del contratista y proyecto se extraen automáticamente de los documentos.</p>
+      <p>Revisión, análisis comparativo contra el banco de APUs y flujo de aprobación (analista/residente → subgerente → legal). Los nuevos APUs nacen en el Constructor de APU.</p>
     </div>
   </header>
 
@@ -16,54 +16,19 @@
   </div>
 
   <section class="upload-section" *ngIf="!selectedSolicitud">
-    <div class="section-actions">
-      <button class="action-btn primary" (click)="showUploadForm = !showUploadForm; selectedFiles = []">
-        <ng-container *ngIf="showUploadForm">
-          <span class="material-symbols-outlined">close</span> Cancelar
-        </ng-container>
-        <ng-container *ngIf="!showUploadForm">
-          <span class="material-symbols-outlined">add</span> Nuevo Paquete de Cotizaciones
-        </ng-container>
-      </button>
-    </div>
-
-    <div class="upload-card" *ngIf="showUploadForm">
-      <h3>Cargar Cotizaciones de APU</h3>
-      <p class="help-text">Selecciona uno o varios archivos (PDF o Excel). Cada archivo se agrupará como "Cotización 1", "Cotización 2", etc. El contratista y nombre del proyecto se extraerán automáticamente.</p>
-
-      <div class="form-group">
-        <label>Proyecto (opcional — si no se selecciona, se intentará detectar automáticamente del documento)</label>
-        <select [(ngModel)]="uploadProyectoId">
-          <option [ngValue]="null">-- Detectar automáticamente --</option>
-          <option *ngFor="let p of proyectos" [ngValue]="p.id">{{ p.descripcion }} (#{{ p.id_proy }})</option>
-        </select>
+    <div class="flujo-nuevo-banner">
+      <div>
+        <strong>La carga directa de cotizaciones ya no inicia el flujo.</strong>
+        <span>Ahora el residente construye el APU con la IA y el contratista registra sus precios.</span>
       </div>
-
-      <div class="file-input-wrapper">
-        <input type="file" id="fileInput" multiple (change)="onFilesSelected($event)" accept=".pdf,.xlsx,.xls" />
-        <label for="fileInput" class="custom-file-btn">Seleccionar archivos</label>
-      </div>
-
-      <div class="file-list" *ngIf="selectedFiles.length > 0">
-        <div class="file-item" *ngFor="let f of selectedFiles; let i = index">
-          <span class="file-badge">{{ f.name.split('.').pop() | uppercase }}</span>
-          <span class="file-name">Cotización {{ i + 1 }}: {{ f.name }}</span>
-          <span class="file-size">{{ (f.size / 1024 / 1024) | number:'1.1-1' }} MB</span>
-          <button class="file-remove" (click)="removeFile(i)"><span class="material-symbols-outlined">close</span></button>
-        </div>
-      </div>
-
-      <div class="form-actions">
-        <button class="action-btn primary" (click)="uploadCotizacion()" [disabled]="uploading || selectedFiles.length === 0">
-          {{ uploading ? uploadProgress : 'Subir y Analizar' }}
-        </button>
-      </div>
+      <a routerLink="/constructor-apu" class="action-btn primary">Ir al Constructor de APU</a>
     </div>
 
     <div class="filters-bar">
       <label>Filtrar por estado:</label>
       <select [(ngModel)]="filterEstado" (change)="loadSolicitudes()">
         <option value="">Todos</option>
+        <option value="borrador">Borrador (Constructor)</option>
         <option value="pendiente_analisis">Pendiente Análisis</option>
         <option value="analizado">Analizado</option>
         <option value="preaprobado">Preaprobado</option>

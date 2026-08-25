@@ -19,6 +19,7 @@ from src.infrastructure.ai.provider import ai_provider
 log = logging.getLogger("mapus.application.analisis")
 
 ESTADOS = [
+    "borrador",
     "pendiente_analisis",
     "analizado",
     "preaprobado",

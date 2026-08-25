@@ -6,6 +6,7 @@ import { ConsultaApus } from './pages/consulta-apus/consulta-apus';
 import { NuevosApuIa } from './pages/nuevos-apu-ia/nuevos-apu-ia';
 import { ChatApus } from './pages/chat-apus/chat-apus';
 import { AnalisisApu } from './pages/analisis-apu/analisis-apu';
+import { ConstructorApu } from './pages/constructor-apu/constructor-apu';
 import { HistoricoPrecios } from './pages/historico-precios/historico-precios';
 import { ProyectosMapus } from './pages/proyectos-mapus/proyectos-mapus';
 import { Usuarios } from './pages/usuarios/usuarios';
@@ -30,6 +31,7 @@ export const routes: Routes = [
   { path: 'consulta-apus', component: ConsultaApus, canActivate: [AuthGuard] },
   { path: 'chat-apus', component: ChatApus, canActivate: [AuthGuard] },
   { path: 'analisis-apu', component: AnalisisApu, canActivate: [AuthGuard] },
+  { path: 'constructor-apu', component: ConstructorApu, canActivate: [AuthGuard] },
   { path: 'historico-precios', component: HistoricoPrecios, canActivate: [AuthGuard] },
   { path: 'proyectos-mapus', component: ProyectosMapus, canActivate: [AuthGuard] },
   { path: 'usuarios', component: Usuarios, canActivate: [AuthGuard, adminGuard] },

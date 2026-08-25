@@ -33,6 +33,13 @@
     </li>
 
     <li class="nav-item">
+      <a class="nav-link" routerLink="/constructor-apu" routerLinkActive="active">
+        <span class="icon material-symbols-outlined">construction</span>
+        <span class="text" *ngIf="!isCollapsed">Constructor APU</span>
+      </a>
+    </li>
+
+    <li class="nav-item">
       <a class="nav-link" routerLink="/analisis-apu" routerLinkActive="active">
         <span class="icon material-symbols-outlined">assignment</span>
         <span class="text" *ngIf="!isCollapsed">Análisis APU</span>

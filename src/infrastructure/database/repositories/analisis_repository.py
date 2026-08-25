@@ -139,6 +139,135 @@ class AnalisisMySQLRepository:
             log.exception("Error creando solicitud")
             raise
 
+    def crear_borrador(self, descripcion_actividad: str, unidad_actividad: Optional[str],
+                       codigo_item: Optional[str], ciudad: Optional[str],
+                       proyecto_id: Optional[int]) -> int:
+        """Crea una solicitud en estado 'borrador' originada en el Constructor de APU."""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO solicitudes_apu
+                           (estado, origen, tipo_comparacion, contratista, nombre_proyecto,
+                            descripcion_actividad, unidad_actividad, codigo_item, ciudad, proyecto_id)
+                           VALUES ('borrador', 'constructor', 'apu', 'Por asignar', 'Constructor MAPUS',
+                                   %s, %s, %s, %s, %s)""",
+                        (descripcion_actividad, unidad_actividad, codigo_item, ciudad, proyecto_id),
+                    )
+                    solicitud_id = cursor.lastrowid
+                    conn.commit()
+                    log.info("Borrador de APU %d creado (actividad: %s)", solicitud_id, descripcion_actividad[:80])
+                    return solicitud_id
+        except Exception:
+            log.exception("Error creando borrador de APU")
+            raise
+
+    def reemplazar_insumos_estructura(self, solicitud_id: int, filas: list[dict]) -> None:
+        """Reemplaza TODOS los insumos de la solicitud por la estructura indicada
+        (Constructor de APU). Cada fila trae tipo/desc/und/rendimiento y los datos
+        del banco (precio_banco, rendimiento_banco, fuente_precio)."""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute("DELETE FROM solicitud_insumos WHERE solicitud_id = %s", (solicitud_id,))
+                    for f in filas:
+                        cursor.execute(
+                            """INSERT INTO solicitud_insumos
+                               (solicitud_id, grupo_cotizacion, nombre_archivo,
+                                item, items_descripcion, item_unidad,
+                                codigo_insumo, insumo_descripcion, insumo_unidad,
+                                rendimiento_insumo, precio_unitario_apu, precio_parcial_apu, tipo_insumo,
+                                precio_banco, rendimiento_banco, fuente_precio)
+                               VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s)""",
+                            (solicitud_id, f.get("item"), f.get("items_descripcion"), f.get("item_unidad"),
+                             f.get("codigo_insumo"), f.get("insumo_descripcion"), f.get("insumo_unidad"),
+                             f.get("rendimiento_insumo"), f.get("tipo_insumo"),
+                             f.get("precio_banco"), f.get("rendimiento_banco"), f.get("fuente_precio")),
+                        )
+                    conn.commit()
+        except Exception:
+            log.exception("Error reemplazando estructura de insumos de solicitud %d", solicitud_id)
+            raise
+
+    def insertar_insumo_estructura(self, solicitud_id: int, fila: dict) -> int:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """INSERT INTO solicitud_insumos
+                           (solicitud_id, grupo_cotizacion, nombre_archivo,
+                            item, items_descripcion, item_unidad,
+                            codigo_insumo, insumo_descripcion, insumo_unidad,
+                            rendimiento_insumo, precio_unitario_apu, precio_parcial_apu, tipo_insumo,
+                            precio_banco, rendimiento_banco, fuente_precio)
+                           VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s)""",
+                        (solicitud_id, fila.get("item"), fila.get("items_descripcion"), fila.get("item_unidad"),
+                         fila.get("codigo_insumo"), fila.get("insumo_descripcion"), fila.get("insumo_unidad"),
+                         fila.get("rendimiento_insumo"), fila.get("tipo_insumo"),
+                         fila.get("precio_banco"), fila.get("rendimiento_banco"), fila.get("fuente_precio")),
+                    )
+                    insumo_id = cursor.lastrowid
+                    conn.commit()
+                    return insumo_id
+        except Exception:
+            log.exception("Error insertando insumo en borrador %d", solicitud_id)
+            raise
+
+    def actualizar_precio_insumo(self, solicitud_id: int, insumo_id: int,
+                                 precio_unitario: Optional[float],
+                                 precio_parcial: Optional[float] = None) -> bool:
+        """Fija el precio del CONTRATISTA para un insumo del borrador (precio_unitario_apu).
+        Los datos del banco (precio_banco/fuente) se conservan intactos para comparar."""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE solicitud_insumos SET precio_unitario_apu = %s,
+                               precio_parcial_apu = COALESCE(%s, precio_parcial_apu)
+                           WHERE id = %s AND solicitud_id = %s""",
+                        (precio_unitario, precio_parcial, insumo_id, solicitud_id),
+                    )
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception:
+            log.exception("Error actualizando precio de insumo %d (solicitud %d)", insumo_id, solicitud_id)
+            raise
+
+    def eliminar_insumo_estructura(self, solicitud_id: int, insumo_id: int) -> bool:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM solicitud_insumos WHERE id = %s AND solicitud_id = %s",
+                        (insumo_id, solicitud_id),
+                    )
+                    conn.commit()
+                    return cursor.rowcount > 0
+        except Exception:
+            log.exception("Error eliminando insumo %d de solicitud %d", insumo_id, solicitud_id)
+            raise
+
+    def rellenar_datos_item(self, solicitud_id: int, codigo_item: str, descripcion: str, unidad: str) -> None:
+        """Estampa el código/descripción/unidad del ítem en todas las filas del borrador
+        (necesario para que el análisis y la migración al presupuesto funcionen)."""
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """UPDATE solicitud_insumos
+                           SET item = %s, items_descripcion = %s, item_unidad = %s
+                           WHERE solicitud_id = %s""",
+                        (codigo_item, descripcion, unidad, solicitud_id),
+                    )
+                    cursor.execute(
+                        "UPDATE solicitudes_apu SET codigo_item = %s WHERE id = %s",
+                        (codigo_item, solicitud_id),
+                    )
+                    conn.commit()
+        except Exception:
+            log.exception("Error rellenando datos de ítem en solicitud %d", solicitud_id)
+            raise
+
     def get_solicitudes(self, estado: Optional[str] = None) -> list:
         with get_db_connection() as conn:
             with conn.cursor(dictionary=True) as cursor:

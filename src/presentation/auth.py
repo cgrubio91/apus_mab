@@ -27,21 +27,41 @@ ROLES_HIERARCHY = {
     "user": 10,
 }
 
+# Roles de interventoría (tabla rol) que traducen a un nivel MAPUS según su
+# función real en el flujo de APUs: el residente técnico construye/revisa APU
+# (como analista), el director aprueba (como subgerente) y el inspector apoya
+# la parte comercial (como contraparte). Topógrafo/calidad/BIM no participan
+# del flujo y siguen sin traducir.
+EQUIVALENCIA_ROLES_INTERVENTORIA = {
+    "director": ROLES_HIERARCHY["subgerente"],
+    "residente": ROLES_HIERARCHY["analista"],
+    "inspector": ROLES_HIERARCHY["contraparte"],
+}
+
 def _resolve_mapus_role(role_codes: list[str]) -> str:
     """Un usuario puede tener varios roles (su rol de interventoría + roles MAPUS
     adicionales, ver usuario_rol). Para efectos de autorización en MAPUS se toma
-    el de mayor jerarquía entre los que sean roles MAPUS (admin/subgerente/legal/
-    analista/contraparte/user); roles ajenos a MAPUS (director, topografo, etc.)
-    no traducen a un nivel y se ignoran."""
+    el de mayor jerarquía entre los que sean roles MAPUS o tengan equivalencia
+    de interventoría (ver EQUIVALENCIA_ROLES_INTERVENTORIA); el resto no traduce
+    a un nivel y se ignora."""
     best_level = -1
     best_role = "user"
     for r in role_codes:
         clean = r.strip().lower()
-        level = ROLES_HIERARCHY.get(clean, -1)
+        level = ROLES_HIERARCHY.get(clean, EQUIVALENCIA_ROLES_INTERVENTORIA.get(clean, -1))
         if level > best_level:
             best_level = level
-            best_role = clean
+            best_role = clean if clean in ROLES_HIERARCHY else _rol_mapus_de_intervertoria(clean)
     return best_role
+
+
+def _rol_mapus_de_intervertoria(codigo: str) -> str:
+    """Traduce un rol de interventoría a su rol MAPUS equivalente."""
+    return {
+        "director": "subgerente",
+        "residente": "analista",
+        "inspector": "contraparte",
+    }.get(codigo, "user")
 
 
 def _get_secret() -> str:

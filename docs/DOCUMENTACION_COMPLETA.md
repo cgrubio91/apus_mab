@@ -599,6 +599,26 @@ if __name__ == "__main__":
 
 > El análisis IA (`realizar_analisis`) inyecta en su prompt los motivos históricos de `aprendizaje_rechazos`, de modo que los criterios de rechazo de los revisores humanos se aplican a cotizaciones futuras.
 
+#### `src/presentation/routers/constructor_apu.py`
+
+**Propósito:** Constructor de APU — flujo liderado por el residente técnico. El residente crea un borrador describiendo la actividad y la ciudad; la IA propone la estructura del APU (insumos, rendimientos y precios sugeridos tomados del banco, priorizando referencias de la misma ciudad y vigencia ≤ 6–12 meses) y puede hacer preguntas para refinarla; el contratista registra sus precios actualizados (manualmente o cargando la cotización en PDF/Excel, que se empareja automáticamente); al enviarlo a análisis continúa el flujo normal de aprobación. Reemplaza la carga directa del flujo antiguo (`/analisis-apu/upload` queda deprecado).
+
+| Ruta                                            | Método | Función                                                        | Rol mínimo   |
+| ------------------------------------------------ | ------- | ---------------------------------------------------------------- | ------------- |
+| `/constructor-apu`                             | POST    | Crea borrador (actividad + unidad + ciudad + proyecto opcional) | analista      |
+| `/constructor-apu/{id}/sugerir`                | POST    | Propone estructura con IA desde referencias del banco           | analista      |
+| `/constructor-apu/{id}/refinar`                | POST    | Itera la propuesta respondiendo preguntas (conversación)        | analista      |
+| `/constructor-apu/{id}/estructura`             | POST    | Aplica la estructura aceptada como insumos del borrador         | analista      |
+| `/constructor-apu/{id}/insumos`                | POST    | Agrega un insumo manual                                         | analista      |
+| `/constructor-apu/{id}/insumos/{insumo_id}`    | DELETE  | Quita un insumo del borrador                                    | analista      |
+| `/constructor-apu/{id}/precios`                | POST    | Registra precios del contratista por insumo                     | contraparte   |
+| `/constructor-apu/{id}/precios-archivo`        | POST    | Extrae filas de una cotización PDF/Excel y las empareja         | contraparte   |
+| `/constructor-apu/{id}/enviar-analisis`        | POST    | Valida precios (>0), excluye ceros y ejecuta el análisis        | analista      |
+
+**Columnas nuevas:** `solicitudes_apu.origen ('carga'|'constructor')`, `descripcion_actividad`, `unidad_actividad`, `codigo_item`, `ciudad`; `solicitud_insumos.precio_banco`, `rendimiento_banco`, `fuente_precio`. Estado inicial nuevo: `borrador`.
+
+> Los roles de interventoría traducen a niveles MAPUS para este flujo: `residente`→analista, `director`→subgerente, `inspector`→contraparte (ver `EQUIVALENCIA_ROLES_INTERVENTORIA` en `src/presentation/auth.py`).
+
 #### `src/presentation/routers/notificaciones.py`
 
 **Propósito:** Notificaciones web dirigidas por rol. Cada transición del flujo de aprobación crea una notificación para el rol del siguiente paso (analizado→analista, preaprobado→subgerente, aprobado_subgerente→legal, rechazado→contraparte, firmado→analista). Los `admin` ven todas. Los recordatorios de `fecha_limite_aprobacion` (próxima a vencer o vencida) se generan al consultar, deduplicados por día.
@@ -1076,8 +1096,8 @@ CONTRAPARTE               ANALISTA                   SUBGERENTE              LEG
 **Estados del flujo:**
 
 ```
-pendiente_analisis → analizado → preaprobado → aprobado_subgerente → aprobado_legal
-                                       ↘ rechazado → nuevas_cotizaciones → analizado
+borrador (Constructor, residente) → pendiente_analisis → analizado → preaprobado → aprobado_subgerente → aprobado_legal
+                                                           ↘ rechazado → nuevas_cotizaciones → analizado
 ```
 
 ### 9.5 Consulta y Filtros

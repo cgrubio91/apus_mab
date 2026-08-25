@@ -273,6 +273,16 @@ SCHEMA_STATEMENTS = [
     # ── Migración: usuario_rol pasa de 1 rol por usuario a varios (rol de
     # interventoría + roles MAPUS adicionales, ver src/presentation/auth.py) ──
     "ALTER TABLE usuario_rol DROP PRIMARY KEY, ADD PRIMARY KEY (user_id, rol_id)",
+
+    # ── Migraciones: Constructor de APU (flujo liderado por el residente) ──
+    "ALTER TABLE solicitudes_apu ADD COLUMN origen VARCHAR(20) DEFAULT 'carga'",
+    "ALTER TABLE solicitudes_apu ADD COLUMN descripcion_actividad TEXT NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN unidad_actividad VARCHAR(20) NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN codigo_item VARCHAR(100) NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN ciudad VARCHAR(100) NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN precio_banco DECIMAL(30,10) NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN rendimiento_banco DECIMAL(30,10) NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN fuente_precio VARCHAR(255) NULL",
 ]
 
 
