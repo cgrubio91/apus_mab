@@ -5,6 +5,7 @@ Infrastructure: Análisis APU Repository Implementation (MySQL)
 import json
 import logging
 import re
+import unicodedata
 from datetime import date, timedelta
 from typing import Optional
 
@@ -20,13 +21,39 @@ _STOPWORDS = {
     "y", "o", "en", "a", "al", "un", "e", "que", "su", "sus", "the",
 }
 
+# Tokens cortos (≤3) que SÍ son distintivos en construcción y no deben perderse:
+# unidades, siglas de material y grados técnicos.
+_TOKENS_TECNICOS = {
+    "pvc", "hg", "psi", "acp", "api", "cpc", "hz", "kw", "hp", "rpm", "kva",
+    "ml", "kg", "und", "gr", "cm", "mm", "km", "lt", "gl", "pa", "pu", "ac",
+}
+
+
+def _normalizar(texto: str) -> str:
+    """Minúsculas y sin tildes (NFD + descarta marcas), para comparar 'hormigón'
+    con 'hormigon'. La ñ se colapsa a n, lo cual ayuda al emparejamiento."""
+    t = unicodedata.normalize("NFD", (texto or "").lower())
+    return "".join(c for c in t if unicodedata.category(c) != "Mn")
+
+
+def _token_util(t: str) -> bool:
+    """Conserva tokens largos, siglas técnicas y cualquier token con dígitos
+    (diámetros, resistencias: '3000', '6', '40hp', 'm3')."""
+    if t in _STOPWORDS:
+        return False
+    if len(t) > 3:
+        return True
+    if t in _TOKENS_TECNICOS:
+        return True
+    return any(ch.isdigit() for ch in t)
+
 
 def _tokenizar(texto: str) -> set:
-    """Devuelve el conjunto de palabras significativas (>3 letras, sin stopwords)."""
+    """Conjunto de palabras significativas, sin tildes y sin stopwords."""
     if not texto:
         return set()
-    tokens = re.findall(r"[a-záéíóúñ0-9]+", texto.lower())
-    return {t for t in tokens if len(t) > 3 and t not in _STOPWORDS}
+    tokens = re.findall(r"[a-z0-9]+", _normalizar(texto))
+    return {t for t in tokens if _token_util(t)}
 
 
 def _similitud_tokens(a: set, b: set) -> float:
@@ -66,6 +93,7 @@ def _coincidencia_compuesta(token: str, texto: str) -> bool:
     2) al final de otra palabra ('cargador' en 'MINICARGADOR 40HP'), o
     3) todas sus partes prefijo+base separadas ('minicargador' en 'mini cargador').
     """
+    texto = _normalizar(texto)
     if _coincidencia_palabra_completa(token, texto):
         return True
     if re.search(rf'{re.escape(token)}\b', texto, re.IGNORECASE):
@@ -79,11 +107,13 @@ def _coincidencia_compuesta(token: str, texto: str) -> bool:
 
 
 def _coincidencia_palabra_completa(token: str, texto: str) -> bool:
-    """True si token aparece como palabra completa en texto (respeta acentos)."""
-    if not token or len(token) < 4:
+    """True si token aparece como palabra completa en texto. Ambos lados se
+    normalizan (sin tildes) para que 'hormigon' encuentre 'hormigón'."""
+    if not token or len(token) < 3:
         return False
-    pattern = r'(?<![a-záéíóúñA-ZÁÉÍÓÚÑ0-9])' + re.escape(token.lower()) + r'(?![a-záéíóúñA-ZÁÉÍÓÚÑ0-9])'
-    return bool(re.search(pattern, texto.lower()))
+    token = _normalizar(token)
+    pattern = r'(?<![a-z0-9])' + re.escape(token) + r'(?![a-z0-9])'
+    return bool(re.search(pattern, _normalizar(texto)))
 
 
 class AnalisisMySQLRepository:

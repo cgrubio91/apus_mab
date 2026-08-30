@@ -203,6 +203,62 @@ def _compactar_referencias_para_ia(refs_ranked: list[dict], max_refs: int = 4,
     return salida
 
 
+def _mediana(valores: list[float]) -> Optional[float]:
+    """Mediana de una lista de números (None si está vacía)."""
+    vals = sorted(v for v in valores if v is not None)
+    if not vals:
+        return None
+    n = len(vals)
+    medio = n // 2
+    if n % 2:
+        return float(vals[medio])
+    return round((vals[medio - 1] + vals[medio]) / 2, 6)
+
+
+def _rendimientos_por_insumo(refs_ranked: list[dict], max_refs: int = 6,
+                             min_muestras: int = 2) -> list[dict]:
+    """Agrega los rendimientos del banco por insumo para que la propuesta use la
+    MEDIANA (robusta a outliers) y no el rendimiento de un único APU.
+
+    Agrupa por el token más distintivo (más largo) de la descripción del insumo
+    —siguiendo la misma heurística de emparejamiento del resto del módulo— y
+    devuelve, por grupo con al menos `min_muestras` datos: mediana, n, min y max.
+    """
+    grupos: dict = {}
+    for r in refs_ranked[:max_refs]:
+        for ins in (r.get("insumos") or []):
+            desc = (ins.get("insumo_descripcion") or "").strip()
+            rend = ins.get("rendimiento_insumo")
+            try:
+                rend = float(rend)
+            except (TypeError, ValueError):
+                continue
+            if rend <= 0:
+                continue
+            tokens = _tokenizar(desc)
+            if not tokens:
+                continue
+            clave = max(tokens, key=len)
+            g = grupos.setdefault(clave, {"descripcion": desc, "valores": []})
+            g["valores"].append(rend)
+
+    salida = []
+    for clave, g in grupos.items():
+        vals = g["valores"]
+        if len(vals) < min_muestras:
+            continue
+        salida.append({
+            "insumo": g["descripcion"],
+            "clave": clave,
+            "rendimiento_mediana": _mediana(vals),
+            "n": len(vals),
+            "min": round(min(vals), 6),
+            "max": round(max(vals), 6),
+        })
+    salida.sort(key=lambda d: d["n"], reverse=True)
+    return salida
+
+
 _PROMPT_SISTEMA = "Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU) de obra civil en Colombia."
 
 
@@ -231,6 +287,9 @@ REFERENCIAS DEL BANCO DE APUs (ordenadas por relevancia: similitud, cercanía a 
 el campo "recencia" indica qué tan viejo está el dato):
 {json.dumps(_compactar_referencias_para_ia(refs_ranked), default=str, ensure_ascii=False, indent=2)}
 
+RENDIMIENTOS DE REFERENCIA (MEDIANA del banco por insumo, con nº de muestras y rango):
+{json.dumps(_rendimientos_por_insumo(refs_ranked), default=str, ensure_ascii=False, indent=2)}
+
 INSTRUCCIONES:
 1. Propón la ESTRUCTURA completa del APU para esta actividad: lista de insumos por tipo
    ({", ".join(TIPOS_INSUMO_VALIDOS)}), con unidad, RENDIMIENTO (usa 1 cuando el insumo entra por cantidad
@@ -238,6 +297,8 @@ INSTRUCCIONES:
 2. Los PRECIOS y rendimientos deben salir de las REFERENCIAS del banco: elige SIEMPRE el dato más
    reciente y, si existe, el de la misma ciudad de la obra. En "fuente" explica de qué referencia
    salió (ej.: "Banco: <proyecto> · <ciudad> · <fecha>").
+   Para el RENDIMIENTO, cuando el insumo aparezca en "RENDIMIENTOS DE REFERENCIA" usa la MEDIANA
+   (es robusta a datos atípicos), no el valor de un solo APU; ten en cuenta el nº de muestras (n).
 3. Si no hay referencia para un insumo indispensable, inclúyelo con precio null y explícalo en "notas".
 4. Si falta información clave que cambie la estructura o los rendimientos (diámetros, profundidades,
    distancias de transporte, condiciones del terreno, etc.), hazlo en "preguntas" (máximo 3, concretas).
