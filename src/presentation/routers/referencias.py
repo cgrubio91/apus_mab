@@ -12,6 +12,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.application.use_cases.catalogo_insumos import (
+    backfill_desde_banco,
+    backfill_desde_secop,
+    estadisticas_insumo,
+)
 from src.application.use_cases.ingesta_referencias import (
     consultar_referencias,
     ingerir_secop,
@@ -55,3 +60,33 @@ async def consultar_referencias_endpoint(
 ) -> dict:
     referencias = consultar_referencias(descripcion, fuente=fuente, ciudad=ciudad, limite=limite)
     return {"success": True, "count": len(referencias), "data": referencias}
+
+
+# ── Catálogo canónico de insumos + histórico de precios ──
+
+
+@router.get("/insumos/estadisticas")
+async def estadisticas_insumo_endpoint(
+    descripcion: str = Query(..., min_length=3),
+    ciudad: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        return {"success": True, **estadisticas_insumo(descripcion, ciudad=ciudad)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/catalogo/backfill")
+async def backfill_catalogo_endpoint(
+    origen: str = Query("banco", pattern="^(banco|secop)$"),
+    limite: Optional[int] = Query(None, ge=1),
+    user: dict = Depends(require_role("analista")),
+) -> dict:
+    try:
+        if origen == "secop":
+            return backfill_desde_secop(limite=limite)
+        return backfill_desde_banco(limite=limite)
+    except Exception as e:
+        log.exception("Error en backfill del catálogo (%s)", origen)
+        raise HTTPException(status_code=500, detail=f"Fallo en backfill: {e}")
