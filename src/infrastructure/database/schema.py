@@ -237,6 +237,36 @@ SCHEMA_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
 
+    # ── Referencias de precio externas (SECOP, DANE, retail...) ──
+    """
+    CREATE TABLE IF NOT EXISTS precio_referencia_externa (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        fuente VARCHAR(60) NOT NULL,
+        fuente_id VARCHAR(180),
+        url TEXT,
+        granularidad VARCHAR(20) NOT NULL DEFAULT 'contrato',
+        descripcion TEXT NOT NULL,
+        unidad VARCHAR(40),
+        codigo VARCHAR(60),
+        precio DECIMAL(30,10),
+        rendimiento DECIMAL(30,10),
+        ciudad VARCHAR(120),
+        departamento VARCHAR(120),
+        entidad VARCHAR(200),
+        proveedor VARCHAR(200),
+        fecha DATE,
+        observacion TEXT,
+        clave_unica VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_ref_externa_clave (clave_unica),
+        KEY idx_ref_externa_fuente (fuente),
+        KEY idx_ref_externa_ciudad (ciudad),
+        KEY idx_ref_externa_fecha (fecha),
+        FULLTEXT KEY ftx_ref_externa_desc (descripcion)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
     """
     CREATE TABLE IF NOT EXISTS jobs (
         id VARCHAR(64) PRIMARY KEY,

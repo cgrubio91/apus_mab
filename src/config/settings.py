@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # Extraction
     MAX_DOC_CHARS: int = 500_000
 
+    # Referencias externas (SECOP II / Socrata)
+    SOCRATA_DOMAIN: str = "www.datos.gov.co"
+    SOCRATA_APP_TOKEN: Optional[str] = None
+    SECOP_DATASET_ID: str = "jbjy-vk9h"
+
 
 settings = Settings()
 
