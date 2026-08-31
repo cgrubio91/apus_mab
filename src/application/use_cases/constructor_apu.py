@@ -13,20 +13,19 @@ Flujo liderado por el residente técnico:
 
 import json
 import logging
-import re
 from datetime import date, datetime
 from typing import Optional
 
+from src.application.use_cases.extract_city import extraer_ciudad_texto
 from src.application.use_cases.manage_analisis import realizar_analisis
 from src.application.use_cases.notificaciones import crear_notificacion
 from src.infrastructure.ai.provider import ai_provider
 from src.infrastructure.database.repositories.analisis_repository import (
-    analisis_repo,
-    _tokenizar,
     _similitud_tokens,
+    _tokenizar,
+    analisis_repo,
 )
-
-from src.application.use_cases.extract_city import extraer_ciudad_texto
+from src.infrastructure.pricing.indexacion import indexar_observaciones
 
 log = logging.getLogger("mapus.application.constructor")
 
@@ -259,15 +258,82 @@ def _rendimientos_por_insumo(refs_ranked: list[dict], max_refs: int = 6,
     return salida
 
 
+def _precios_por_insumo(refs_ranked: list[dict], serie_indice: Optional[dict] = None,
+                        hoy=None, max_refs: int = 6, min_muestras: int = 1) -> list[dict]:
+    """Agrega los precios de insumo del banco y los lleva a PESOS DE HOY con la
+    serie de índices (DANE ICCP/IPC). Devuelve, por insumo, la MEDIANA indexada
+    con nº de muestras y rango. Si no hay serie, deja los precios nominales.
+
+    Agrupa por el token más distintivo, como `_rendimientos_por_insumo`.
+    """
+    serie_indice = serie_indice or {}
+    grupos: dict = {}
+    for r in refs_ranked[:max_refs]:
+        fecha_ref = r.get("fecha")
+        for ins in (r.get("insumos") or []):
+            desc = (ins.get("insumo_descripcion") or "").strip()
+            precio = ins.get("precio_unitario_apu")
+            try:
+                precio = float(precio)
+            except (TypeError, ValueError):
+                continue
+            if precio <= 0:
+                continue
+            tokens = _tokenizar(desc)
+            if not tokens:
+                continue
+            clave = max(tokens, key=len)
+            g = grupos.setdefault(clave, {"descripcion": desc, "obs": []})
+            g["obs"].append({"precio": precio, "fecha": ins.get("fecha") or fecha_ref})
+
+    salida = []
+    for clave, g in grupos.items():
+        obs = g["obs"]
+        if len(obs) < min_muestras:
+            continue
+        indexadas = indexar_observaciones(obs, serie_indice, hoy) if serie_indice else obs
+        precios = [o["precio"] for o in indexadas]
+        salida.append({
+            "insumo": g["descripcion"],
+            "clave": clave,
+            "precio_mediana_hoy": _mediana(precios),
+            "n": len(precios),
+            "min": round(min(precios), 2),
+            "max": round(max(precios), 2),
+            "indexado": bool(serie_indice),
+        })
+    salida.sort(key=lambda d: d["n"], reverse=True)
+    return salida
+
+
+def _cargar_serie_indice() -> dict:
+    """Carga la serie de índices por defecto (DANE) para indexar precios. Devuelve
+    {} si no hay BD/serie: la indexación se vuelve un no-op silencioso."""
+    try:
+        from src.config.settings import settings
+        from src.infrastructure.database.repositories.indice_costos_repository import (
+            indice_costos_repo,
+        )
+        return indice_costos_repo.get_serie(settings.DANE_ICCP_SERIE)
+    except Exception:
+        log.warning("No se pudo cargar la serie de índices; se usan precios nominales", exc_info=True)
+        return {}
+
+
 _PROMPT_SISTEMA = "Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU) de obra civil en Colombia."
 
 
 def _construir_propuesta(solicitud: dict, refs_ranked: list[dict],
-                         conversacion: Optional[list[dict]] = None) -> dict:
+                         conversacion: Optional[list[dict]] = None,
+                         serie_indice: Optional[dict] = None) -> dict:
     """Llama a la IA para proponer la estructura del APU. Devuelve el JSON de la
     propuesta (insumos + preguntas) junto con las referencias usadas."""
     descripcion = solicitud.get("descripcion_actividad") or ""
     ciudad = solicitud.get("ciudad")
+    precios_ref = _precios_por_insumo(refs_ranked, serie_indice=serie_indice)
+    hay_indexado = any(p.get("indexado") for p in precios_ref)
+    etiqueta_precios = ("a PESOS DE HOY (indexada con DANE)" if hay_indexado
+                        else "NOMINAL — sin serie de índices cargada")
     contexto_conversacion = ""
     if conversacion:
         lineas = [f"- {m.get('rol', 'usuario')}: {m.get('texto', '')}" for m in conversacion[-12:]]
@@ -290,6 +356,9 @@ el campo "recencia" indica qué tan viejo está el dato):
 RENDIMIENTOS DE REFERENCIA (MEDIANA del banco por insumo, con nº de muestras y rango):
 {json.dumps(_rendimientos_por_insumo(refs_ranked), default=str, ensure_ascii=False, indent=2)}
 
+PRECIOS DE REFERENCIA POR INSUMO (MEDIANA {etiqueta_precios}, con nº de muestras y rango):
+{json.dumps(precios_ref, default=str, ensure_ascii=False, indent=2)}
+
 INSTRUCCIONES:
 1. Propón la ESTRUCTURA completa del APU para esta actividad: lista de insumos por tipo
    ({", ".join(TIPOS_INSUMO_VALIDOS)}), con unidad, RENDIMIENTO (usa 1 cuando el insumo entra por cantidad
@@ -299,6 +368,8 @@ INSTRUCCIONES:
    salió (ej.: "Banco: <proyecto> · <ciudad> · <fecha>").
    Para el RENDIMIENTO, cuando el insumo aparezca en "RENDIMIENTOS DE REFERENCIA" usa la MEDIANA
    (es robusta a datos atípicos), no el valor de un solo APU; ten en cuenta el nº de muestras (n).
+   Para el PRECIO, cuando el insumo aparezca en "PRECIOS DE REFERENCIA POR INSUMO" parte de su
+   "precio_mediana_hoy" (si viene indexado, ya está a pesos de hoy) y ajústalo según ciudad/mercado.
 3. Si no hay referencia para un insumo indispensable, inclúyelo con precio null y explícalo en "notas".
 4. Si falta información clave que cambie la estructura o los rendimientos (diámetros, profundidades,
    distancias de transporte, condiciones del terreno, etc.), hazlo en "preguntas" (máximo 3, concretas).
@@ -368,7 +439,7 @@ def sugerir_estructura(solicitud_id: int) -> dict:
     descripcion = solicitud.get("descripcion_actividad") or ""
     refs = analisis_repo.buscar_apus_similares(descripcion)
     refs_ranked = _rankear_referencias(refs, ciudad=solicitud.get("ciudad"))
-    propuesta = _construir_propuesta(solicitud, refs_ranked)
+    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
     return {
         "solicitud_id": solicitud_id,
         "propuesta": propuesta,
@@ -397,7 +468,8 @@ def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_act
     mensajes = list(conversacion)
     if propuesta_actual:
         mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)})
-    propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes)
+    propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
+                                     serie_indice=_cargar_serie_indice())
     return {"solicitud_id": solicitud_id, "propuesta": propuesta}
 
 
