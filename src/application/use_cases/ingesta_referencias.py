@@ -14,6 +14,8 @@ from typing import Optional
 from src.infrastructure.database.repositories.referencia_externa_repository import (
     referencia_externa_repo,
 )
+from src.infrastructure.scraping.idu_source import IduSource
+from src.infrastructure.scraping.invias_source import InviasSource
 from src.infrastructure.scraping.secop_source import FUENTE as FUENTE_SECOP
 from src.infrastructure.scraping.secop_source import SecopSource
 
@@ -48,6 +50,44 @@ def ingerir_secop(keyword: str, ciudad: Optional[str] = None,
         "filas_afectadas": resultado.get("afectadas", 0),
         "muestra": [r.model_dump(mode="json") for r in referencias[:10]],
     }
+
+
+def _ingerir_documental(src, seed_env: str, urls: Optional[list],
+                        ciudad: Optional[str], fecha: Optional[str]) -> dict:
+    """Flujo común de ingesta de fuentes documentales (IDU, INVÍAS): resuelve
+    URLs, extrae, normaliza y persiste (idempotente por clave_unica)."""
+    resueltas = src.resolver_urls(urls)
+    if not resueltas:
+        raise ValueError(
+            f"No hay URLs de documentos de {src.FUENTE}. Pásalas en la petición o "
+            f"configúralas en {seed_env}."
+        )
+    referencias = src.ingerir_documentos(resueltas, ciudad=ciudad, fecha=fecha)
+    resultado = referencia_externa_repo.upsert_muchas(referencias)
+    log.info("Ingesta %s: %d documento(s), %d referencia(s), %d afectada(s)",
+             src.FUENTE, len(resueltas), len(referencias), resultado.get("afectadas", 0))
+    return {
+        "success": True,
+        "fuente": src.FUENTE,
+        "documentos": len(resueltas),
+        "referencias_traidas": len(referencias),
+        "filas_afectadas": resultado.get("afectadas", 0),
+        "muestra": [r.model_dump(mode="json") for r in referencias[:10]],
+    }
+
+
+def ingerir_idu(urls: Optional[list] = None, ciudad: Optional[str] = None,
+                fecha: Optional[str] = None, source: Optional[IduSource] = None) -> dict:
+    """Ingiere documentos de precios del IDU (PDF/Excel). Si no se pasan `urls`,
+    usa la lista-semilla IDU_URLS_SEED del entorno."""
+    return _ingerir_documental(source or IduSource(), "IDU_URLS_SEED", urls, ciudad, fecha)
+
+
+def ingerir_invias(urls: Optional[list] = None, ciudad: Optional[str] = None,
+                   fecha: Optional[str] = None, source: Optional[InviasSource] = None) -> dict:
+    """Ingiere documentos de precios de INVÍAS (PDF/Excel). Si no se pasan `urls`,
+    usa la lista-semilla INVIAS_URLS_SEED del entorno."""
+    return _ingerir_documental(source or InviasSource(), "INVIAS_URLS_SEED", urls, ciudad, fecha)
 
 
 def consultar_referencias(descripcion: str, fuente: Optional[str] = None,

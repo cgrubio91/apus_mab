@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     SOCRATA_APP_TOKEN: Optional[str] = None
     SECOP_DATASET_ID: str = "jbjy-vk9h"
 
+    # Fuentes documentales (IDU / INVÍAS): lista-semilla de URLs de documentos
+    IDU_URLS_SEED: str = ""
+    INVIAS_URLS_SEED: str = ""
+
 
 settings = Settings()
 

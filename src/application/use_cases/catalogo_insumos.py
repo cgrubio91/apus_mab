@@ -80,9 +80,9 @@ def backfill_desde_banco(limite: Optional[int] = None, tam_lote: int = 500) -> d
             "catalogo": resumen}
 
 
-def backfill_desde_secop(limite: Optional[int] = None, tam_lote: int = 500) -> dict:
-    """Incorpora las referencias SECOP (granularidad contrato) al histórico como
-    observaciones de precio del insumo/objeto correspondiente."""
+def backfill_desde_referencias_externas(limite: Optional[int] = None, tam_lote: int = 500) -> dict:
+    """Incorpora al histórico TODAS las referencias externas ya ingeridas
+    (SECOP, IDU, INVÍAS, ...), resolviendo cada una contra el catálogo canónico."""
     procesadas = 0
     con_precio = 0
     offset = 0
