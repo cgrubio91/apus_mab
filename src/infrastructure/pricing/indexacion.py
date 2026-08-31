@@ -42,6 +42,27 @@ def indice_para_periodo(serie: dict, periodo: Optional[str]) -> Optional[float]:
         return None
 
 
+def indexar_observaciones(observaciones: list[dict], serie: dict, hoy=None) -> list[dict]:
+    """Devuelve copias de las observaciones con el precio llevado a `hoy` (o al
+    periodo más reciente de la serie si `hoy` es None) usando la serie de índices.
+
+    Cada observación: {"precio", "fecha", ...}. La observación conserva sus otras
+    claves; se sobreescribe 'precio' con el valor indexado (si no se puede
+    indexar, queda el precio nominal). No muta la lista original.
+    """
+    if hoy is None:
+        # Periodo más reciente disponible en la serie → destino de la indexación.
+        hoy = max(serie) if serie else None
+    salida = []
+    for o in observaciones or []:
+        o2 = dict(o)
+        ajustado = ajustar_precio(o.get("precio"), o.get("fecha"), hoy, serie)
+        if ajustado is not None:
+            o2["precio"] = ajustado
+        salida.append(o2)
+    return salida
+
+
 def ajustar_precio(precio, fecha_origen, fecha_destino, serie: dict) -> Optional[float]:
     """Lleva `precio` de `fecha_origen` a `fecha_destino` con la serie de índices.
 

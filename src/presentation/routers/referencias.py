@@ -17,6 +17,12 @@ from src.application.use_cases.catalogo_insumos import (
     backfill_desde_referencias_externas,
     estadisticas_insumo,
 )
+from src.application.use_cases.indices_costos import (
+    cargar_serie_manual,
+    estadisticas_insumo_indexadas,
+    ingerir_dane,
+    series_disponibles,
+)
 from src.application.use_cases.ingesta_referencias import (
     consultar_referencias,
     ingerir_idu,
@@ -108,6 +114,62 @@ async def estadisticas_insumo_endpoint(
         return {"success": True, **estadisticas_insumo(descripcion, ciudad=ciudad)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/insumos/estadisticas-indexadas")
+async def estadisticas_indexadas_endpoint(
+    descripcion: str = Query(..., min_length=3),
+    serie: str = Query("ICCP"),
+    ciudad: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    try:
+        return {"success": True, **estadisticas_insumo_indexadas(descripcion, serie, ciudad=ciudad)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Índices de costos (DANE) ──
+
+
+class IngestaDaneRequest(BaseModel):
+    dataset_id: str = Field(..., description="Dataset Socrata de la serie DANE")
+    serie: str = Field("ICCP", description="Nombre con el que se guarda la serie")
+    campo_periodo: Optional[str] = Field(None, description="Columna del periodo (autodetecta si se omite)")
+    campo_valor: Optional[str] = Field(None, description="Columna del valor del índice (autodetecta si se omite)")
+    where: Optional[str] = Field(None, description="Filtro SoQL opcional")
+
+
+class CargarSerieRequest(BaseModel):
+    serie: str = Field(..., description="Nombre de la serie")
+    datos: dict = Field(..., description="{'YYYY-MM': valor, ...}")
+
+
+@router.post("/indices/dane/ingerir")
+async def ingerir_dane_endpoint(payload: IngestaDaneRequest,
+                                user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return ingerir_dane(payload.dataset_id, payload.serie, campo_periodo=payload.campo_periodo,
+                            campo_valor=payload.campo_valor, where=payload.where)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.exception("Error ingiriendo serie DANE")
+        raise HTTPException(status_code=502, detail=f"Fallo consultando DANE: {e}")
+
+
+@router.post("/indices/cargar")
+async def cargar_serie_endpoint(payload: CargarSerieRequest,
+                                user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return cargar_serie_manual(payload.serie, payload.datos)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/indices")
+async def series_disponibles_endpoint(user: dict = Depends(get_current_user)) -> dict:
+    return {"success": True, "series": series_disponibles()}
 
 
 @router.post("/catalogo/backfill")

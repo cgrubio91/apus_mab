@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -51,6 +52,10 @@ class Settings(BaseSettings):
     # Fuentes documentales (IDU / INVÍAS): lista-semilla de URLs de documentos
     IDU_URLS_SEED: str = ""
     INVIAS_URLS_SEED: str = ""
+
+    # Índices DANE (indexación temporal de precios)
+    DANE_ICCP_DATASET_ID: str = ""
+    DANE_ICCP_SERIE: str = "ICCP"
 
 
 settings = Settings()
