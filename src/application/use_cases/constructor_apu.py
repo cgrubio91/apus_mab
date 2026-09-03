@@ -13,25 +13,19 @@ Flujo liderado por el residente técnico:
 
 import json
 import logging
-import re
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Optional
 
+from src.application.use_cases.extract_city import extraer_ciudad_texto
 from src.application.use_cases.manage_analisis import realizar_analisis
 from src.application.use_cases.notificaciones import crear_notificacion
-from src.application.use_cases.ingesta_referencias import consultar_referencias
-from src.domain.entities.referencia_externa import ReferenciaExterna
 from src.infrastructure.ai.provider import ai_provider
 from src.infrastructure.database.repositories.analisis_repository import (
-    analisis_repo,
-    _tokenizar,
     _similitud_tokens,
+    _tokenizar,
+    analisis_repo,
 )
-from src.infrastructure.database.repositories.referencia_externa_repository import referencia_externa_repo
-from src.infrastructure.scraping.cype_source import CypeSource
-from src.infrastructure.scraping.catalogo_materiales import CatalogoMaterialesSource
-from src.application.use_cases.extract_city import extraer_ciudad_texto
+from src.infrastructure.pricing.indexacion import indexar_observaciones
 
 log = logging.getLogger("mapus.application.constructor")
 
@@ -41,121 +35,6 @@ TIPOS_INSUMO_VALIDOS = ["Materiales", "Equipos", "Mano de obra", "Transporte", "
 RECENCIA_EXCELENTE_DIAS = 180      # ≤ 6 meses
 RECENCIA_BUENA_DIAS = 365          # ≤ 12 meses
 RECENCIA_ACEPTABLE_DIAS = 730      # ≤ 24 meses
-
-
-# ──────────────────────────────────────────────────────────────────
-# Helper: Relleno automático de precios y rendimientos vía Webscraping en vivo
-# ──────────────────────────────────────────────────────────────────
-
-def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> dict:
-    """Rellena precios nulos o 'sin ref' consultando en tiempo real CYPE Colombia,
-    el catálogo de materiales comerciales (Homecenter) y el banco de referencias.
-    
-    Persiste en la BD las referencias externas encontradas para acelerar consultas futuras.
-    """
-    insumos = propuesta.get("insumos", [])
-    if not insumos:
-        return propuesta
-
-    cype = CypeSource()
-    catalogo = CatalogoMaterialesSource()
-    nuevas_referencias = []
-    notas_agregadas = []
-
-    for ins in insumos:
-        precio_actual = ins.get("precio")
-        fuente_actual = ins.get("fuente") or ""
-        
-        # Si ya tiene un precio válido asignado por el banco (no 'sin ref'), continuar
-        if precio_actual is not None and "sin ref" not in fuente_actual.lower() and "sin referencia" not in fuente_actual.lower():
-            continue
-
-        desc = (ins.get("descripcion") or "").strip()
-        tipo = (ins.get("tipo_insumo") or "").strip()
-        if not desc:
-            continue
-
-        precio_encontrado = None
-        fuente_encontrada = None
-        unidad_encontrada = None
-
-        # 1. Intentar con CYPE Colombia (mano de obra oficial/ayudante, concreto, acero, madera, equipos)
-        try:
-            ref_cype = cype.buscar_referencia_insumo(desc, tipo_insumo=tipo)
-            if ref_cype and ref_cype.get("precio") is not None:
-                precio_encontrado = float(ref_cype["precio"])
-                fuente_encontrada = ref_cype["fuente"]
-                unidad_encontrada = ref_cype.get("unidad")
-        except Exception as e:
-            log.warning("Fallo consulta CYPE para '%s': %s", desc, e)
-
-        # 2. Si no se encontró y es material, consultar catálogo comercial Homecenter / Constructor
-        if precio_encontrado is None and tipo.lower() in ("materiales", "material", "otro"):
-            try:
-                termino = re.sub(r'\(.*?\)', '', desc).strip()
-                tokens = [t for t in termino.split() if len(t) > 2]
-                query_hc = " ".join(tokens[:3]) if tokens else termino
-                prods = catalogo.buscar_material(query_hc, limite=1)
-                if prods and prods[0].get("precio") is not None:
-                    precio_encontrado = float(prods[0]["precio"])
-                    fuente_encontrada = f"Constructor · {prods[0].get('nombre', 'Material')[:40]}"
-                    unidad_encontrada = prods[0].get("unidad")
-            except Exception as e:
-                log.warning("Fallo consulta catálogo materiales para '%s': %s", desc, e)
-
-        # 3. Si aún no hay precio, consultar la tabla de referencias externas acumuladas
-        if precio_encontrado is None:
-            try:
-                refs_db = consultar_referencias(desc, limite=1)
-                if refs_db and refs_db[0].get("precio") is not None:
-                    precio_encontrado = float(refs_db[0]["precio"])
-                    fuente_encontrada = f"{refs_db[0].get('fuente', 'Externa')} · {refs_db[0].get('descripcion', '')[:30]}"
-            except Exception as e:
-                log.warning("Fallo consulta referencias_externas DB para '%s': %s", desc, e)
-
-        # Si se halló precio, asignarlo a la propuesta
-        if precio_encontrado is not None:
-            ins["precio"] = precio_encontrado
-            ins["fuente"] = fuente_encontrada or "Mercado Colombia"
-            if unidad_encontrada and ins.get("unidad") in (None, "", "und", "por definir"):
-                ins["unidad"] = unidad_encontrada
-
-            # Preparar para persistir en la tabla de referencias
-            try:
-                f_nombre = fuente_encontrada.split("·")[0].strip() if "·" in (fuente_encontrada or "") else "CYPE Colombia"
-                nuevas_referencias.append(ReferenciaExterna(
-                    fuente=f_nombre,
-                    fuente_id=desc[:50],
-                    granularidad="insumo",
-                    descripcion=desc,
-                    unidad=ins.get("unidad"),
-                    precio=Decimal(str(precio_encontrado)),
-                    rendimiento=Decimal(str(ins.get("rendimiento"))) if ins.get("rendimiento") is not None else None,
-                    ciudad=ciudad,
-                    fecha=date.today(),
-                    observacion="Auto-cotizado por scraper en tiempo real",
-                ))
-            except Exception:
-                pass
-        else:
-            notas_agregadas.append(f"• '{desc[:35]}': sin referencia de precio disponible")
-
-    # Persistir en BD de forma segura
-    if nuevas_referencias:
-        try:
-            referencia_externa_repo.upsert_muchas(nuevas_referencias)
-        except Exception as e:
-            log.warning("No se pudieron guardar referencias externas: %s", e)
-
-    # Actualizar notas de la propuesta
-    propuesta_actual = dict(propuesta)
-    notas_existentes = propuesta_actual.get("notas", "")
-    if notas_agregadas:
-        nota_cype = "\nInsumos cotizados con scraper en tiempo real (CYPE Colombia / Mercado):\n" + "\n".join(notas_agregadas)
-        propuesta_actual["notas"] = (notas_existentes + nota_cype) if notas_existentes else nota_cype
-
-    return propuesta_actual
-
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -323,15 +202,138 @@ def _compactar_referencias_para_ia(refs_ranked: list[dict], max_refs: int = 4,
     return salida
 
 
+def _mediana(valores: list[float]) -> Optional[float]:
+    """Mediana de una lista de números (None si está vacía)."""
+    vals = sorted(v for v in valores if v is not None)
+    if not vals:
+        return None
+    n = len(vals)
+    medio = n // 2
+    if n % 2:
+        return float(vals[medio])
+    return round((vals[medio - 1] + vals[medio]) / 2, 6)
+
+
+def _rendimientos_por_insumo(refs_ranked: list[dict], max_refs: int = 6,
+                             min_muestras: int = 2) -> list[dict]:
+    """Agrega los rendimientos del banco por insumo para que la propuesta use la
+    MEDIANA (robusta a outliers) y no el rendimiento de un único APU.
+
+    Agrupa por el token más distintivo (más largo) de la descripción del insumo
+    —siguiendo la misma heurística de emparejamiento del resto del módulo— y
+    devuelve, por grupo con al menos `min_muestras` datos: mediana, n, min y max.
+    """
+    grupos: dict = {}
+    for r in refs_ranked[:max_refs]:
+        for ins in (r.get("insumos") or []):
+            desc = (ins.get("insumo_descripcion") or "").strip()
+            rend = ins.get("rendimiento_insumo")
+            try:
+                rend = float(rend)
+            except (TypeError, ValueError):
+                continue
+            if rend <= 0:
+                continue
+            tokens = _tokenizar(desc)
+            if not tokens:
+                continue
+            clave = max(tokens, key=len)
+            g = grupos.setdefault(clave, {"descripcion": desc, "valores": []})
+            g["valores"].append(rend)
+
+    salida = []
+    for clave, g in grupos.items():
+        vals = g["valores"]
+        if len(vals) < min_muestras:
+            continue
+        salida.append({
+            "insumo": g["descripcion"],
+            "clave": clave,
+            "rendimiento_mediana": _mediana(vals),
+            "n": len(vals),
+            "min": round(min(vals), 6),
+            "max": round(max(vals), 6),
+        })
+    salida.sort(key=lambda d: d["n"], reverse=True)
+    return salida
+
+
+def _precios_por_insumo(refs_ranked: list[dict], serie_indice: Optional[dict] = None,
+                        hoy=None, max_refs: int = 6, min_muestras: int = 1) -> list[dict]:
+    """Agrega los precios de insumo del banco y los lleva a PESOS DE HOY con la
+    serie de índices (DANE ICCP/IPC). Devuelve, por insumo, la MEDIANA indexada
+    con nº de muestras y rango. Si no hay serie, deja los precios nominales.
+
+    Agrupa por el token más distintivo, como `_rendimientos_por_insumo`.
+    """
+    serie_indice = serie_indice or {}
+    grupos: dict = {}
+    for r in refs_ranked[:max_refs]:
+        fecha_ref = r.get("fecha")
+        for ins in (r.get("insumos") or []):
+            desc = (ins.get("insumo_descripcion") or "").strip()
+            precio = ins.get("precio_unitario_apu")
+            try:
+                precio = float(precio)
+            except (TypeError, ValueError):
+                continue
+            if precio <= 0:
+                continue
+            tokens = _tokenizar(desc)
+            if not tokens:
+                continue
+            clave = max(tokens, key=len)
+            g = grupos.setdefault(clave, {"descripcion": desc, "obs": []})
+            g["obs"].append({"precio": precio, "fecha": ins.get("fecha") or fecha_ref})
+
+    salida = []
+    for clave, g in grupos.items():
+        obs = g["obs"]
+        if len(obs) < min_muestras:
+            continue
+        indexadas = indexar_observaciones(obs, serie_indice, hoy) if serie_indice else obs
+        precios = [o["precio"] for o in indexadas]
+        salida.append({
+            "insumo": g["descripcion"],
+            "clave": clave,
+            "precio_mediana_hoy": _mediana(precios),
+            "n": len(precios),
+            "min": round(min(precios), 2),
+            "max": round(max(precios), 2),
+            "indexado": bool(serie_indice),
+        })
+    salida.sort(key=lambda d: d["n"], reverse=True)
+    return salida
+
+
+def _cargar_serie_indice() -> dict:
+    """Carga la serie de índices por defecto (DANE) para indexar precios. Devuelve
+    {} si no hay BD/serie: la indexación se vuelve un no-op silencioso."""
+    try:
+        from src.config.settings import settings
+        from src.infrastructure.database.repositories.indice_costos_repository import (
+            indice_costos_repo,
+        )
+        return indice_costos_repo.get_serie(settings.DANE_ICCP_SERIE)
+    except Exception:
+        log.warning("No se pudo cargar la serie de índices; se usan precios nominales", exc_info=True)
+        return {}
+
+
 _PROMPT_SISTEMA = "Eres un ingeniero civil experto en Análisis de Precios Unitarios (APU) de obra civil en Colombia."
 
 
 def _construir_propuesta(solicitud: dict, refs_ranked: list[dict],
-                         conversacion: Optional[list[dict]] = None) -> dict:
+                         conversacion: Optional[list[dict]] = None,
+                         serie_indice: Optional[dict] = None) -> dict:
     """Llama a la IA para proponer la estructura del APU. Devuelve el JSON de la
     propuesta (insumos + preguntas) junto con las referencias usadas."""
     descripcion = solicitud.get("descripcion_actividad") or ""
     ciudad = solicitud.get("ciudad")
+    precios_ref = _precios_por_insumo(refs_ranked, serie_indice=serie_indice)
+    hay_indexado = any(p.get("indexado") for p in precios_ref)
+    etiqueta_precios = ("a PESOS DE HOY (indexada con DANE)" if hay_indexado
+                        else "NOMINAL — sin serie de índices cargada")
     contexto_conversacion = ""
     if conversacion:
         lineas = [f"- {m.get('rol', 'usuario')}: {m.get('texto', '')}" for m in conversacion[-12:]]
@@ -347,28 +349,27 @@ UNIDAD DEL ÍTEM: {solicitud.get('unidad_actividad') or 'por definir'}
 CIUDAD/ZONA DE LA OBRA: {ciudad or 'no indicada'}
 {contexto_conversacion}
 
-REFERENCIAS DISPONIBLES (ordenadas por relevancia: similitud, cercanía a la ciudad y recencia;
-el campo "recencia" indica qué tan viejo está el dato). Incluye referencias del banco interno
-y externas (SECOP II). Se combinaron y reordenaron por relevancia para el ítem consultado:
+REFERENCIAS DEL BANCO DE APUs (ordenadas por relevancia: similitud, cercanía a la ciudad y recencia;
+el campo "recencia" indica qué tan viejo está el dato):
 {json.dumps(_compactar_referencias_para_ia(refs_ranked), default=str, ensure_ascii=False, indent=2)}
+
+RENDIMIENTOS DE REFERENCIA (MEDIANA del banco por insumo, con nº de muestras y rango):
+{json.dumps(_rendimientos_por_insumo(refs_ranked), default=str, ensure_ascii=False, indent=2)}
+
+PRECIOS DE REFERENCIA POR INSUMO (MEDIANA {etiqueta_precios}, con nº de muestras y rango):
+{json.dumps(precios_ref, default=str, ensure_ascii=False, indent=2)}
 
 INSTRUCCIONES:
 1. Propón la ESTRUCTURA completa del APU para esta actividad: lista de insumos por tipo
    ({", ".join(TIPOS_INSUMO_VALIDOS)}), con unidad, RENDIMIENTO (usa 1 cuando el insumo entra por cantidad
    directa, ej. materiales medidos en m³) y PRECIO UNITARIO.
-2. Los PRECIOS y rendimientos deben salir de las REFERENCIAS disponibles (banco interno o SECOP II):
-   - PRIMERO: intente usar las referencias del banco interno (las primeras de la lista).
-   - SI NO HAY DATOS COMPARABLES para este tipo de insumo (ej. pintura bicomponente en frío,
-     aplicación por spray, microesferas para retrorreflectividad):
-     → Use referencias SECOP II como alternativa de mercado público colombiano.
-   - En "fuente" indique claramente el origen:
-     • Si usó datos del banco: "Banco: <proyecto> · <ciudad> · <fecha>"
-     • Si usó datos SECOP II: "SECOP II · Contrato <número> · <ciudad> · <fecha>"
-3. Si no hay referencia para un insumo indispensable, inclúyalo con precio null y explícalo en "notas".
-4. Si falta información clave que cambie la estructura o los rendimientos (diámetros, profundidades,
-   distancias de transporte, condiciones del terreno, condiciones de aplicación como temperatura,
-   tiempo de curado, método spray vs rodillo), hágalo en "preguntas" (máximo 3, concretas).
-5. Ajuste la propuesta según la CONVERSACIÓN PREVIA si existe.
+2. Los PRECIOS y rendimientos deben salir de las REFERENCIAS del banco: elige SIEMPRE el dato más
+   reciente y, si existe, el de la misma ciudad de la obra. En "fuente" explica de qué referencia
+   salió (ej.: "Banco: <proyecto> · <ciudad> · <fecha>").
+   Para el RENDIMIENTO, cuando el insumo aparezca en "RENDIMIENTOS DE REFERENCIA" usa la MEDIANA
+   (es robusta a datos atípicos), no el valor de un solo APU; ten en cuenta el nº de muestras (n).
+   Para el PRECIO, cuando el insumo aparezca en "PRECIOS DE REFERENCIA POR INSUMO" parte de su
+   "precio_mediana_hoy" (si viene indexado, ya está a pesos de hoy) y ajústalo según ciudad/mercado.
 3. Si no hay referencia para un insumo indispensable, inclúyelo con precio null y explícalo en "notas".
 4. Si falta información clave que cambie la estructura o los rendimientos (diámetros, profundidades,
    distancias de transporte, condiciones del terreno, etc.), hazlo en "preguntas" (máximo 3, concretas).
@@ -437,14 +438,8 @@ def sugerir_estructura(solicitud_id: int) -> dict:
 
     descripcion = solicitud.get("descripcion_actividad") or ""
     refs = analisis_repo.buscar_apus_similares(descripcion)
-    # Consultar referencias SECOP II externas para enriquecer la propuesta con precios de mercado
-    secop_refs = consultar_referencias(descripcion, limite=5)
-    # Mergear: dar prioridad a las del banco, pero incluir SECOP II al final
-    todos_refs = refs + secop_refs
-    refs_ranked = _rankear_referencias(todos_refs, ciudad=solicitud.get("ciudad"))
-    propuesta = _construir_propuesta(solicitud, refs_ranked)
-    # Rellenar insumos sin precio mediante scraping en tiempo real (CYPE Colombia / Mercado)
-    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
+    refs_ranked = _rankear_referencias(refs, ciudad=solicitud.get("ciudad"))
+    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
     return {
         "solicitud_id": solicitud_id,
         "propuesta": propuesta,
@@ -473,9 +468,8 @@ def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_act
     mensajes = list(conversacion)
     if propuesta_actual:
         mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)})
-    propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes)
-    # Rellenar insumos sin precio mediante scraping en tiempo real
-    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
+    propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
+                                     serie_indice=_cargar_serie_indice())
     return {"solicitud_id": solicitud_id, "propuesta": propuesta}
 
 

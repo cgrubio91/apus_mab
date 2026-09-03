@@ -237,6 +237,70 @@ SCHEMA_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
 
+    # ── Catálogo canónico de insumos + histórico de precios ──
+    """
+    CREATE TABLE IF NOT EXISTS insumo_maestro (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        descripcion_canonica VARCHAR(300) NOT NULL,
+        firma VARCHAR(300) NOT NULL,
+        unidad VARCHAR(40),
+        tipo_insumo VARCHAR(100),
+        codigo VARCHAR(60),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_insumo_firma (firma),
+        FULLTEXT KEY ftx_insumo_desc (descripcion_canonica)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
+    """
+    CREATE TABLE IF NOT EXISTS insumo_sinonimo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        insumo_maestro_id INT NOT NULL,
+        descripcion_norm VARCHAR(300) NOT NULL,
+        descripcion_original VARCHAR(300),
+        fuente VARCHAR(60),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_sinonimo_norm (descripcion_norm),
+        KEY idx_sinonimo_insumo (insumo_maestro_id),
+        FOREIGN KEY (insumo_maestro_id) REFERENCES insumo_maestro(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
+    """
+    CREATE TABLE IF NOT EXISTS precio_insumo_historico (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        insumo_maestro_id INT NOT NULL,
+        precio DECIMAL(30,10) NOT NULL,
+        unidad VARCHAR(40),
+        rendimiento DECIMAL(30,10),
+        ciudad VARCHAR(120),
+        departamento VARCHAR(120),
+        fecha DATE,
+        fuente VARCHAR(60) NOT NULL,
+        fuente_id VARCHAR(200),
+        clave_unica VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_precio_hist_clave (clave_unica),
+        KEY idx_precio_hist_insumo_fecha (insumo_maestro_id, fecha),
+        KEY idx_precio_hist_ciudad (ciudad),
+        FOREIGN KEY (insumo_maestro_id) REFERENCES insumo_maestro(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
+    # Serie de índices para llevar precios a pesos constantes (ej. DANE ICCP/IPC).
+    """
+    CREATE TABLE IF NOT EXISTS indice_costos (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        serie VARCHAR(40) NOT NULL,
+        periodo CHAR(7) NOT NULL,
+        valor DECIMAL(18,6) NOT NULL,
+        fuente VARCHAR(60),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_indice_serie_periodo (serie, periodo)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
     # ── Referencias de precio externas (SECOP, DANE, retail...) ──
     """
     CREATE TABLE IF NOT EXISTS precio_referencia_externa (

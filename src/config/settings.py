@@ -1,5 +1,6 @@
-from pydantic_settings import BaseSettings
 from typing import Optional
+
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -47,6 +48,14 @@ class Settings(BaseSettings):
     SOCRATA_DOMAIN: str = "www.datos.gov.co"
     SOCRATA_APP_TOKEN: Optional[str] = None
     SECOP_DATASET_ID: str = "jbjy-vk9h"
+
+    # Fuentes documentales (IDU / INVÍAS): lista-semilla de URLs de documentos
+    IDU_URLS_SEED: str = ""
+    INVIAS_URLS_SEED: str = ""
+
+    # Índices DANE (indexación temporal de precios)
+    DANE_ICCP_DATASET_ID: str = ""
+    DANE_ICCP_SERIE: str = "ICCP"
 
 
 settings = Settings()
