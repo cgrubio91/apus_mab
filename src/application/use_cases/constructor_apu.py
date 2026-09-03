@@ -18,6 +18,7 @@ from typing import Optional
 
 from src.application.use_cases.extract_city import extraer_ciudad_texto
 from src.application.use_cases.manage_analisis import realizar_analisis
+from src.application.use_cases.ingesta_referencias import consultar_referencias
 from src.application.use_cases.notificaciones import crear_notificacion
 from src.infrastructure.ai.provider import ai_provider
 from src.infrastructure.database.repositories.analisis_repository import (
@@ -437,8 +438,13 @@ def sugerir_estructura(solicitud_id: int) -> dict:
         raise ValueError(f"Solo se puede sugerir estructura en estado 'borrador' (actual: {solicitud.get('estado')})")
 
     descripcion = solicitud.get("descripcion_actividad") or ""
-    refs = analisis_repo.buscar_apus_similares(descripcion)
-    refs_ranked = _rankear_referencias(refs, ciudad=solicitud.get("ciudad"))
+    # 1. Consultar SECOP II externos primero (fuente más actualizada)
+    secop_refs = consultar_referencias(descripcion, limite=5)
+    # 2. Buscar en banco interno
+    refs_internos = analisis_repo.buscar_apus_similares(descripcion)
+    # 3. Mergear: SECOP II primero, luego banco interno
+    todos_refs = secop_refs + refs_internos
+    refs_ranked = _rankear_referencias(todos_refs, ciudad=solicitud.get("ciudad"))
     propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
     return {
         "solicitud_id": solicitud_id,
