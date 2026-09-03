@@ -377,6 +377,12 @@ SCHEMA_STATEMENTS = [
     "ALTER TABLE solicitud_insumos ADD COLUMN precio_banco DECIMAL(30,10) NULL",
     "ALTER TABLE solicitud_insumos ADD COLUMN rendimiento_banco DECIMAL(30,10) NULL",
     "ALTER TABLE solicitud_insumos ADD COLUMN fuente_precio VARCHAR(255) NULL",
+
+    # ── Migración: vínculo real (FK lógica) entre el banco de APUs y proyectos,
+    # para poder asignar filas de `apus` a un proyecto sin depender solo del texto
+    # libre `nombre_proyecto` ──
+    "ALTER TABLE apus ADD COLUMN proyecto_id INT NULL",
+    "ALTER TABLE apus ADD INDEX idx_apus_proyecto_id (proyecto_id)",
 ]
 
 

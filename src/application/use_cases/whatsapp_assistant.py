@@ -2,6 +2,7 @@ import json
 import logging
 
 from src.application.use_cases.assistant_common import (
+    build_schema_prompt,
     ejecutar_sql,
     gemini_generate,
     guardar_conversacion,  # noqa: F401 — re-exportado para el router de WhatsApp
@@ -47,30 +48,10 @@ def process_message(telefono: str, message_body: str, user: dict) -> str:
                 ctx += f"SQL: {c['sql_generado'][:100]}...\n"
         ctx += "\nUsa el contexto para referencias.\n"
 
-    prompt_sql = f"""Actúa como un experto en MySQL y APUs.
+    schema_info = build_schema_prompt()
+    prompt_sql = f"""Actúa como un experto en MySQL 8.0 y APUs de obra civil.
 
-Tabla: apus
-CADA FILA = un insumo. Un mismo ítem APU aparece en VARIAS filas.
-
-Columnas:
-- item, items_descripcion, item_unidad → datos del ÍTEM
-- precio_unitario → PRECIO DEL ÍTEM APU (lo que pide el usuario). Es CONSTANTE para todas las filas de un mismo ítem.
-- precio_unitario_apu → precio del INSUMO (NO del ítem). Varía por cada insumo dentro de un mismo ítem.
-- precio_parcial_apu → precio parcial del insumo (rendimiento_insumo × precio_unitario_apu)
-- codigo_insumo, insumo_descripcion, tipo_insumo, rendimiento_insumo → datos del INSUMO
-- fecha_aprobacion_apu, fecha_analisis_apu, ciudad, pais, entidad
-- contratista, nombre_proyecto, numero_contrato
-- observacion, link_documento
-
-REGLAS (MySQL 8.0):
-1. Siempre LIKE con %.
-2. Mapea lenguaje natural a columnas.
-3. Si pide "precio" o "valor unitario" del ítem, usa precio_unitario.
-4. Para listar ítems sin duplicados usa SELECT DISTINCT.
-5. LIMIT 20 salvo que pida otra cantidad.
-6. Solo SELECT. Sin Markdown. Sin ```sql```.
-7. Para desglose de insumos usa GROUP BY.
-8. Esta es MySQL 8.0. Usa LIKE, DISTINCT (sin ON), y CAST() si es necesario.
+{schema_info}
 {ctx}
 Usuario: "{message_body}"
 SQL:"""

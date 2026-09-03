@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     IDU_URLS_SEED: str = ""
     INVIAS_URLS_SEED: str = ""
 
+    # ANI (Agencia Nacional de Infraestructura) — concesiones vía Socrata
+    ANI_DATASET_ID: str = "b9m8-fgtx"
+
     # Índices DANE (indexación temporal de precios)
     DANE_ICCP_DATASET_ID: str = ""
     DANE_ICCP_SERIE: str = "ICCP"

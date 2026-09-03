@@ -17,10 +17,13 @@ router = APIRouter()
 
 
 class RegisterRequest(BaseModel):
-    name: str
-    email: str
-    phone: str
+    name: str | None = None
+    nombre: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    telefono: str | None = None
     password: str
+    rol: str | None = None
 
 
 class LoginRequest(BaseModel):
@@ -128,12 +131,16 @@ async def admin_update_user(
 
 @router.post("/auth/register", tags=["Auth"])
 async def register(payload: RegisterRequest) -> dict:
-    if not payload.name or not payload.email or not payload.phone or not payload.password:
-        raise HTTPException(status_code=400, detail="Todos los campos son requeridos")
+    name = (payload.name or payload.nombre or "").strip()
+    phone = (payload.phone or payload.telefono or "").strip()
+    email = (payload.email or f"{phone}@mapus.local" if phone else "").strip()
+
+    if not name or not phone or not payload.password:
+        raise HTTPException(status_code=400, detail="Nombre, teléfono y contraseña son requeridos")
 
     existing = execute_query(
-        "SELECT id FROM users WHERE email = %s OR phone = %s",
-        (payload.email, payload.phone),
+        "SELECT id FROM users WHERE (email = %s AND email <> '') OR phone = %s",
+        (email, phone),
     )
     if existing:
         raise HTTPException(status_code=400, detail="El email o teléfono ya está registrado")
@@ -141,14 +148,16 @@ async def register(payload: RegisterRequest) -> dict:
     pwd_hash = hash_password(payload.password)
     execute_query(
         "INSERT INTO users (name, cc, email, password, phone, position, proyecto) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (payload.name, payload.phone, payload.email, pwd_hash, payload.phone, "Usuario MAPUS", "LOCAL"),
+        (name, phone, email, pwd_hash, phone, "Usuario MAPUS", "LOCAL"),
         fetch=False,
     )
 
-    user_id = execute_query("SELECT LAST_INSERT_ID() AS id")[0]["id"]
+    user_id_rows = execute_query("SELECT LAST_INSERT_ID() AS id")
+    user_id = user_id_rows[0]["id"] if user_id_rows else 1
 
-    rol_row = execute_query("SELECT id FROM rol WHERE codigo = 'contraparte'")
-    rol_id = rol_row[0]["id"] if rol_row else 12
+    # El registro público siempre asigna el rol base 'user' (id 13)
+    rol_row = execute_query("SELECT id FROM rol WHERE codigo = 'user'")
+    rol_id = rol_row[0]["id"] if rol_row else 13
 
     execute_query(
         "INSERT INTO usuario_rol (user_id, rol_id) VALUES (%s, %s)",
@@ -158,16 +167,16 @@ async def register(payload: RegisterRequest) -> dict:
 
     token = create_access_token({
         "sub": str(user_id),
-        "telefono": payload.phone,
-        "rol": "contraparte",
-        "nombre": payload.name,
-        "email": payload.email,
+        "telefono": phone,
+        "rol": "user",
+        "nombre": name,
+        "email": email,
     })
     return {
         "success": True,
         "access_token": token,
         "token_type": "bearer",
-        "user": {"id": user_id, "nombre": payload.name, "rol": "contraparte", "telefono": payload.phone, "email": payload.email},
+        "user": {"id": user_id, "nombre": name, "rol": "user", "telefono": phone, "email": email},
     }
 
 

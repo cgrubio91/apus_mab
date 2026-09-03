@@ -63,12 +63,30 @@
     <button (click)="loadApus()" style="background:none;border:1px solid #b71c1c;color:#b71c1c;border-radius:6px;padding:4px 12px;cursor:pointer;">Reintentar</button>
   </div>
 
+  <!-- Barra de selección: asignar a proyecto -->
+  <div class="selection-bar animate-fade-in" *ngIf="selectedIds.size > 0">
+    <span class="selection-count">{{ selectedIds.size }} APU(s) seleccionado(s)</span>
+    <select [(ngModel)]="proyectoAsignarId">
+      <option [ngValue]="null">Elegir proyecto…</option>
+      <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion || 'Sin nombre' }}</option>
+    </select>
+    <button class="clear-filters-btn has-filters" [disabled]="!proyectoAsignarId || isAsignando" (click)="asignarProyectoSeleccion()">
+      <span class="material-symbols-outlined">bookmark_add</span>
+      {{ isAsignando ? 'Asignando...' : 'Asignar a proyecto' }}
+    </button>
+    <button class="clear-filters-btn" (click)="clearSelection()">Cancelar</button>
+    <span class="selection-message" *ngIf="asignarMessage">{{ asignarMessage }}</span>
+  </div>
+
   <!-- Spreadsheet Table -->
   <div class="table-card animate-fade-in" *ngIf="!isLoading">
     <div class="table-responsive">
       <table class="premium-table">
         <thead>
           <tr>
+            <th class="th-select">
+              <input type="checkbox" [checked]="apus.length > 0 && apus.every(isSelected)" (change)="toggleSelectAllVisible()" title="Seleccionar todos los visibles" />
+            </th>
             <th *ngFor="let col of visibleColumns"
               class="th-{{ col.type }}"
               [class.sortable]="col.sortable"
@@ -126,7 +144,8 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let apu of apus">
+          <tr *ngFor="let apu of apus" [class.row-selected]="isSelected(apu)">
+            <td class="th-select"><input type="checkbox" [checked]="isSelected(apu)" (change)="toggleSelect(apu, $event)" /></td>
             <td *ngFor="let col of visibleColumns"
               [class]="getCellClass(apu, col)"
               [title]="getCellValue(apu, col)">

@@ -547,11 +547,37 @@ if __name__ == "__main__":
 | `/apus/filter-options`    | GET     | Opciones de filtro para el frontend                                                              |
 | `/apus/export`            | GET     | Exporta el banco (con filtros) a Excel o CSV (`?formato=xlsx                                     |
 | `/apus/historico-precios` | GET     | Evolución mensual del precio de un insumo (avg/min/max) —`?insumo=&ciudad=&nombre_proyecto=` |
-| `/dashboard`              | GET     | Estadísticas del dashboard                                                                      |
+| `/dashboard`              | GET     | Estadísticas del dashboard (con deltas mensuales, tendencia 12 meses)                           |
 | `/projects`               | GET     | Lista de proyectos únicos                                                                       |
 | `/projects`               | DELETE  | Elimina un proyecto completo                                                                     |
+| `/proyectos-mapus`        | GET     | Listado consolidado de proyectos MAPUS para tarjetas del frontend                              |
+| `/proyectos-mapus`        | POST    | Crea un nuevo proyecto                                                                           |
+| `/proyectos-mapus/{id}/items` | GET | Detalle y árbol de ítems presupuestados del proyecto (con firma legal)                          |
+| `/proyectos-mapus/{id}/apus`  | GET | APUs del banco asignados directamente a este proyecto (`proyecto_id`)                          |
+| `/asignar-proyecto`       | POST    | Asigna filas del banco de APUs a un proyecto por ID (`{proyecto_id, apu_ids}`) (rol: analista)  |
 
 **Filtros disponibles:** nombre_proyecto, ciudad, items_descripcion, insumo_descripcion, tipo_insumo, contratista, entidad, codigo_insumo, item, item_unidad, insumo_unidad, pais, numero_contrato.
+
+#### `src/presentation/routers/referencias.py`
+
+**Propósito:** Ingesta y consulta de referencias de precios externas (mercado público, generadores de precios y retail) e índices de indexación de costos.
+
+| Ruta                                      | Método | Función                                                        | Rol mínimo |
+| ----------------------------------------- | ------ | -------------------------------------------------------------- | ---------- |
+| `/referencias/secop/ingerir`              | POST   | Ingesta contratos desde SECOP II (datos.gov.co)                | analista   |
+| `/referencias/cype/ingerir`               | POST   | Ingesta unidades de obra y desglose de APUs desde CYPE         | analista   |
+| `/referencias/homecenter/ingerir`         | POST   | Ingesta catálogo de materiales comerciales de Homecenter       | analista   |
+| `/referencias/ani/ingerir`                | POST   | Ingesta contratos y concesiones viales desde ANI (datos.gov.co)| analista   |
+| `/referencias/idu/ingerir`                | POST   | Ingesta documentos de precios de referencia del IDU            | analista   |
+| `/referencias/invias/ingerir`             | POST   | Ingesta documentos de precios de referencia de INVÍAS          | analista   |
+| `/referencias`                            | GET    | Consulta referencias externas guardadas (filtros: fuente, desc)| autenticado|
+| `/referencias/insumos/estadisticas`       | GET    | Estadísticas agregadas de precios para un insumo               | autenticado|
+| `/referencias/insumos/estadisticas-indexadas` | GET| Precios de insumo indexados a valor presente con serie DANE   | autenticado|
+| `/referencias/indices/dane/ingerir`       | POST   | Ingesta series de índices DANE (ej. ICCP, IPC)                 | analista   |
+| `/referencias/indices/cargar`             | POST   | Carga manual de puntos de serie de índices                     | analista   |
+| `/referencias/indices`                    | GET    | Lista de series de índices disponibles                         | autenticado|
+| `/referencias/catalogo/backfill`          | POST   | Homologa y puebla insumos maestros desde banco o ref externas  | analista   |
+
 
 #### `src/presentation/routers/chat.py`
 
@@ -562,6 +588,7 @@ if __name__ == "__main__":
 | `/chat-assistant` | POST    | Lenguaje natural → SQL → resultados → respuesta |
 
 **Flujo:** Recibe `{message, telefono, nombre}`, orquesta `process_chat_message()` y retorna `{reply, sql_query, results, stages, cached, suggested_followups}`.
+El asistente cuenta con acceso multi-fuente a 5 tablas permitidas (`apus`, `precio_referencia_externa`, `indice_costos`, `insumo_maestro`, `precio_insumo_historico`), lo que le permite responder consultas comparando precios internos vs externos (SECOP, CYPE, Homecenter, ANI, DANE).
 
 #### `src/presentation/routers/extractor.py`
 

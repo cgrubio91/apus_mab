@@ -3,6 +3,11 @@ import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { ApuService } from '../../services/apu';
 
+interface PuntoTendencia {
+  periodo: string;
+  cantidad: number;
+}
+
 interface CiudadGeo {
   ciudad: string;
   count: number;
@@ -57,9 +62,15 @@ export class DashboardApus implements OnInit {
     totalCiudades: 0,
 
     apusPorTipoInsumo: {} as Record<string, number>,
+    apusNuevosMes: 0,
+    apusMesAnterior: 0,
+    proyectosNuevosMes: 0,
+    proyectosMesAnterior: 0,
+    apusPorMes: [] as PuntoTendencia[],
   };
   isLoading = true;
   errorMessage = '';
+  isExporting = false;
 
   // Mapa
   mapW = 340;
@@ -104,6 +115,11 @@ export class DashboardApus implements OnInit {
         this.stats.totalCiudades = data.total_cities || 0;
 
         this.stats.apusPorTipoInsumo = data.apus_por_tipo_insumo || {};
+        this.stats.apusNuevosMes = data.apus_nuevos_mes || 0;
+        this.stats.apusMesAnterior = data.apus_mes_anterior || 0;
+        this.stats.proyectosNuevosMes = data.proyectos_nuevos_mes || 0;
+        this.stats.proyectosMesAnterior = data.proyectos_mes_anterior || 0;
+        this.stats.apusPorMes = data.apus_por_mes || [];
         this.porCiudadRaw = data.apus_por_ciudad || {};
         this.rebuildGeo();
         this.isLoading = false;
@@ -171,6 +187,30 @@ export class DashboardApus implements OnInit {
       'san jose del guaviare': 'San José del Guaviare',
     };
     return especiales[norm] || norm.replace(/\b\w/g, (m) => m.toUpperCase());
+  }
+
+  get deltaProyectos(): number {
+    return this.stats.proyectosNuevosMes - this.stats.proyectosMesAnterior;
+  }
+
+  get maxApusPorMes(): number {
+    return Math.max(1, ...this.stats.apusPorMes.map((p) => p.cantidad));
+  }
+
+  barHeightMes(p: PuntoTendencia): number {
+    return Math.max(4, Math.round((p.cantidad / this.maxApusPorMes) * 100));
+  }
+
+  async exportarReporte(): Promise<void> {
+    this.isExporting = true;
+    try {
+      await this.apuService.exportApus({}, 'xlsx');
+    } catch {
+      this.errorMessage = 'No se pudo exportar el reporte. Intenta de nuevo.';
+    } finally {
+      this.isExporting = false;
+      this.cdr.markForCheck();
+    }
   }
 }
 

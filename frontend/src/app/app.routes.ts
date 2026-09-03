@@ -9,6 +9,7 @@ import { AnalisisApu } from './pages/analisis-apu/analisis-apu';
 import { ConstructorApu } from './pages/constructor-apu/constructor-apu';
 import { HistoricoPrecios } from './pages/historico-precios/historico-precios';
 import { ProyectosMapus } from './pages/proyectos-mapus/proyectos-mapus';
+import { ProyectoDetalle } from './pages/proyecto-detalle/proyecto-detalle';
 import { Usuarios } from './pages/usuarios/usuarios';
 import { Login } from './pages/login/login';
 import { AuthGuard } from './services/auth.guard';
@@ -34,5 +35,6 @@ export const routes: Routes = [
   { path: 'constructor-apu', component: ConstructorApu, canActivate: [AuthGuard] },
   { path: 'historico-precios', component: HistoricoPrecios, canActivate: [AuthGuard] },
   { path: 'proyectos-mapus', component: ProyectosMapus, canActivate: [AuthGuard] },
+  { path: 'proyectos-mapus/:id', component: ProyectoDetalle, canActivate: [AuthGuard] },
   { path: 'usuarios', component: Usuarios, canActivate: [AuthGuard, adminGuard] },
 ];

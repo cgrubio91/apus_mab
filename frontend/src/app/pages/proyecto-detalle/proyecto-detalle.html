@@ -1,0 +1,133 @@
+<div class="detalle-container">
+  <a class="back-link" [routerLink]="['/proyectos-mapus']">
+    <span class="material-symbols-outlined">arrow_back</span>
+    Proyectos
+  </a>
+
+  <header class="detalle-header animate-fade-in" *ngIf="proyecto as p">
+    <div class="header-titles">
+      <span class="proyecto-id">#{{ p.id_proy }}</span>
+      <h1>{{ p.descripcion || 'Sin nombre' }}</h1>
+      <p>Presupuesto total: {{ formatearMoneda(p.presupuesto_total) }}</p>
+    </div>
+  </header>
+
+  <div class="loading-state" *ngIf="cargando">
+    <div class="spinner"></div>
+    <p>Cargando detalle del proyecto…</p>
+  </div>
+
+  <div class="error-banner" *ngIf="!cargando && error" role="alert">
+    <span class="material-symbols-outlined alert-icon">warning</span>
+    <span>{{ error }}</span>
+    <button (click)="cargarDetalle()">Reintentar</button>
+  </div>
+
+  <div class="detalle-content animate-fade-in" *ngIf="!cargando && !error">
+    <!-- APUs asignados directamente al banco -->
+    <div class="apu-section" *ngIf="!cargandoApusBanco && apusBanco.length > 0">
+      <div class="apu-section-head">
+        <span class="material-symbols-outlined">inventory_2</span>
+        <h4>APUs del banco asignados a este proyecto</h4>
+        <span class="apu-total">{{ apusBancoTotal }} registro(s)</span>
+      </div>
+      <table class="detalle-table">
+        <thead>
+          <tr>
+            <th>ÍTEM</th><th>DESCRIPCIÓN</th><th>UND</th><th>CIUDAD</th>
+            <th class="num">PRECIO UNIT.</th><th>INSUMO</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let a of apusBanco">
+            <td class="mono">{{ a.item }}</td>
+            <td>{{ a.items_descripcion }}</td>
+            <td>{{ a.item_unidad || '—' }}</td>
+            <td>{{ a.ciudad || '—' }}</td>
+            <td class="num strong">{{ formatearMoneda(a.precio_unitario || 0) }}</td>
+            <td>{{ a.insumo_descripcion || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Ítems cargados desde APU aprobado -->
+    <div class="apu-section" *ngIf="itemsApu.length > 0">
+      <div class="apu-section-head">
+        <span class="material-symbols-outlined">verified</span>
+        <h4>Ítems cargados desde APU aprobado</h4>
+        <span class="apu-total">+{{ formatearMoneda(totalApu) }} al contrato</span>
+      </div>
+      <table class="detalle-table">
+        <thead>
+          <tr>
+            <th>CÓDIGO</th><th>DESCRIPCIÓN</th><th>UND</th>
+            <th class="num">CANT.</th><th class="num">VR. UNIT.</th><th class="num">VR. TOTAL</th><th>APROBACIÓN</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let it of itemsApu" class="apu-item">
+            <td class="mono">{{ it.codigo }} <span class="np-badge">{{ it.tipo_item }}</span></td>
+            <td>{{ it.nombre }}</td>
+            <td>{{ it.unidad_medida || '—' }}</td>
+            <td class="num">{{ it.cantidad_presupuestada || '—' }}</td>
+            <td class="num">{{ formatearMoneda(it.valor_unitario) }}</td>
+            <td class="num strong">{{ formatearMoneda(it.valor_presupuestado) }}</td>
+            <td class="aprob-col">
+              <button class="info-btn" (click)="toggleInfoAprobacion(it.id)"
+                      [class.active]="infoAprobacionId === it.id" title="Ver quién y cuándo aprobó">
+                <span class="material-symbols-outlined">info</span>
+              </button>
+              <div class="aprob-popover" *ngIf="infoAprobacionId === it.id">
+                <p><strong>Aprobado por:</strong> {{ it.aprobado_por || '—' }}
+                  <span class="rol" *ngIf="it.aprobado_rol">({{ it.aprobado_rol }})</span></p>
+                <p><strong>Fecha:</strong> {{ formatearFecha(it.aprobado_en) }}</p>
+                <p class="hint">Firmado legalmente e incorporado al presupuesto del proyecto.</p>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Presupuesto base: capítulos → ítems -->
+    <div class="base-section">
+      <div class="base-head">
+        <span class="material-symbols-outlined">account_tree</span>
+        <h4>Presupuesto base del contrato</h4>
+        <span class="cap-count">{{ capitulos.length }} capítulo(s)</span>
+      </div>
+      <div class="capitulo" *ngFor="let cap of capitulos">
+        <div class="capitulo-head" (click)="toggleCapitulo(cap)">
+          <span class="material-symbols-outlined chevron" [class.open]="cap.expandido">chevron_right</span>
+          <span class="cap-nombre">{{ cap.nombre }}</span>
+          <span class="cap-valor">{{ formatearMoneda(cap.valor_presupuestado) }}</span>
+        </div>
+        <table class="detalle-table" *ngIf="cap.expandido && cap.hijos?.length">
+          <thead>
+            <tr>
+              <th>CÓDIGO</th><th>DESCRIPCIÓN</th><th>UND</th>
+              <th class="num">CANT.</th><th class="num">VR. UNIT.</th><th class="num">VR. TOTAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let it of cap.hijos">
+              <td class="mono">{{ it.codigo }}</td>
+              <td>{{ it.nombre }}</td>
+              <td>{{ it.unidad_medida || '—' }}</td>
+              <td class="num">{{ it.cantidad_presupuestada || '—' }}</td>
+              <td class="num">{{ formatearMoneda(it.valor_unitario) }}</td>
+              <td class="num strong">{{ formatearMoneda(it.valor_presupuestado) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="empty-state" *ngIf="capitulos.length === 0 && itemsApu.length === 0 && apusBanco.length === 0">
+        <span class="material-symbols-outlined empty-icon">inventory_2</span>
+        <h3>Este proyecto aún no tiene APUs</h3>
+        <p>Asigna APUs desde el Banco de APUs o carga el presupuesto base del contrato.</p>
+      </div>
+    </div>
+  </div>
+</div>

@@ -98,3 +98,74 @@ def test_rellenar_precios_reales_completa_insumos_vacios():
     # Vibrador debe conservar su precio original del banco
     assert insumos[2]["precio"] == 11000.0
     assert insumos[2]["fuente"] == "Banco INVIAS"
+
+
+def test_ingerir_cype_con_mock(monkeypatch):
+    from src.application.use_cases.ingesta_referencias import ingerir_cype
+
+    class MockCypeSource:
+        def buscar(self, query, limite=5):
+            return [{"codigo": "CSZ010", "titulo": "Zapata de concreto", "url": "https://cype.com/zapata"}]
+
+        def extraer_desglose(self, url):
+            return {
+                "codigo": "CSZ010",
+                "titulo": "Zapata de concreto",
+                "unidad": "m3",
+                "precio_total": Decimal("700000"),
+                "url": url,
+                "insumos": [
+                    {
+                        "codigo": "mt01",
+                        "descripcion": "Acero corrugado",
+                        "unidad": "kg",
+                        "precio": Decimal("3200"),
+                        "rendimiento": Decimal("50"),
+                    }
+                ],
+            }
+
+    # Mock del repo para no necesitar BD
+    guardadas = []
+    monkeypatch.setattr(
+        "src.infrastructure.database.repositories.referencia_externa_repository.referencia_externa_repo.upsert_muchas",
+        lambda refs: guardadas.extend(refs) or {"afectadas": len(refs)},
+    )
+
+    res = ingerir_cype("zapata", limite=1, source=MockCypeSource())
+    assert res["success"] is True
+    assert res["referencias_traidas"] == 1
+    assert len(guardadas) == 1
+    assert guardadas[0].fuente == "CYPE Colombia"
+    assert guardadas[0].descripcion == "Acero corrugado"
+    assert guardadas[0].precio == Decimal("3200")
+
+
+def test_ingerir_homecenter_con_mock(monkeypatch):
+    from src.application.use_cases.ingesta_referencias import ingerir_homecenter
+
+    class MockCatalogoMaterialesSource:
+        def buscar_material(self, query, limite=5):
+            return [
+                {
+                    "nombre": "Cemento Gris Uso General 50kg",
+                    "marca": "Argos",
+                    "precio": Decimal("34900"),
+                    "unidad": "bto",
+                }
+            ]
+
+    guardadas = []
+    monkeypatch.setattr(
+        "src.infrastructure.database.repositories.referencia_externa_repository.referencia_externa_repo.upsert_muchas",
+        lambda refs: guardadas.extend(refs) or {"afectadas": len(refs)},
+    )
+
+    res = ingerir_homecenter("cemento", limite=1, source=MockCatalogoMaterialesSource())
+    assert res["success"] is True
+    assert res["referencias_traidas"] == 1
+    assert len(guardadas) == 1
+    assert guardadas[0].fuente == "Constructor Homecenter"
+    assert guardadas[0].precio == Decimal("34900")
+    assert guardadas[0].granularidad == "material"
+

@@ -329,6 +329,32 @@ class ApuMySQLRepository:
             SELECT tipo_insumo, COUNT(*) as apu_count
             FROM apus GROUP BY tipo_insumo ORDER BY apu_count DESC
         """
+        # Variación mes actual vs mes anterior (APUs ingresados y proyectos con actividad),
+        # para los "trend badges" del dashboard. YEAR()/MONTH() en vez de DATE_FORMAT('%Y-%m')
+        # porque el conector C de MySQL no des-escapa '%%' en queries parametrizadas.
+        tendencia_mensual_query = """
+            SELECT
+                SUM(CASE WHEN YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())
+                         THEN 1 ELSE 0 END) AS apus_mes_actual,
+                SUM(CASE WHEN YEAR(created_at) = YEAR(CURDATE() - INTERVAL 1 MONTH)
+                          AND MONTH(created_at) = MONTH(CURDATE() - INTERVAL 1 MONTH)
+                         THEN 1 ELSE 0 END) AS apus_mes_anterior,
+                COUNT(DISTINCT CASE WHEN YEAR(created_at) = YEAR(CURDATE()) AND MONTH(created_at) = MONTH(CURDATE())
+                                     THEN nombre_proyecto END) AS proyectos_mes_actual,
+                COUNT(DISTINCT CASE WHEN YEAR(created_at) = YEAR(CURDATE() - INTERVAL 1 MONTH)
+                                      AND MONTH(created_at) = MONTH(CURDATE() - INTERVAL 1 MONTH)
+                                     THEN nombre_proyecto END) AS proyectos_mes_anterior
+            FROM apus
+        """
+        # Serie de los últimos 12 meses (cantidad de APUs ingresados por mes) para graficar tendencia.
+        apus_por_mes_query = """
+            SELECT CONCAT(YEAR(created_at), '-', LPAD(MONTH(created_at), 2, '0')) AS periodo,
+                   COUNT(*) AS cantidad
+            FROM apus
+            WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH)
+            GROUP BY periodo
+            ORDER BY periodo
+        """
         # La entidad/ciudad "IDU" (Instituto de Desarrollo Urbano) corresponde a Bogotá.
         # Se normaliza en una subconsulta para no violar ONLY_FULL_GROUP_BY (MySQL 8).
         ciudad_query = """
@@ -358,6 +384,12 @@ class ApuMySQLRepository:
                     breakdown = {r['tipo_insumo'] or 'Sin tipo': r['apu_count'] for r in rows}
                     cursor.execute(ciudad_query)
                     por_ciudad = {r['ciudad']: r['apu_count'] for r in cursor.fetchall() if r['ciudad']}
+                    cursor.execute(tendencia_mensual_query)
+                    tendencia = cursor.fetchone() or {}
+                    cursor.execute(apus_por_mes_query)
+                    apus_por_mes = [
+                        {'periodo': r['periodo'], 'cantidad': r['cantidad']} for r in cursor.fetchall()
+                    ]
                     return {
                         'total_apus': summary.get('total_apus', 0),
                         'total_projects': summary.get('total_projects', 0),
@@ -365,6 +397,11 @@ class ApuMySQLRepository:
                         'completitud_datos': round(float(summary.get('completitud_datos') or 0.0), 1),
                         'apus_por_tipo_insumo': breakdown,
                         'apus_por_ciudad': por_ciudad,
+                        'apus_nuevos_mes': int(tendencia.get('apus_mes_actual') or 0),
+                        'apus_mes_anterior': int(tendencia.get('apus_mes_anterior') or 0),
+                        'proyectos_nuevos_mes': int(tendencia.get('proyectos_mes_actual') or 0),
+                        'proyectos_mes_anterior': int(tendencia.get('proyectos_mes_anterior') or 0),
+                        'apus_por_mes': apus_por_mes,
                     }
         except mysql.connector.Error:
             log.exception("Database error in get_dashboard_stats")

@@ -58,6 +58,11 @@
   &:hover .arrow {
     transform: translate(2px, -2px);
   }
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 }
 
 /* Stats Cards Grid */
@@ -128,6 +133,44 @@
       color: var(--accent-danger);
     }
   }
+}
+
+.trend-card {
+  margin-bottom: 1.5rem;
+}
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 160px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.trend-bar-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 36px;
+  flex: 1;
+}
+
+.trend-bar {
+  width: 60%;
+  min-height: 4px;
+  background: linear-gradient(180deg, var(--accent-primary), var(--accent-primary-hover, var(--accent-primary)));
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease;
+}
+
+.trend-label {
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 /* Main Grid Layout */

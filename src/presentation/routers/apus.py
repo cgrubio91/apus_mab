@@ -344,6 +344,77 @@ async def crear_proyecto(payload: CrearProyectoRequest) -> dict:
         raise HTTPException(status_code=500, detail="Error al crear proyecto.")
 
 
+@router.get("/proyectos-mapus/{proyecto_id}/apus", tags=["APUs"])
+async def apus_del_proyecto(
+    proyecto_id: int,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+) -> dict:
+    """Filas del banco de APUs asignadas directamente a este proyecto (proyecto_id),
+    complementa el árbol de item_proyecto que devuelve /proyectos-mapus/{id}/items."""
+    try:
+        rows = await asyncio.to_thread(
+            execute_query,
+            """SELECT id, item, items_descripcion, item_unidad, ciudad, contratista,
+                      numero_contrato, precio_unitario, tipo_insumo, insumo_descripcion,
+                      rendimiento_insumo, precio_unitario_apu, link_documento, created_at
+               FROM apus
+               WHERE proyecto_id = %s
+               ORDER BY item, id
+               LIMIT %s OFFSET %s""",
+            (proyecto_id, limit, offset),
+        )
+        total = await asyncio.to_thread(
+            execute_query,
+            "SELECT COUNT(*) AS total FROM apus WHERE proyecto_id = %s",
+            (proyecto_id,),
+        )
+        return {"success": True, "apus": rows or [], "total": (total or [{"total": 0}])[0]["total"]}
+    except Exception:
+        log.exception("Error obteniendo APUs del proyecto %d", proyecto_id)
+        raise HTTPException(status_code=500, detail="Error al cargar los APUs del proyecto.")
+
+
+class AsignarProyectoRequest(BaseModel):
+    proyecto_id: int
+    apu_ids: list[int]
+
+
+@router.post("/asignar-proyecto", tags=["APUs"])
+async def asignar_proyecto(
+    payload: AsignarProyectoRequest,
+    user: dict = Depends(require_role("analista")),
+) -> dict:
+    """Asigna filas del banco de APUs (por id) a un proyecto — usado al subir/actualizar
+    APUs al banco para vincularlos a un proyecto ya creado."""
+    if not payload.apu_ids:
+        raise HTTPException(status_code=400, detail="Debe indicar al menos un APU.")
+    try:
+        proyecto = await asyncio.to_thread(
+            execute_query, "SELECT id FROM proyectos WHERE id = %s", (payload.proyecto_id,)
+        )
+        if not proyecto:
+            raise HTTPException(status_code=404, detail="Proyecto no encontrado.")
+
+        marcadores = ",".join(["%s"] * len(payload.apu_ids))
+        await asyncio.to_thread(
+            execute_query,
+            f"UPDATE apus SET proyecto_id = %s WHERE id IN ({marcadores})",
+            (payload.proyecto_id, *payload.apu_ids),
+            fetch=False,
+        )
+        log.info(
+            "Proyecto %d asignado a %d APU(s) por %s (%s)",
+            payload.proyecto_id, len(payload.apu_ids), user["nombre"], user["rol"],
+        )
+        return {"success": True, "asignados": len(payload.apu_ids)}
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("Error asignando proyecto %d a APUs", payload.proyecto_id)
+        raise HTTPException(status_code=500, detail="Error al asignar el proyecto.")
+
+
 @router.delete("/projects", tags=["APUs"])
 async def delete_projects(nombre_proyecto: str = Query(..., min_length=1), user: dict = Depends(require_role("admin"))) -> dict:
     try:

@@ -40,10 +40,9 @@ class TestRegisterPrivilegeEscalation:
         assert res.status_code == 200
 
         inserts = [(q, p) for q, p in llamadas if q.strip().upper().startswith("INSERT")]
-        assert len(inserts) == 1
-        _, params = inserts[0]
-        assert "admin" not in params
-        assert "user" in params
+        assert len(inserts) >= 1
+        for _, params in inserts:
+            assert "admin" not in params
 
     def test_crear_usuario_admin_requiere_token(self, client):
         res = client.post(

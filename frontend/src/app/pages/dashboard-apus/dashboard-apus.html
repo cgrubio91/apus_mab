@@ -5,8 +5,8 @@
       <h1>Dashboard de Proyectos</h1>
       <p>Visión consolidada de los Análisis de Precios Unitarios extraídos y costos directos por proyecto.</p>
     </div>
-    <button class="export-btn">
-      <span>Exportar reporte</span>
+    <button class="export-btn" (click)="exportarReporte()" [disabled]="isExporting">
+      <span>{{ isExporting ? 'Exportando...' : 'Exportar reporte' }}</span>
       <span class="arrow material-symbols-outlined">open_in_new</span>
     </button>
   </header>
@@ -31,9 +31,9 @@
       <div class="stat-card">
         <span class="card-label">PROYECTOS ACTIVOS</span>
         <h2 class="card-value">{{ stats.totalProyectos }}</h2>
-        <div class="trend-badge success">
-          <span class="trend-icon material-symbols-outlined">trending_up</span>
-          <span class="trend-text">+2 vs mes anterior</span>
+        <div class="trend-badge" [class.success]="deltaProyectos >= 0" [class.danger]="deltaProyectos < 0">
+          <span class="trend-icon material-symbols-outlined">{{ deltaProyectos >= 0 ? 'trending_up' : 'trending_down' }}</span>
+          <span class="trend-text">{{ deltaProyectos >= 0 ? '+' : '' }}{{ deltaProyectos }} vs mes anterior</span>
         </div>
       </div>
 
@@ -43,7 +43,7 @@
         <h2 class="card-value">{{ stats.totalApus }}</h2>
         <div class="trend-badge info">
           <span class="trend-icon material-symbols-outlined">trending_up</span>
-          <span class="trend-text">+{{ stats.ultimoMes }} vs mes anterior</span>
+          <span class="trend-text">+{{ stats.apusNuevosMes }} este mes</span>
         </div>
       </div>
 
@@ -57,6 +57,20 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- Tendencia mensual -->
+    <div class="grid-card trend-card animate-fade-in" *ngIf="stats.apusPorMes.length > 0">
+      <div class="card-header">
+        <h3>APUs ingresados por mes</h3>
+        <span class="header-desc">Últimos 12 meses</span>
+      </div>
+      <div class="trend-chart">
+        <div class="trend-bar-wrap" *ngFor="let p of stats.apusPorMes" [title]="p.periodo + ': ' + p.cantidad + ' APU(s)'">
+          <div class="trend-bar" [style.height.%]="barHeightMes(p)"></div>
+          <span class="trend-label">{{ p.periodo.slice(5) }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- Main Grid Section -->

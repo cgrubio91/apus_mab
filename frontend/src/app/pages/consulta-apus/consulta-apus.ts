@@ -4,6 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { ApuService, ApuRecord, FilterOptions } from '../../services/apu';
 
+interface ProyectoOption {
+  id: number;
+  id_proy: number;
+  descripcion: string;
+}
+
 interface ColumnDef {
   key: string;
   label: string;
@@ -66,6 +72,12 @@ export class ConsultaApus implements OnInit, OnDestroy {
   filterSearchText: Record<string, string> = {};
   filteredOptionLists: Record<string, string[]> = {};
 
+  selectedIds = new Set<number>();
+  proyectosDisponibles: ProyectoOption[] = [];
+  proyectoAsignarId: number | null = null;
+  isAsignando = false;
+  asignarMessage = '';
+
   constructor(
     private apuService: ApuService,
     private cdr: ChangeDetectorRef
@@ -83,6 +95,66 @@ export class ConsultaApus implements OnInit, OnDestroy {
 
     this.loadFilterOptions();
     this.loadApus();
+    this.loadProyectosDisponibles();
+  }
+
+  loadProyectosDisponibles(): void {
+    this.apuService.getProyectosMapus().subscribe({
+      next: (data: any) => {
+        this.proyectosDisponibles = data.proyectos || [];
+      },
+      error: () => {},
+    });
+  }
+
+  toggleSelect(apu: ApuRecord, event: Event): void {
+    event.stopPropagation();
+    if (!apu.id) return;
+    if (this.selectedIds.has(apu.id)) {
+      this.selectedIds.delete(apu.id);
+    } else {
+      this.selectedIds.add(apu.id);
+    }
+  }
+
+  isSelected(apu: ApuRecord): boolean {
+    return !!apu.id && this.selectedIds.has(apu.id);
+  }
+
+  toggleSelectAllVisible(): void {
+    const visibleIds = this.apus.map(a => a.id).filter((id): id is number => !!id);
+    const allSelected = visibleIds.every(id => this.selectedIds.has(id));
+    if (allSelected) {
+      visibleIds.forEach(id => this.selectedIds.delete(id));
+    } else {
+      visibleIds.forEach(id => this.selectedIds.add(id));
+    }
+  }
+
+  clearSelection(): void {
+    this.selectedIds.clear();
+    this.proyectoAsignarId = null;
+    this.asignarMessage = '';
+  }
+
+  asignarProyectoSeleccion(): void {
+    if (!this.proyectoAsignarId || this.selectedIds.size === 0) return;
+    this.isAsignando = true;
+    this.asignarMessage = '';
+    this.apuService.asignarApusAProyecto(this.proyectoAsignarId, Array.from(this.selectedIds)).subscribe({
+      next: () => {
+        this.asignarMessage = `${this.selectedIds.size} APU(s) asignado(s) al proyecto.`;
+        this.selectedIds.clear();
+        this.proyectoAsignarId = null;
+        this.isAsignando = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.asignarMessage = 'No se pudo asignar el proyecto. Intenta de nuevo.';
+        this.isAsignando = false;
+        this.cdr.markForCheck();
+      },
+    });
   }
 
   ngOnDestroy(): void {

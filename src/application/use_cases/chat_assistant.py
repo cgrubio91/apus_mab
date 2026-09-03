@@ -12,6 +12,7 @@ import hashlib
 from collections import OrderedDict
 
 from src.application.use_cases.assistant_common import (
+    build_schema_prompt,
     ejecutar_sql as _ejecutar_sql,
     gemini_generate,
     guardar_conversacion as _guardar_conversacion,
@@ -128,49 +129,10 @@ def process_chat_message(message: str, telefono: str, nombre: str) -> dict:
 
         # ── Stage 1: SQL generation ──
         t0 = _total_seconds()
-        prompt_sql = f"""
-Actúa como traductor estricto de Lenguaje Natural a MySQL.
+        schema_info = build_schema_prompt()
+        prompt_sql = f"""Actúa como traductor estricto de Lenguaje Natural a MySQL 8.0.
 
-TABLA DISPONIBLE:
-apus
-
-CADA FILA = un insumo individual dentro de un ítem APU.
-Un mismo ítem APU (mismo item, mismo nombre_proyecto) aparece en VARIAS filas
-(una por cada insumo que lo compone).
-
-COLUMNAS CLAVE (con semántica):
-- item → código del ítem APU (ej: "APU-001")
-- items_descripcion → descripción del ítem APU
-- item_unidad → unidad del ítem (m3, kg, gl, etc.)
-- precio_unitario → PRECIO UNITARIO TOTAL DEL ÍTEM APU (lo que normalmente pide el usuario). Es CONSTANTE para todas las filas de un mismo ítem.
-- precio_unitario_apu → precio unitario del INSUMO (no del ítem). Varía para cada insumo dentro de un mismo ítem.
-- precio_parcial_apu → precio parcial del insumo (rendimiento_insumo × precio_unitario_apu)
-- precio_unitario_sin_aiu → precio del ítem sin AIU
-- rendimiento_insumo → rendimiento del insumo
-- codigo_insumo → código del insumo
-- insumo_descripcion → descripción del insumo
-- tipo_insumo → tipo (Materiales, Mano de obra, Equipos, etc.)
-- insumo_unidad → unidad del insumo
-- fecha_aprobacion_apu, fecha_analisis_apu → fechas
-- ciudad, pais, entidad, contratista, nombre_proyecto, numero_contrato → datos del proyecto
-- observacion, link_documento → metadata
-
-REGLAS ABSOLUTAS (SINTAXIS ESTRICTAMENTE MySQL 8.0):
-1. SOLO SELECT o WITH
-2. SOLO tabla apus
-3. Para texto usar LIKE con % (NUNCA ILIKE — MySQL no soporta ILIKE)
-4. Máximo LIMIT 20
-5. Nunca uses markdown
-6. Nunca expliques nada en la respuesta SQL
-7. Si no se puede responder usando SELECT sobre apus, responde únicamente: INVALID_QUERY
-8. Nunca uses SELECT * sobre la tabla real
-9. Selecciona únicamente las columnas estrictamente necesarias
-10. Si el usuario pide "precio del ítem" o "valor unitario", usa precio_unitario
-11. Para evitar duplicados de ítems usa SELECT DISTINCT item, nombre_proyecto, ...
-12. Si el usuario refina una consulta anterior, modifica el SQL previo en lugar de generar uno nuevo
-13. Para desglose de insumos usa GROUP BY item, codigo_insumo, nombre_proyecto
-14. Si hay resultados numerosos, sugiere al usuario formas de acotar (por tipo de insumo, rango de precio, etc.)
-15. Esta es una base de datos MySQL 8.0. Usa LIKE, DISTINCT (sin ON), y CAST() si es necesario
+{schema_info}
 
 {ctx}
 
@@ -236,6 +198,7 @@ INSTUCCIONES DE FORMATO:
 - Si hay datos duplicados, agrupa y muestra valores únicos.
 - No repitas la misma información.
 - Si los datos contienen un desglose de insumos por ítem (múltiples filas por ítem), PRESENTA TODOS los insumos de CADA ítem. No omitas ninguno. Agrupa por ítem y muestra cada insumo con su tipo, descripción y precio parcial.
+- Si la consulta compara o cruza fuentes (por ejemplo apus vs precio_referencia_externa o índices DANE), ACLARA explícitamente qué precio es 'interno (banco aprobado)' y cuál es 'de mercado/externo' indicando su respectiva fuente (SECOP II, CYPE Colombia, Constructor Homecenter, ANI, etc.).
 - Al final de tu respuesta, sugiere 2-3 preguntas de seguimiento útiles y naturales, separadas por "|". Ejemplo: "PREGUNTAS:¿Cuál es el precio unitario de cada uno?|Compara los costos entre estos dos proyectos|Muéstrame solo los insumos de tipo Equipos"
   Si no hay datos suficientes para sugerencias útiles, omite esta sección.
 

@@ -141,6 +141,16 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/proyectos-mapus`, data);
   }
 
+  getApusDeProyecto(proyectoId: number, limit = 200, offset = 0): Observable<any> {
+    return this.http.get(`${this.baseUrl}/proyectos-mapus/${proyectoId}/apus`, {
+      params: { limit, offset },
+    });
+  }
+
+  asignarApusAProyecto(proyectoId: number, apuIds: number[]): Observable<any> {
+    return this.http.post(`${this.baseUrl}/asignar-proyecto`, { proyecto_id: proyectoId, apu_ids: apuIds });
+  }
+
   getDashboard(): Observable<any> {
     return this.http.get(`${this.baseUrl}/dashboard`);
   }

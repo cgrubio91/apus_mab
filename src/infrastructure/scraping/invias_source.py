@@ -11,6 +11,7 @@ import logging
 import os
 from typing import Optional
 
+from src.config.settings import settings
 from src.infrastructure.scraping.documental_source import DocumentalSource
 
 log = logging.getLogger("mapus.infrastructure.invias")
@@ -20,7 +21,7 @@ FUENTE = "INVÍAS"
 
 def urls_semilla() -> list[str]:
     """URLs de documentos INVÍAS configuradas en INVIAS_URLS_SEED."""
-    raw = os.getenv("INVIAS_URLS_SEED", "")
+    raw = os.getenv("INVIAS_URLS_SEED") or settings.INVIAS_URLS_SEED or ""
     return [u.strip() for u in raw.replace("\n", ",").replace(" ", ",").split(",") if u.strip()]
 
 

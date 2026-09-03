@@ -105,3 +105,46 @@ def test_multi_statement():
         "SELECT * FROM apus; DROP TABLE apus"
     )
     assert not is_valid
+
+
+def test_allowed_external_reference_table():
+    is_valid, sql = validate_readonly_query(
+        "SELECT fuente, descripcion, precio FROM precio_referencia_externa WHERE fuente = 'SECOP II'"
+    )
+    assert is_valid
+    assert "LIMIT 20" in sql.upper() or "limit 20" in sql
+
+
+def test_allowed_cost_indices_table():
+    is_valid, sql = validate_readonly_query(
+        "SELECT serie, periodo, valor FROM indice_costos WHERE serie = 'ICCP'"
+    )
+    assert is_valid
+
+
+def test_allowed_insumo_maestro_table():
+    is_valid, sql = validate_readonly_query(
+        "SELECT id, descripcion_canonica, unidad FROM insumo_maestro WHERE tipo_insumo = 'Materiales'"
+    )
+    assert is_valid
+
+
+def test_allowed_precio_insumo_historico_table():
+    is_valid, sql = validate_readonly_query(
+        "SELECT precio, fecha, fuente FROM precio_insumo_historico WHERE insumo_maestro_id = 1"
+    )
+    assert is_valid
+
+
+def test_join_allowed_tables():
+    is_valid, sql = validate_readonly_query(
+        "SELECT m.descripcion_canonica, h.precio FROM insumo_maestro m JOIN precio_insumo_historico h ON m.id = h.insumo_maestro_id"
+    )
+    assert is_valid
+
+
+def test_blocked_system_tables():
+    for blocked in ["users", "rol", "usuario_rol", "historial_conversaciones", "notificaciones"]:
+        is_valid, _ = validate_readonly_query(f"SELECT id FROM {blocked} LIMIT 1")
+        assert not is_valid, f"Table {blocked} should not be allowed"
+

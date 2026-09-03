@@ -25,6 +25,9 @@ from src.application.use_cases.indices_costos import (
 )
 from src.application.use_cases.ingesta_referencias import (
     consultar_referencias,
+    ingerir_ani,
+    ingerir_cype,
+    ingerir_homecenter,
     ingerir_idu,
     ingerir_invias,
     ingerir_secop,
@@ -56,6 +59,58 @@ async def ingerir_secop_endpoint(payload: IngestaSecopRequest,
     except Exception as e:
         log.exception("Error ingiriendo desde SECOP")
         raise HTTPException(status_code=502, detail=f"Fallo consultando SECOP: {e}")
+
+
+class IngestaCypeRequest(BaseModel):
+    query: str = Field(..., min_length=3, description="Término de búsqueda de unidad de obra en CYPE")
+    limite: int = Field(5, ge=1, le=20, description="Máximo de unidades a extraer")
+
+
+@router.post("/cype/ingerir")
+async def ingerir_cype_endpoint(payload: IngestaCypeRequest,
+                                user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return ingerir_cype(payload.query, limite=payload.limite)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.exception("Error ingiriendo desde CYPE")
+        raise HTTPException(status_code=502, detail=f"Fallo consultando CYPE: {e}")
+
+
+class IngestaHomecenterRequest(BaseModel):
+    query: str = Field(..., min_length=3, description="Término de búsqueda de material en Homecenter")
+    limite: int = Field(5, ge=1, le=20, description="Máximo de materiales a traer")
+
+
+@router.post("/homecenter/ingerir")
+async def ingerir_homecenter_endpoint(payload: IngestaHomecenterRequest,
+                                      user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return ingerir_homecenter(payload.query, limite=payload.limite)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.exception("Error ingiriendo desde Homecenter")
+        raise HTTPException(status_code=502, detail=f"Fallo consultando Homecenter: {e}")
+
+
+class IngestaAniRequest(BaseModel):
+    keyword: str = Field(..., min_length=3, description="Término de búsqueda en concesiones ANI")
+    ciudad: Optional[str] = Field(None, description="Filtro de ciudad/municipio/tramo")
+    limite: int = Field(200, ge=1, le=1000, description="Máximo de concesiones a traer")
+
+
+@router.post("/ani/ingerir")
+async def ingerir_ani_endpoint(payload: IngestaAniRequest,
+                               user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return ingerir_ani(payload.keyword, ciudad=payload.ciudad, limite=payload.limite)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log.exception("Error ingiriendo desde ANI")
+        raise HTTPException(status_code=502, detail=f"Fallo consultando ANI: {e}")
 
 
 class IngestaDocumentalRequest(BaseModel):

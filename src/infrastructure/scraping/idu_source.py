@@ -18,6 +18,7 @@ import logging
 import os
 from typing import Optional
 
+from src.config.settings import settings
 from src.infrastructure.scraping.documental_source import DocumentalSource
 
 log = logging.getLogger("mapus.infrastructure.idu")
@@ -27,7 +28,7 @@ FUENTE = "IDU"
 
 def urls_semilla() -> list[str]:
     """URLs de documentos IDU configuradas en IDU_URLS_SEED (coma o espacio)."""
-    raw = os.getenv("IDU_URLS_SEED", "")
+    raw = os.getenv("IDU_URLS_SEED") or settings.IDU_URLS_SEED or ""
     return [u.strip() for u in raw.replace("\n", ",").replace(" ", ",").split(",") if u.strip()]
 
 

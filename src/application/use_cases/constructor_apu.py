@@ -388,6 +388,24 @@ Sin texto adicional."""
     return data
 
 
+def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> dict:
+    """Rellena insumos que quedaron sin precio usando tarifas y referencias CYPE Colombia."""
+    try:
+        from src.infrastructure.scraping.cype_source import CypeSource
+        cype_src = CypeSource()
+        for ins in propuesta.get("insumos", []):
+            if ins.get("precio") is None:
+                ref = cype_src.buscar_referencia_insumo(ins.get("descripcion", ""), ins.get("tipo_insumo", ""))
+                if ref and ref.get("precio"):
+                    ins["precio"] = float(ref["precio"])
+                    ins["fuente"] = ref.get("fuente", "CYPE Colombia")
+                    if ref.get("unidad") and not ins.get("unidad"):
+                        ins["unidad"] = ref["unidad"]
+    except Exception:
+        log.warning("No se pudieron rellenar precios CYPE para la propuesta", exc_info=True)
+    return propuesta
+
+
 def _validar_solicitud_borrador(solicitud_id: int) -> dict:
     solicitud = analisis_repo.get_solicitud(solicitud_id)
     if not solicitud:
@@ -446,6 +464,7 @@ def sugerir_estructura(solicitud_id: int) -> dict:
     todos_refs = secop_refs + refs_internos
     refs_ranked = _rankear_referencias(todos_refs, ciudad=solicitud.get("ciudad"))
     propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
+    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
     return {
         "solicitud_id": solicitud_id,
         "propuesta": propuesta,
@@ -476,6 +495,7 @@ def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_act
         mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)})
     propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
                                      serie_indice=_cargar_serie_indice())
+    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
     return {"solicitud_id": solicitud_id, "propuesta": propuesta}
 
 

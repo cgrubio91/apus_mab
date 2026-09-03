@@ -14,7 +14,13 @@ except ImportError:
     HAS_SQLPARSE = False
     log.info("sqlparse no disponible, usando validación regex")
 
-ALLOWED_TABLES = {"apus"}
+ALLOWED_TABLES = {
+    "apus",
+    "precio_referencia_externa",
+    "indice_costos",
+    "insumo_maestro",
+    "precio_insumo_historico",
+}
 
 DANGEROUS_FUNCTIONS = re.compile(
     r"\b(pg_sleep|pg_read_file|pg_ls_dir|pg_stat_file|"
