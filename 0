@@ -1,0 +1,4 @@
+  File "<string>", line 8
+    rows = execute_query(\
+                        ^
+SyntaxError: '(' was never closed

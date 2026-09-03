@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.application.use_cases.ingesta_referencias import (
+    buscar_cype,
     consultar_referencias,
+    extraer_desglose_cype,
     ingerir_secop,
 )
 from src.presentation.auth import get_current_user, require_role
@@ -55,3 +57,25 @@ async def consultar_referencias_endpoint(
 ) -> dict:
     referencias = consultar_referencias(descripcion, fuente=fuente, ciudad=ciudad, limite=limite)
     return {"success": True, "count": len(referencias), "data": referencias}
+
+
+@router.get("/cype/buscar")
+async def buscar_cype_endpoint(
+    q: str = Query(..., min_length=2, description="Término de búsqueda de la actividad/unidad de obra"),
+    limite: int = Query(5, ge=1, le=20),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    items = buscar_cype(q, limite=limite)
+    return {"success": True, "count": len(items), "data": items}
+
+
+@router.get("/cype/desglose")
+async def extraer_desglose_cype_endpoint(
+    url: str = Query(..., description="URL de la unidad de obra en CYPE Colombia"),
+    user: dict = Depends(get_current_user),
+) -> dict:
+    desglose = extraer_desglose_cype(url)
+    if not desglose:
+        raise HTTPException(status_code=404, detail="No se pudo extraer el desglose de la unidad de obra")
+    return {"success": True, "data": desglose}
+

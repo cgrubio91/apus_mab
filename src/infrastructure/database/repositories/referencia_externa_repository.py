@@ -64,19 +64,26 @@ class ReferenciaExternaRepository:
     def buscar(self, descripcion: str, fuente: Optional[str] = None,
                ciudad: Optional[str] = None, limite: int = 20) -> list:
         """Busca referencias por palabras de la descripción (LIKE, tolerante),
-        opcionalmente filtrando por fuente y ciudad. Ordena por recencia."""
-        palabras = [p for p in (descripcion or "").split() if len(p) > 3][:6]
+        priorizando mayor número de coincidencias de palabras clave y recencia."""
+        palabras = [p for p in (descripcion or "").split() if len(p) >= 3][:6]
         if not palabras:
             return []
         condiciones = " OR ".join("descripcion LIKE %s" for _ in palabras)
-        params: list = [f"%{p}%" for p in palabras]
+        score_expr = " + ".join("(descripcion LIKE %s)" for _ in palabras)
+
+        where_params: list = [f"%{p}%" for p in palabras]
+        score_params: list = [f"%{p}%" for p in palabras]
+
         where = f"({condiciones})"
+        extra_params: list = []
         if fuente:
             where += " AND fuente = %s"
-            params.append(fuente)
+            extra_params.append(fuente)
         if ciudad and ciudad.strip():
             where += " AND ciudad LIKE %s"
-            params.append(f"%{ciudad.strip()}%")
+            extra_params.append(f"%{ciudad.strip()}%")
+
+        params = where_params + extra_params + score_params
         params.append(max(1, min(int(limite), 100)))
 
         with get_db_connection() as conn:
@@ -87,7 +94,7 @@ class ReferenciaExternaRepository:
                                entidad, proveedor, fecha, observacion
                         FROM precio_referencia_externa
                         WHERE {where}
-                        ORDER BY (fecha IS NULL), fecha DESC
+                        ORDER BY ({score_expr}) DESC, (fecha IS NULL), fecha DESC
                         LIMIT %s""",
                     params,
                 )

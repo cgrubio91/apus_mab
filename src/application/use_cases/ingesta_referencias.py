@@ -54,3 +54,18 @@ def consultar_referencias(descripcion: str, fuente: Optional[str] = None,
                           ciudad: Optional[str] = None, limite: int = 20) -> list:
     """Consulta referencias externas ya ingeridas (para mostrar junto al banco)."""
     return referencia_externa_repo.buscar(descripcion, fuente=fuente, ciudad=ciudad, limite=limite)
+
+
+def buscar_cype(query: str, limite: int = 5) -> list[dict]:
+    """Busca unidades de obra en tiempo real en CYPE Colombia."""
+    from src.infrastructure.scraping.cype_source import CypeSource
+    src = CypeSource()
+    return src.buscar(query, limite=limite)
+
+
+def extraer_desglose_cype(url: str) -> Optional[dict]:
+    """Extrae el desglose completo de un APU desde CYPE Colombia."""
+    from src.infrastructure.scraping.cype_source import CypeSource
+    src = CypeSource()
+    return src.extraer_desglose(url)
+
