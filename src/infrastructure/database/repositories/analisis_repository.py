@@ -722,7 +722,8 @@ class AnalisisMySQLRepository:
         # El pool de candidatos se arma con la DESCRIPCIÓN DEL ÍTEM (no con los insumos),
         # para no traer APUs de otro trabajo que solo comparten un equipo (ej. minicargador).
         expansion_larga = {t for t in (tokens_item_exp - tokens_item) if len(t) >= 5}
-        palabras = sorted(tokens_item | expansion_larga, key=len, reverse=True)[:12]
+        candidatos_palabras = [p for p in sorted(tokens_item | expansion_larga, key=len, reverse=True) if len(p) >= 4]
+        palabras = candidatos_palabras[:4] if candidatos_palabras else sorted(tokens_item, key=len, reverse=True)[:3]
         # Tokens distintivos del ítem para exigir que el candidato hable del mismo trabajo.
         tokens_distintivos = [t for t in tokens_item if len(t) >= 5] or list(tokens_item)
 
@@ -746,7 +747,7 @@ class AnalisisMySQLRepository:
                         GROUP BY numero_contrato, link_documento, item, items_descripcion,
                                  item_unidad, nombre_proyecto, entidad, ciudad, contratista
                         ORDER BY num_insumos DESC
-                        LIMIT 5000""",
+                        LIMIT 300""",
                     params,
                 )
                 candidatos = cursor.fetchall()
