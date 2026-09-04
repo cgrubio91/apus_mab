@@ -1,7 +1,7 @@
-import { Component, ChangeDetectorRef, inject } from '@angular/core';
+import { Component, ChangeDetectorRef, OnDestroy, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { ApuService, FilterOptions } from '../../services/apu';
 
 interface FilaPropuesta {
@@ -14,6 +14,14 @@ interface FilaPropuesta {
   fuente: string;
 }
 
+interface BorradorResumen {
+  id: number;
+  descripcion_actividad?: string;
+  ciudad?: string;
+  codigo_item?: string;
+  total_insumos?: number;
+}
+
 @Component({
   selector: 'app-constructor-apu',
   standalone: true,
@@ -21,30 +29,31 @@ interface FilaPropuesta {
   templateUrl: './constructor-apu.html',
   styleUrl: './constructor-apu.scss',
 })
-export class ConstructorApu {
+export class ConstructorApu implements OnInit, OnDestroy {
   private apuService = inject(ApuService);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   paso = 1;
+  pasoMax = 1;
   isLoading = false;
   errorMessage = '';
   successMessage = '';
 
-  // Paso 1: actividad
   descripcionActividad = '';
   unidadActividad = '';
   codigoItem = '';
   ciudad = '';
   ciudades: string[] = [];
   continuarId: number | null = null;
+  borradores: BorradorResumen[] = [];
 
-  // Borrador activo
   solicitudId: number | null = null;
   proyectoId: number | null = null;
   proyectosDisponibles: any[] = [];
+  estadoSolicitud = 'borrador';
 
-  // Paso 2: propuesta IA
   propuesta: any = null;
   desgloseAiu: any = null;
   filas: FilaPropuesta[] = [];
@@ -52,17 +61,14 @@ export class ConstructorApu {
   conversacion: { rol: 'ia' | 'usuario'; texto: string }[] = [];
   respuestasPreguntas: string[] = [];
 
-  // Indicador dinámico de búsqueda en vivo / scraping
   progresoTexto = '';
   progresoPaso = 1;
-  private progresoTimer: any = null;
+  private progresoTimer: ReturnType<typeof setInterval> | null = null;
 
-  // Paso 3: precios y visto bueno de entidad
   insumosBorrador: any[] = [];
   preciosContratista: Record<number, number | null> = {};
   sinCoincidencia: any[] = [];
 
-  // Memoria técnica y aprobación formal
   justificacionTecnica = '';
   localizacionObra = '';
   numeroActaAprobacion = '';
@@ -75,6 +81,11 @@ export class ConstructorApu {
   omitirSinPrecio = false;
 
   tiposInsumo = ['Materiales', 'Equipos', 'Mano de obra', 'Transporte', 'Herramienta', 'Indirectos', 'Otro'];
+
+  private sugerenciaRetries = 0;
+  private sugerenciaMaxRetries = 2;
+  private retryTimer: ReturnType<typeof setInterval> | null = null;
+  retryCountdown = 0;
 
   ngOnInit(): void {
     this.apuService.getFilterOptions().subscribe({
@@ -91,6 +102,35 @@ export class ConstructorApu {
         this.cdr.markForCheck();
       },
       error: () => { /* silencioso */ },
+    });
+
+    this.cargarListaBorradores();
+
+    const idParam = this.route.snapshot.queryParamMap.get('id');
+    if (idParam) {
+      const id = Number(idParam);
+      if (id > 0) {
+        this.continuarId = id;
+        this.continuarBorrador();
+      }
+    }
+  }
+
+  ngOnDestroy(): void {
+    this.detenerProgresoScraping();
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  cargarListaBorradores(): void {
+    this.apuService.listarBorradoresConstructor().subscribe({
+      next: (res) => {
+        this.borradores = res.borradores || [];
+        this.cdr.markForCheck();
+      },
+      error: () => { this.borradores = []; },
     });
   }
 
@@ -131,7 +171,60 @@ export class ConstructorApu {
   }
 
   get conPrecio(): number {
-    return Object.values(this.preciosContratista).filter(v => v !== null && v > 0).length;
+    return Object.values(this.preciosContratista).filter(v => v !== null && Number(v) > 0).length;
+  }
+
+  get filasIncluidas(): FilaPropuesta[] {
+    return this.filas.filter(f => f.incluir && (f.descripcion || '').trim());
+  }
+
+  get costoDirectoPreliminar(): number {
+    return this.filasIncluidas.reduce((s, f) => {
+      const p = Number(f.precio);
+      const r = f.rendimiento == null ? 1 : Number(f.rendimiento);
+      if (!p || p <= 0) return s;
+      return s + p * (Number.isFinite(r) && r > 0 ? r : 1);
+    }, 0);
+  }
+
+  get desgloseAiuVivo(): any {
+    const pct = this.desgloseAiu?.porcentajes || {
+      administracion: 15, imprevistos: 3, utilidad: 5, iva_utilidad: 19,
+    };
+    const cd = Math.round(this.costoDirectoPreliminar * 100) / 100;
+    const valA = Math.round(cd * (pct.administracion / 100) * 100) / 100;
+    const valI = Math.round(cd * (pct.imprevistos / 100) * 100) / 100;
+    const valU = Math.round(cd * (pct.utilidad / 100) * 100) / 100;
+    const valIva = Math.round(valU * (pct.iva_utilidad / 100) * 100) / 100;
+    const totalAiu = Math.round((valA + valI + valU + valIva) * 100) / 100;
+    return {
+      costo_directo: cd,
+      porcentajes: pct,
+      valores: {
+        administracion: valA,
+        imprevistos: valI,
+        utilidad: valU,
+        iva_utilidad: valIva,
+        costo_total: Math.round((cd + totalAiu) * 100) / 100,
+      },
+    };
+  }
+
+  get puedeIncorporar(): boolean {
+    return ['aprobado_legal', 'firmado_legal'].includes(this.estadoSolicitud)
+      && this.estadoIncorporacion !== 'incorporado';
+  }
+
+  parcialFila(f: FilaPropuesta): number | null {
+    if (f.precio == null || Number(f.precio) <= 0) return null;
+    const r = f.rendimiento == null ? 1 : Number(f.rendimiento);
+    return Number(f.precio) * (Number.isFinite(r) && r > 0 ? r : 1);
+  }
+
+  irAPaso(n: number): void {
+    if (n < 1 || n > 4 || n > this.pasoMax) return;
+    if (n === 3 && !this.insumosBorrador.length && this.paso < 3) return;
+    this.paso = n;
   }
 
   crearYSugerir(): void {
@@ -151,17 +244,13 @@ export class ConstructorApu {
     }).subscribe({
       next: (res) => {
         this.solicitudId = res.solicitud_id;
+        this.estadoSolicitud = 'borrador';
+        this.cargarListaBorradores();
         this.generarSugerencia();
       },
       error: (e) => this._fallo(e, 'No se pudo crear el borrador.'),
     });
   }
-
-  // Auto-retry state for IA overload
-  private sugerenciaRetries = 0;
-  private sugerenciaMaxRetries = 2;
-  private retryTimer: any = null;
-  retryCountdown = 0;
 
   generarSugerencia(): void {
     if (!this.solicitudId) return;
@@ -173,25 +262,23 @@ export class ConstructorApu {
       next: (res) => {
         this.sugerenciaRetries = 0;
         this._cargarPropuesta(res);
-        // NO navegar automáticamente: el residente decide cuándo ir a análisis
-        // this.paso = Math.max(this.paso, 2); // Removido: se maneja en _cargarPropuesta
       },
       error: (e) => {
         const status = e?.status || 0;
         const isOverloaded = status === 503 || status === 502;
         if (isOverloaded && this.sugerenciaRetries < this.sugerenciaMaxRetries) {
           this.sugerenciaRetries++;
-          this.progresoTexto = `⏳ IA temporalmente saturada. Reintentando automáticamente (${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
+          this.progresoTexto = `IA temporalmente saturada. Reintentando automáticamente (${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
           this.retryCountdown = 15;
           this.cdr.markForCheck();
           if (this.retryTimer) clearInterval(this.retryTimer);
           this.retryTimer = setInterval(() => {
             this.retryCountdown--;
             if (this.retryCountdown > 0) {
-              this.progresoTexto = `⏳ Reintentando en ${this.retryCountdown}s (intento ${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
+              this.progresoTexto = `Reintentando en ${this.retryCountdown}s (intento ${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
               this.cdr.markForCheck();
             } else {
-              clearInterval(this.retryTimer);
+              clearInterval(this.retryTimer!);
               this.retryTimer = null;
               this.generarSugerencia();
             }
@@ -217,7 +304,7 @@ export class ConstructorApu {
     this.isLoading = true;
     this.errorMessage = '';
     const conversacion = [...this.conversacion, ...respuestas];
-    this.apuService.refinarPropuesta(this.solicitudId, conversacion).subscribe({
+    this.apuService.refinarPropuesta(this.solicitudId, conversacion, this.propuesta).subscribe({
       next: (res) => {
         this.conversacion = [
           ...this.conversacion,
@@ -240,7 +327,7 @@ export class ConstructorApu {
 
   aplicarEstructura(): void {
     if (!this.solicitudId) return;
-    const insumos = this.filas.filter(f => f.incluir && f.descripcion.trim());
+    const insumos = this.filasIncluidas;
     if (!insumos.length) {
       this.errorMessage = 'Deja al menos un insumo con descripción marcado para incluir.';
       return;
@@ -258,7 +345,7 @@ export class ConstructorApu {
       next: () => {
         this.successMessage = 'Estructura guardada. Registra los precios del contratista.';
         this.isLoading = false;
-        this.cargarBorrador(() => { this.paso = 3; });
+        this.cargarBorrador(() => { this.paso = 3; this.pasoMax = Math.max(this.pasoMax, 3); });
       },
       error: (e) => this._fallo(e, 'No se pudo guardar la estructura.'),
     });
@@ -270,11 +357,7 @@ export class ConstructorApu {
     this.apuService.getAnalisisApuDetail(this.solicitudId).subscribe({
       next: (res) => {
         const s = res?.data || res;
-        this.insumosBorrador = s.insumos || [];
-        this.preciosContratista = {};
-        for (const ins of this.insumosBorrador) {
-          this.preciosContratista[ins.id] = ins.precio_unitario_apu != null ? Number(ins.precio_unitario_apu) : null;
-        }
+        this._aplicarDetalleSolicitud(s);
         this.isLoading = false;
         cb?.();
         this.cdr.markForCheck();
@@ -283,11 +366,13 @@ export class ConstructorApu {
     });
   }
 
-  continuarBorrador(): void {
-    if (!this.continuarId) return;
-    this.solicitudId = this.continuarId;
+  continuarBorrador(id?: number): void {
+    const sid = id ?? this.continuarId;
+    if (!sid) return;
+    this.continuarId = sid;
+    this.solicitudId = sid;
     this.isLoading = true;
-    this.apuService.getAnalisisApuDetail(this.continuarId).subscribe({
+    this.apuService.getAnalisisApuDetail(sid).subscribe({
       next: (res) => {
         const s = res?.data || res;
         if (s.origen !== 'constructor') {
@@ -298,19 +383,21 @@ export class ConstructorApu {
         this.ciudad = s.ciudad || '';
         this.codigoItem = s.codigo_item || '';
         this.unidadActividad = s.unidad_actividad || '';
+        this.proyectoId = s.proyecto_id ?? this.proyectoId;
+        this._aplicarDetalleSolicitud(s);
         if (s.estado === 'borrador' && !(s.insumos || []).length) {
           this.paso = 2;
+          this.pasoMax = 2;
           this.generarSugerencia();
         } else if (s.estado === 'borrador') {
-          this.insumosBorrador = s.insumos || [];
-          this.preciosContratista = {};
-          for (const ins of this.insumosBorrador) {
-            this.preciosContratista[ins.id] = ins.precio_unitario_apu != null ? Number(ins.precio_unitario_apu) : null;
-          }
           this.paso = 3;
+          this.pasoMax = 3;
+          this.isLoading = false;
+        } else if (['aprobado_legal', 'firmado_legal'].includes(s.estado)) {
+          this.paso = 4;
+          this.pasoMax = 4;
           this.isLoading = false;
         } else {
-          // Ya salió del constructor: va directo a su detalle en Análisis APU.
           this.router.navigate(['/analisis-apu']);
         }
         this.cdr.markForCheck();
@@ -343,7 +430,7 @@ export class ConstructorApu {
   guardarPrecios(): void {
     if (!this.solicitudId) return;
     const precios = Object.entries(this.preciosContratista)
-      .filter(([, v]) => v !== null && v > 0)
+      .filter(([, v]) => v !== null && Number(v) > 0)
       .map(([k, v]) => ({ insumo_id: Number(k), precio: Number(v) }));
     if (!precios.length) {
       this.errorMessage = 'Registra al menos un precio mayor que cero.';
@@ -356,10 +443,21 @@ export class ConstructorApu {
         this.successMessage = `Precios guardados (${res.actualizados}).` +
           (res.errores?.length ? ` Errores: ${res.errores.join('; ')}` : '');
         this.isLoading = false;
+        this.pasoMax = Math.max(this.pasoMax, 4);
         this.cdr.markForCheck();
       },
       error: (e) => this._fallo(e, 'No se pudieron guardar los precios.'),
     });
+  }
+
+  irAExpediente(): void {
+    if (!this.insumosBorrador.length) return;
+    if (this.conPrecio === 0) {
+      this.errorMessage = 'Registra y guarda al menos un precio del contratista antes de continuar.';
+      return;
+    }
+    this.paso = 4;
+    this.pasoMax = 4;
   }
 
   enviarAnalisis(): void {
@@ -368,7 +466,7 @@ export class ConstructorApu {
     this.errorMessage = '';
     this.apuService.enviarAAnalisis(this.solicitudId, this.omitirSinPrecio).subscribe({
       next: () => {
-        this.successMessage = 'Análisis generado. Redirigiendo…';
+        this.successMessage = 'Análisis generado. Redirigiendo al flujo de aprobación…';
         setTimeout(() => this.router.navigate(['/analisis-apu']), 800);
       },
       error: (e) => this._fallo(e, 'No se pudo enviar a análisis.'),
@@ -396,6 +494,10 @@ export class ConstructorApu {
 
   incorporarAPU(): void {
     if (!this.solicitudId) return;
+    if (!this.puedeIncorporar) {
+      this.errorMessage = 'La incorporación al banco solo está disponible después de la firma legal.';
+      return;
+    }
     this.incorporando = true;
     this.errorMessage = '';
     this.apuService.incorporarApuAProyecto(this.solicitudId, {
@@ -423,7 +525,7 @@ export class ConstructorApu {
     this.descargandoPdf = true;
     try {
       await this.apuService.exportMemoriaPdf(this.solicitudId);
-    } catch (e) {
+    } catch {
       this.errorMessage = 'Error al descargar la memoria técnica en PDF.';
     } finally {
       this.descargandoPdf = false;
@@ -436,7 +538,7 @@ export class ConstructorApu {
     this.descargandoExcel = true;
     try {
       await this.apuService.exportApuFormulado(this.solicitudId);
-    } catch (e) {
+    } catch {
       this.errorMessage = 'Error al descargar el APU en Excel formulado.';
     } finally {
       this.descargandoExcel = false;
@@ -444,11 +546,26 @@ export class ConstructorApu {
     }
   }
 
+  private _aplicarDetalleSolicitud(s: any): void {
+    this.insumosBorrador = s.insumos || [];
+    this.preciosContratista = {};
+    for (const ins of this.insumosBorrador) {
+      this.preciosContratista[ins.id] = ins.precio_unitario_apu != null ? Number(ins.precio_unitario_apu) : null;
+    }
+    this.estadoSolicitud = s.estado || 'borrador';
+    this.estadoIncorporacion = s.estado_incorporacion || 'pendiente';
+    this.justificacionTecnica = s.justificacion_tecnica || this.justificacionTecnica;
+    this.localizacionObra = s.localizacion_obra || this.localizacionObra;
+    this.numeroActaAprobacion = s.numero_acta_aprobacion || this.numeroActaAprobacion;
+    this.fechaAprobacionEntidad = s.fecha_aprobacion_entidad || this.fechaAprobacionEntidad;
+    if (s.proyecto_id) this.proyectoId = s.proyecto_id;
+  }
+
   private _cargarPropuesta(res: any): void {
     this.detenerProgresoScraping();
     this.propuesta = res.propuesta || {};
     this.desgloseAiu = res.desglose_aiu || null;
-    this.referenciasUsadas = res.referencias_usadas || [];
+    this.referenciasUsadas = res.referencias_usadas || this.referenciasUsadas;
     this.filas = (this.propuesta.insumos || []).map((i: any) => ({
       incluir: true,
       tipo_insumo: i.tipo_insumo || 'Materiales',
@@ -462,6 +579,7 @@ export class ConstructorApu {
     this.isLoading = false;
     this.errorMessage = '';
     this.paso = 2;
+    this.pasoMax = Math.max(this.pasoMax, 2);
     this.cdr.markForCheck();
   }
 

@@ -27,6 +27,7 @@ class BorradorCreate(BaseModel):
 
 class RefinarRequest(BaseModel):
     conversacion: List[dict] = Field(..., description="Historial [{rol: 'ia'|'usuario', texto}]")
+    propuesta_actual: Optional[dict] = None
 
 
 class AplicarEstructuraRequest(BaseModel):
@@ -63,6 +64,15 @@ router = APIRouter()
 # registra los precios del contratista.
 _ROL_RESIDENTE = require_role("analista")
 _ROL_CONTRAPARTE = require_role("contraparte")
+
+
+@router.get("/constructor-apu", tags=["Constructor APU"])
+async def listar_borradores(user: dict = Depends(_ROL_RESIDENTE)) -> dict:
+    try:
+        return constructor_apu.listar_borradores()
+    except Exception:
+        log.exception("Error listando borradores del Constructor de APU")
+        raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
 @router.post("/constructor-apu", tags=["Constructor APU"])
@@ -124,7 +134,7 @@ async def sugerir_estructura(solicitud_id: int, user: dict = Depends(_ROL_RESIDE
 async def refinar_propuesta(solicitud_id: int, payload: RefinarRequest, user: dict = Depends(_ROL_RESIDENTE)) -> dict:
     try:
         return await asyncio.to_thread(
-            constructor_apu.refinar_propuesta, solicitud_id, payload.conversacion,
+            constructor_apu.refinar_propuesta, solicitud_id, payload.conversacion, payload.propuesta_actual,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -319,11 +329,9 @@ async def descargar_memoria_pdf(solicitud_id: int, user: dict = Depends(require_
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
 
     insumos = solicitud.get("insumos") or []
-    costo_directo = sum(
-        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
-        for i in insumos
+    desglose = constructor_apu.calcular_desglose_aiu(
+        constructor_apu.calcular_costo_directo(insumos), proyecto_id=solicitud.get("proyecto_id"),
     )
-    desglose = constructor_apu.calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
 
     proyecto = None
     if solicitud.get("proyecto_id"):
@@ -358,11 +366,9 @@ async def descargar_apu_excel(solicitud_id: int, user: dict = Depends(require_ro
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
 
     insumos = solicitud.get("insumos") or []
-    costo_directo = sum(
-        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
-        for i in insumos
+    desglose = constructor_apu.calcular_desglose_aiu(
+        constructor_apu.calcular_costo_directo(insumos), proyecto_id=solicitud.get("proyecto_id"),
     )
-    desglose = constructor_apu.calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
 
     proyecto = None
     if solicitud.get("proyecto_id"):

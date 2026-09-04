@@ -632,15 +632,20 @@ El asistente cuenta con acceso multi-fuente a 5 tablas permitidas (`apus`, `prec
 
 | Ruta                                            | Método | Función                                                        | Rol mínimo   |
 | ------------------------------------------------ | ------- | ---------------------------------------------------------------- | ------------- |
+| `/constructor-apu`                             | GET     | Lista borradores del Constructor (estado `borrador`)            | analista      |
 | `/constructor-apu`                             | POST    | Crea borrador (actividad + unidad + ciudad + proyecto opcional) | analista      |
 | `/constructor-apu/{id}/sugerir`                | POST    | Propone estructura con IA desde referencias del banco           | analista      |
-| `/constructor-apu/{id}/refinar`                | POST    | Itera la propuesta respondiendo preguntas (conversación)        | analista      |
+| `/constructor-apu/{id}/refinar`                | POST    | Itera la propuesta (conversación + propuesta actual opcional)   | analista      |
 | `/constructor-apu/{id}/estructura`             | POST    | Aplica la estructura aceptada como insumos del borrador         | analista      |
 | `/constructor-apu/{id}/insumos`                | POST    | Agrega un insumo manual                                         | analista      |
 | `/constructor-apu/{id}/insumos/{insumo_id}`    | DELETE  | Quita un insumo del borrador                                    | analista      |
 | `/constructor-apu/{id}/precios`                | POST    | Registra precios del contratista por insumo                     | contraparte   |
 | `/constructor-apu/{id}/precios-archivo`        | POST    | Extrae filas de una cotización PDF/Excel y las empareja         | contraparte   |
 | `/constructor-apu/{id}/enviar-analisis`        | POST    | Valida precios (>0), excluye ceros y ejecuta el análisis        | analista      |
+| `/constructor-apu/{id}/justificacion`          | PATCH   | Guarda acta, localización y justificación técnica               | analista      |
+| `/constructor-apu/{id}/incorporar`             | POST    | Incorpora al proyecto/banco **solo** si el estado es `aprobado_legal` | analista |
+| `/constructor-apu/{id}/memoria-pdf`            | GET     | Descarga memoria técnica PDF                                    | user          |
+| `/constructor-apu/{id}/export-excel`           | GET     | Descarga APU Excel con fórmulas                                 | user          |
 
 **Columnas nuevas:** `solicitudes_apu.origen ('carga'|'constructor')`, `descripcion_actividad`, `unidad_actividad`, `codigo_item`, `ciudad`; `solicitud_insumos.precio_banco`, `rendimiento_banco`, `fuente_precio`. Estado inicial nuevo: `borrador`.
 

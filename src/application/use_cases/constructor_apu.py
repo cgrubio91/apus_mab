@@ -170,6 +170,74 @@ def _extraer_json_ia(respuesta: str) -> dict:
     return data
 
 
+def _float_no_negativo(valor) -> Optional[float]:
+    try:
+        if valor is None or valor == "":
+            return None
+        n = float(valor)
+    except (TypeError, ValueError):
+        return None
+    return n if n >= 0 else None
+
+
+def _normalizar_propuesta(propuesta: dict) -> dict:
+    """Sanea el JSON de la IA: tipos de insumo válidos, números y preguntas ≤ 3."""
+    if not isinstance(propuesta, dict):
+        raise ValueError("La propuesta de IA no es un objeto válido")
+    insumos = []
+    for ins in propuesta.get("insumos") or []:
+        if not isinstance(ins, dict):
+            continue
+        descripcion = (ins.get("descripcion") or "").strip()
+        if not descripcion:
+            continue
+        tipo = (ins.get("tipo_insumo") or "").strip()
+        if tipo not in TIPOS_INSUMO_VALIDOS:
+            tipo = next((t for t in TIPOS_INSUMO_VALIDOS if t.lower() == tipo.lower()), "Otro")
+        insumos.append({
+            "tipo_insumo": tipo,
+            "descripcion": descripcion,
+            "unidad": (ins.get("unidad") or "").strip() or None,
+            "rendimiento": _float_no_negativo(ins.get("rendimiento")),
+            "precio": _float_no_negativo(ins.get("precio")),
+            "fuente": (ins.get("fuente") or "").strip() or None,
+            "codigo_insumo": (str(ins.get("codigo_insumo")).strip() if ins.get("codigo_insumo") else None),
+        })
+    preguntas = propuesta.get("preguntas") or []
+    if not isinstance(preguntas, list):
+        preguntas = []
+    preguntas = [str(p).strip() for p in preguntas if str(p).strip()][:3]
+    return {
+        "item_descripcion": (propuesta.get("item_descripcion") or "").strip(),
+        "unidad": (propuesta.get("unidad") or "").strip() or None,
+        "insumos": insumos,
+        "preguntas": preguntas,
+        "notas": (propuesta.get("notas") or "").strip() or None,
+    }
+
+
+def calcular_costo_directo(insumos: list[dict], exigir_precio: bool = False) -> float:
+    """Suma precio × rendimiento. Acepta claves de propuesta IA o de filas de BD."""
+    total = 0.0
+    for i in insumos or []:
+        precio = i.get("precio")
+        if precio is None:
+            precio = i.get("precio_unitario_apu")
+        if precio is None and not exigir_precio:
+            precio = i.get("precio_banco")
+        rend = i.get("rendimiento")
+        if rend is None:
+            rend = i.get("rendimiento_insumo")
+        try:
+            p = float(precio) if precio is not None else 0.0
+            r = float(rend) if rend is not None else 1.0
+        except (TypeError, ValueError):
+            continue
+        if p > 0:
+            total += p * r
+    return round(total, 2)
+
+
 # ──────────────────────────────────────────────────────────────────
 # Propuesta IA
 # ──────────────────────────────────────────────────────────────────
@@ -384,12 +452,12 @@ Responde SOLO con JSON válido:
   "notas": "..."}}
 Sin texto adicional."""
     respuesta = ai_provider.generate_text(prompt, system=_PROMPT_SISTEMA, timeout=120)
-    data = _extraer_json_ia(respuesta)
-    return data
+    return _normalizar_propuesta(_extraer_json_ia(respuesta))
 
 
 def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> dict:
     """Rellena insumos que quedaron sin precio usando tarifas y referencias CYPE Colombia."""
+    ciudad_txt = (ciudad or "").strip()
     try:
         from src.infrastructure.scraping.cype_source import CypeSource
         cype_src = CypeSource(timeout=3)
@@ -399,7 +467,10 @@ def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> d
                 ref = cype_src.buscar_referencia_insumo(ins.get("descripcion", ""), ins.get("tipo_insumo", ""))
                 if ref and ref.get("precio"):
                     ins["precio"] = float(ref["precio"])
-                    ins["fuente"] = ref.get("fuente", "CYPE Colombia")
+                    fuente = ref.get("fuente", "CYPE Colombia")
+                    if ciudad_txt:
+                        fuente = f"{fuente} · zona {ciudad_txt}"
+                    ins["fuente"] = fuente
                     if ref.get("unidad") and not ins.get("unidad"):
                         ins["unidad"] = ref["unidad"]
                 consultas_externas += 1
@@ -465,12 +536,19 @@ def calcular_desglose_aiu(costo_directo: float, proyecto_id: Optional[int] = Non
     }
 
 
-def _validar_solicitud_borrador(solicitud_id: int) -> dict:
+def _validar_solicitud_constructor(solicitud_id: int) -> dict:
     solicitud = analisis_repo.get_solicitud(solicitud_id)
     if not solicitud:
         raise ValueError(f"Solicitud {solicitud_id} no encontrada")
     if solicitud.get("origen") != "constructor":
         raise ValueError("Esta solicitud no proviene del Constructor de APU")
+    return solicitud
+
+
+def _validar_solicitud_borrador(solicitud_id: int) -> dict:
+    solicitud = _validar_solicitud_constructor(solicitud_id)
+    if solicitud.get("estado") != "borrador":
+        raise ValueError(f"La solicitud debe estar en 'borrador' (actual: {solicitud.get('estado')})")
     return solicitud
 
 
@@ -509,72 +587,79 @@ def crear_borrador(descripcion_actividad: str, unidad_actividad: Optional[str] =
             "mensaje": "Borrador creado. Genera la estructura sugerida con IA."}
 
 
-def sugerir_estructura(solicitud_id: int) -> dict:
-    solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError(f"Solo se puede sugerir estructura en estado 'borrador' (actual: {solicitud.get('estado')})")
-
+def _referencias_para_propuesta(solicitud: dict) -> list[dict]:
     descripcion = solicitud.get("descripcion_actividad") or ""
-    # 1. Consultar SECOP II externos primero (fuente más actualizada)
     secop_refs = consultar_referencias(descripcion, limite=5)
-    # 2. Buscar en banco interno
     refs_internos = analisis_repo.buscar_apus_similares(descripcion)
-    # 3. Mergear: SECOP II primero, luego banco interno
-    todos_refs = secop_refs + refs_internos
-    refs_ranked = _rankear_referencias(todos_refs, ciudad=solicitud.get("ciudad"))
-    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
-    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
+    return _rankear_referencias(secop_refs + refs_internos, ciudad=solicitud.get("ciudad"))
 
-    insumos = propuesta.get("insumos") or []
-    costo_directo = sum(
-        float(i.get("precio") or 0) * float(i.get("rendimiento") or 1)
-        for i in insumos
-        if i.get("precio") is not None
+
+def _respuesta_propuesta(solicitud_id: int, solicitud: dict, propuesta: dict,
+                         refs_ranked: Optional[list[dict]] = None) -> dict:
+    desglose_aiu = calcular_desglose_aiu(
+        calcular_costo_directo(propuesta.get("insumos") or [], exigir_precio=True),
+        proyecto_id=solicitud.get("proyecto_id"),
     )
-    desglose_aiu = calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
-
-    return {
+    payload = {
         "solicitud_id": solicitud_id,
         "propuesta": propuesta,
         "desglose_aiu": desglose_aiu,
-        "referencias_usadas": [
+    }
+    if refs_ranked is not None:
+        payload["referencias_usadas"] = [
             {"item": r.get("item"), "descripcion": r.get("items_descripcion"), "ciudad": r.get("ciudad"),
              "fecha": str(r.get("fecha")) if r.get("fecha") else None, "recencia": r.get("recencia"),
              "precio_unitario": float(r["precio_unitario"]) if r.get("precio_unitario") else None}
             for r in refs_ranked[:4]
+        ]
+    return payload
+
+
+def listar_borradores(limite: int = 20) -> dict:
+    """Borradores del Constructor de APU (más recientes primero)."""
+    limite = max(1, min(int(limite or 20), 50))
+    rows = analisis_repo.get_solicitudes(estado="borrador", origen="constructor")[:limite]
+    return {
+        "success": True,
+        "borradores": [
+            {
+                "id": r.get("id"),
+                "descripcion_actividad": r.get("descripcion_actividad") or r.get("primer_item"),
+                "ciudad": r.get("ciudad"),
+                "codigo_item": r.get("codigo_item"),
+                "unidad_actividad": r.get("unidad_actividad"),
+                "proyecto_id": r.get("proyecto_id"),
+                "total_insumos": r.get("total_items") or 0,
+                "created_at": r.get("created_at").isoformat() if hasattr(r.get("created_at"), "isoformat") else r.get("created_at"),
+            }
+            for r in rows
         ],
     }
+
+
+def sugerir_estructura(solicitud_id: int) -> dict:
+    solicitud = _validar_solicitud_borrador(solicitud_id)
+    refs_ranked = _referencias_para_propuesta(solicitud)
+    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
+    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
+    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked)
 
 
 def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_actual: Optional[dict] = None) -> dict:
     """Itera sobre la propuesta respondiendo preguntas del residente. La conversación
     completa la mantiene el cliente (rol: 'ia' | 'usuario')."""
     solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError(f"Solo se puede refinar en estado 'borrador' (actual: {solicitud.get('estado')})")
     if not conversacion:
         raise ValueError("La conversación no puede estar vacía")
 
-    descripcion = solicitud.get("descripcion_actividad") or ""
-    refs = analisis_repo.buscar_apus_similares(descripcion)
-    refs_ranked = _rankear_referencias(refs, ciudad=solicitud.get("ciudad"))
-
-    mensajes = list(conversacion)
+    refs_ranked = _referencias_para_propuesta(solicitud)
+    mensajes = list(conversacion)[-12:]
     if propuesta_actual:
-        mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)})
+        mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)[:8000]})
     propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
                                      serie_indice=_cargar_serie_indice())
     propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
-
-    insumos = propuesta.get("insumos") or []
-    costo_directo = sum(
-        float(i.get("precio") or 0) * float(i.get("rendimiento") or 1)
-        for i in insumos
-        if i.get("precio") is not None
-    )
-    desglose_aiu = calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
-
-    return {"solicitud_id": solicitud_id, "propuesta": propuesta, "desglose_aiu": desglose_aiu}
+    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked)
 
 
 def _fila_desde_propuesta(ins: dict, item: str, items_descripcion: str, item_unidad: str) -> dict:
@@ -615,8 +700,6 @@ def aplicar_estructura(solicitud_id: int, propuesta: dict, usuario_rol: str = ""
     Los precios quedan pendientes (los aporta el contratista en el paso siguiente);
     el precio del banco se conserva en `precio_banco` para comparar después."""
     solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError(f"Solo se puede aplicar estructura en estado 'borrador' (actual: {solicitud.get('estado')})")
 
     insumos = propuesta.get("insumos") or []
     if not insumos:
@@ -639,8 +722,6 @@ def aplicar_estructura(solicitud_id: int, propuesta: dict, usuario_rol: str = ""
 
 def agregar_insumo(solicitud_id: int, insumo: dict) -> dict:
     solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError("Solo se puede editar la estructura en estado 'borrador'")
     codigo_item = (solicitud.get("codigo_item") or f"NPC-{solicitud_id}").strip()
     items_descripcion = solicitud.get("descripcion_actividad") or ""
     item_unidad = solicitud.get("unidad_actividad") or ""
@@ -650,9 +731,7 @@ def agregar_insumo(solicitud_id: int, insumo: dict) -> dict:
 
 
 def eliminar_insumo(solicitud_id: int, insumo_id: int) -> dict:
-    solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError("Solo se puede editar la estructura en estado 'borrador'")
+    _validar_solicitud_borrador(solicitud_id)
     if not analisis_repo.eliminar_insumo_estructura(solicitud_id, insumo_id):
         raise ValueError(f"Insumo {insumo_id} no encontrado en la solicitud {solicitud_id}")
     return {"success": True}
@@ -662,10 +741,7 @@ def registrar_precios(solicitud_id: int, precios: list[dict], usuario_rol: str =
                       usuario_nombre: str = "") -> dict:
     """Registra los precios del CONTRATISTA (precio_unitario_apu) por insumo.
     `precios`: [{"insumo_id": int, "precio": float}]."""
-    _validar_solicitud_borrador(solicitud_id)
-    solicitud = analisis_repo.get_solicitud(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError("Solo se pueden registrar precios en estado 'borrador'")
+    solicitud = _validar_solicitud_borrador(solicitud_id)
 
     actuales = {i["id"]: i for i in solicitud.get("insumos", [])}
     actualizados, errores = 0, []
@@ -710,8 +786,6 @@ def cargar_precios_archivo(solicitud_id: int, filas_cotizacion: list[dict]) -> d
     """Cruza las filas extraídas de la cotización (PDF/Excel) del contratista contra
     los insumos del borrador y aplica los precios emparejados."""
     solicitud = _validar_solicitud_borrador(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError("Solo se pueden cargar precios en estado 'borrador'")
     insumos = solicitud.get("insumos", [])
     if not insumos:
         raise ValueError("El borrador no tiene estructura de insumos aún")
@@ -740,10 +814,7 @@ def enviar_a_analisis(solicitud_id: int, omitir_sin_precio: bool = False,
                       usuario_rol: str = "", usuario_nombre: str = "") -> dict:
     """Valida el borrador completo (todos los insumos con precio del contratista,
     excluyendo ceros) y lo pasa al análisis comparativo contra el banco."""
-    _validar_solicitud_borrador(solicitud_id)
-    solicitud = analisis_repo.get_solicitud(solicitud_id)
-    if solicitud.get("estado") != "borrador":
-        raise ValueError(f"El borrador ya fue enviado (estado: {solicitud.get('estado')})")
+    solicitud = _validar_solicitud_borrador(solicitud_id)
 
     insumos = solicitud.get("insumos", [])
     if not insumos:
@@ -789,6 +860,7 @@ def actualizar_justificacion(solicitud_id: int, justificacion_tecnica: Optional[
                             localizacion_obra: Optional[str] = None,
                             numero_acta_aprobacion: Optional[str] = None,
                             fecha_aprobacion_entidad: Optional[str] = None) -> dict:
+    _validar_solicitud_constructor(solicitud_id)
     from src.infrastructure.database.connection import execute_query
     updates = []
     params = []
@@ -823,9 +895,15 @@ def incorporar_a_proyecto_y_banco(solicitud_id: int, proyecto_id: Optional[int] 
                                   usuario_nombre: str = "Residente Técnico") -> dict:
     """Incorporación formal del APU ya aprobado por la Entidad al proyecto y al banco histórico."""
     from src.infrastructure.database.connection import execute_query
-    solicitud = analisis_repo.get_solicitud(solicitud_id)
-    if not solicitud:
-        raise ValueError(f"Solicitud #{solicitud_id} no encontrada")
+    solicitud = _validar_solicitud_constructor(solicitud_id)
+    estado = solicitud.get("estado")
+    if solicitud.get("estado_incorporacion") == "incorporado":
+        raise ValueError(f"El APU #{solicitud_id} ya fue incorporado al proyecto y al banco")
+    if estado not in ("aprobado_legal", "firmado_legal"):
+        raise ValueError(
+            f"Solo se puede incorporar un APU con firma legal (estado actual: {estado}). "
+            "Envíalo primero al flujo de análisis y aprobación."
+        )
 
     insumos = solicitud.get("insumos") or []
     if not insumos:
@@ -846,10 +924,7 @@ def incorporar_a_proyecto_y_banco(solicitud_id: int, proyecto_id: Optional[int] 
     unidad_item = (solicitud.get("unidad_actividad") or insumos[0].get("item_unidad") or "und").strip()
 
     # Calcular Costo Directo y AIU
-    costo_directo = sum(
-        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
-        for i in insumos
-    )
+    costo_directo = calcular_costo_directo(insumos)
     desglose = calcular_desglose_aiu(costo_directo, proyecto_id=pid)
     costo_total_item = desglose["valores"]["costo_total"]
 
@@ -939,7 +1014,7 @@ def incorporar_a_proyecto_y_banco(solicitud_id: int, proyecto_id: Optional[int] 
     )
 
     crear_notificacion(
-        "director",
+        "subgerente",
         f"APU #{solicitud_id} incorporado al proyecto",
         f"El APU '{nombre_item}' fue incorporado al proyecto y al banco con valor unitario ${costo_total_item:,.2f}.",
         tipo="flujo", solicitud_id=solicitud_id,

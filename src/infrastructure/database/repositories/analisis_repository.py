@@ -298,7 +298,7 @@ class AnalisisMySQLRepository:
             log.exception("Error rellenando datos de ítem en solicitud %d", solicitud_id)
             raise
 
-    def get_solicitudes(self, estado: Optional[str] = None) -> list:
+    def get_solicitudes(self, estado: Optional[str] = None, origen: Optional[str] = None) -> list:
         with get_db_connection() as conn:
             with conn.cursor(dictionary=True) as cursor:
                 base_query = """
@@ -308,10 +308,15 @@ class AnalisisMySQLRepository:
                            (SELECT COUNT(*) FROM solicitud_insumos WHERE solicitud_id = sa.id) as total_items
                     FROM solicitudes_apu sa
                 """
+                clauses, params = [], []
                 if estado:
-                    cursor.execute(base_query + " WHERE sa.estado = %s ORDER BY sa.created_at DESC", (estado,))
-                else:
-                    cursor.execute(base_query + " ORDER BY sa.created_at DESC")
+                    clauses.append("sa.estado = %s")
+                    params.append(estado)
+                if origen:
+                    clauses.append("sa.origen = %s")
+                    params.append(origen)
+                where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+                cursor.execute(base_query + where + " ORDER BY sa.created_at DESC", tuple(params))
                 return cursor.fetchall()
 
     def get_solicitud(self, solicitud_id: int) -> Optional[dict]:

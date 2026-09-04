@@ -44,6 +44,10 @@
       color: #059669;
       border-color: #a7f3d0;
     }
+
+    &.clickable {
+      cursor: pointer;
+    }
   }
 }
 
@@ -72,6 +76,10 @@
 
   .full {
     grid-column: 1 / -1;
+  }
+
+  @media (max-width: 800px) {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -165,10 +173,121 @@ textarea {
   gap: 8px;
   align-items: center;
   font-size: 13px;
+  flex-wrap: wrap;
+
+  h4 {
+    width: 100%;
+    margin: 0 0 4px;
+  }
 
   input {
     width: 140px;
   }
+}
+
+.borrador-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+
+  li {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    flex-wrap: wrap;
+    padding: 4px 0;
+  }
+}
+
+.scraping-hint {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.expediente-box {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+
+  h4 {
+    color: #1e3a8a;
+    margin: 0 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+.expediente-actions .material-symbols-outlined {
+  font-size: 18px;
+  vertical-align: middle;
+}
+
+.incorporar-banner {
+  margin-top: 16px;
+  padding: 12px;
+  background: #eff6ff;
+  border-radius: 6px;
+  border: 1px solid #bfdbfe;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+
+  p {
+    font-size: 12px;
+    color: #3b82f6;
+    margin: 4px 0 0;
+  }
+
+  .material-symbols-outlined {
+    vertical-align: middle;
+    font-size: 18px;
+  }
+}
+
+.action-btn.secondary {
+  background: #1e3a8a;
+  border-color: #1e3a8a;
+  color: white;
+}
+
+.alert {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+
+  &.error {
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+  }
+
+  &.success {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+  }
+}
+
+.alert-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: inherit;
 }
 
 .pregunta {

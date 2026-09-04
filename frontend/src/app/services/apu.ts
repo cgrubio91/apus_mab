@@ -357,6 +357,10 @@ export class ApuService {
   }
 
   // ── Constructor de APU (flujo del residente) ────────────────────
+  listarBorradoresConstructor(): Observable<any> {
+    return this.http.get(`${this.baseUrl}/constructor-apu`);
+  }
+
   crearBorrador(payload: {
     descripcion_actividad: string;
     unidad_actividad?: string | null;
@@ -371,8 +375,15 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/sugerir`, {});
   }
 
-  refinarPropuesta(solicitudId: number, conversacion: { rol: 'ia' | 'usuario'; texto: string }[]): Observable<any> {
-    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/refinar`, { conversacion });
+  refinarPropuesta(
+    solicitudId: number,
+    conversacion: { rol: 'ia' | 'usuario'; texto: string }[],
+    propuestaActual?: any,
+  ): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/refinar`, {
+      conversacion,
+      propuesta_actual: propuestaActual || null,
+    });
   }
 
   aplicarEstructura(solicitudId: number, propuesta: any): Observable<any> {

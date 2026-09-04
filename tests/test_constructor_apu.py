@@ -13,9 +13,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.application.use_cases.constructor_apu import (
     _emparejar_filas_cotizacion,
     _fila_desde_propuesta,
+    _normalizar_propuesta,
     _parse_fecha,
     _puntaje_recencia,
     _rankear_referencias,
+    calcular_costo_directo,
 )
 
 HOY = date(2026, 8, 24)
@@ -135,3 +137,38 @@ def test_fila_desde_propuesta_rechaza_vacias():
     with pytest.raises(ValueError):
         _fila_desde_propuesta({"tipo_insumo": "Materiales", "descripcion": "   "},
                               "NPC-1", "desc", "m")
+
+
+def test_normalizar_propuesta_sanea_ia():
+    data = _normalizar_propuesta({
+        "item_descripcion": " Pilote ",
+        "unidad": "m",
+        "insumos": [
+            {"tipo_insumo": "materiales", "descripcion": "Concreto", "rendimiento": "-1", "precio": "100"},
+            {"tipo_insumo": "Equipos", "descripcion": "  ", "precio": 1},
+            {"descripcion": "Oficial", "tipo_insumo": "Mano de obra", "rendimiento": 0.5, "precio": None},
+        ],
+        "preguntas": ["¿Diámetro?", "  ", "¿Profundidad?", "extra 4", "extra 5"],
+        "notas": " ok ",
+    })
+    assert data["item_descripcion"] == "Pilote"
+    assert len(data["insumos"]) == 2
+    assert data["insumos"][0]["tipo_insumo"] == "Materiales"
+    assert data["insumos"][0]["rendimiento"] is None  # negativo
+    assert data["insumos"][0]["precio"] == 100.0
+    assert data["preguntas"] == ["¿Diámetro?", "¿Profundidad?", "extra 4"]
+
+
+def test_calcular_costo_directo_propuesta_y_bd():
+    propuesta = [
+        {"precio": 1000, "rendimiento": 2},
+        {"precio": None, "rendimiento": 1},
+        {"precio": 50, "rendimiento": None},
+    ]
+    assert calcular_costo_directo(propuesta, exigir_precio=True) == 2050.0
+    filas_bd = [
+        {"precio_unitario_apu": 10, "rendimiento_insumo": 3},
+        {"precio_banco": 100, "rendimiento_insumo": 1},
+    ]
+    assert calcular_costo_directo(filas_bd, exigir_precio=True) == 30.0
+    assert calcular_costo_directo(filas_bd, exigir_precio=False) == 130.0

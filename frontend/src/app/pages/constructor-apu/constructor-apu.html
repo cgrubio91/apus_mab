@@ -3,52 +3,61 @@
     <h2>Constructor de APU</h2>
     <p class="subtitle">
       El residente define la actividad, la IA propone la estructura con datos del banco,
-      el contratista registra sus precios y se envía a análisis.
+      el contratista registra sus precios y se envía a análisis. La incorporación al banco
+      ocurre tras la firma legal.
     </p>
   </header>
 
   <ol class="wizard-steps">
-    <li [class.active]="paso >= 1" [class.done]="paso > 1">1 · Actividad</li>
-    <li [class.active]="paso >= 2" [class.done]="paso > 2">2 · Estructura IA</li>
-    <li [class.active]="paso >= 3" [class.done]="paso > 3">3 · Precios</li>
-    <li [class.active]="paso >= 4">4 · Análisis</li>
+    <li [class.active]="paso === 1" [class.done]="pasoMax > 1"
+        [class.clickable]="pasoMax >= 1" (click)="irAPaso(1)">1 · Actividad</li>
+    <li [class.active]="paso === 2" [class.done]="pasoMax > 2"
+        [class.clickable]="pasoMax >= 2" (click)="irAPaso(2)">2 · Estructura IA</li>
+    <li [class.active]="paso === 3" [class.done]="pasoMax > 3"
+        [class.clickable]="pasoMax >= 3" (click)="irAPaso(3)">3 · Precios</li>
+    <li [class.active]="paso === 4" [class.done]="pasoMax > 4"
+        [class.clickable]="pasoMax >= 4" (click)="irAPaso(4)">4 · Análisis</li>
   </ol>
 
   <div class="alert error" *ngIf="errorMessage">
     <span>{{ errorMessage }}</span>
-    <button class="alert-close" (click)="errorMessage = ''">×</button>
+    <button class="alert-close" type="button" (click)="errorMessage = ''">×</button>
   </div>
   <div class="alert success" *ngIf="successMessage">
     <span>{{ successMessage }}</span>
-    <button class="alert-close" (click)="successMessage = ''">×</button>
+    <button class="alert-close" type="button" (click)="successMessage = ''">×</button>
   </div>
-  <div class="alert info" *ngIf="isLoading"><span>Procesando…</span></div>
 
-  <!-- Overlay animado de scraping web en vivo -->
   <div class="scraping-overlay animate-fade-in" *ngIf="isLoading && progresoTexto">
     <div class="scraping-modal">
-      <div class="scraping-spinner">
-        <span class="material-symbols-outlined icon-spin">{{ retryCountdown > 0 ? 'hourglass_top' : 'travel_explore' }}</span>
-      </div>
-      <h4 class="scraping-title">{{ retryCountdown > 0 ? 'Reintentando consulta de IA' : 'Buscando y Analizando en Tiempo Real' }}</h4>
-      <p class="scraping-text">{{ progresoTexto }}</p>
+      <div class="scraping-spinner"></div>
+      <h3>{{ retryCountdown > 0 ? 'Reintentando consulta de IA' : 'Buscando y analizando en tiempo real' }}</h3>
+      <p class="scraping-sub">{{ progresoTexto }}</p>
       <div class="scraping-steps" *ngIf="retryCountdown === 0">
-        <div class="step-dot" [class.active]="progresoPaso >= 1">1</div>
-        <div class="step-line" [class.active]="progresoPaso >= 2"></div>
-        <div class="step-dot" [class.active]="progresoPaso >= 2">2</div>
-        <div class="step-line" [class.active]="progresoPaso >= 3"></div>
-        <div class="step-dot" [class.active]="progresoPaso >= 3">3</div>
-        <div class="step-line" [class.active]="progresoPaso >= 4"></div>
-        <div class="step-dot" [class.active]="progresoPaso >= 4">4</div>
+        <div class="scraping-step" [class.completed]="progresoPaso > 1" [class.active]="progresoPaso === 1">
+          <div class="step-dot" [class.pulsing]="progresoPaso === 1">1</div>
+          <span>Interpretar especificaciones</span>
+        </div>
+        <div class="scraping-step" [class.completed]="progresoPaso > 2" [class.active]="progresoPaso === 2">
+          <div class="step-dot" [class.pulsing]="progresoPaso === 2">2</div>
+          <span>Consultar tarifas de mercado</span>
+        </div>
+        <div class="scraping-step" [class.completed]="progresoPaso > 3" [class.active]="progresoPaso === 3">
+          <div class="step-dot" [class.pulsing]="progresoPaso === 3">3</div>
+          <span>Evaluar rendimientos históricos</span>
+        </div>
+        <div class="scraping-step" [class.completed]="progresoPaso > 4" [class.active]="progresoPaso === 4">
+          <div class="step-dot" [class.pulsing]="progresoPaso === 4">4</div>
+          <span>Consolidar propuesta y A.I.U.</span>
+        </div>
       </div>
       <div class="retry-progress-bar" *ngIf="retryCountdown > 0">
         <div class="retry-bar-fill" [style.width.%]="(1 - retryCountdown / 15) * 100"></div>
       </div>
-      <span class="scraping-hint">{{ retryCountdown > 0 ? 'El servicio de IA está saturado. Se reintentará automáticamente.' : 'Consultando CYPE Colombia, SECOP II, ANI y Banco Histórico' }}</span>
+      <span class="scraping-hint">{{ retryCountdown > 0 ? 'El servicio de IA está saturado. Se reintentará automáticamente.' : 'Consultando CYPE Colombia, SECOP II y banco histórico' }}</span>
     </div>
   </div>
 
-  <!-- PASO 1: Actividad -->
   <section class="card" *ngIf="paso === 1">
     <h3>1 · Define la actividad o ítem</h3>
     <div class="form-grid">
@@ -73,7 +82,7 @@
         </select>
       </label>
       <label class="full">
-        Proyecto Asociado (opcional)
+        Proyecto asociado (opcional)
         <select [(ngModel)]="proyectoId">
           <option [ngValue]="null">Sin proyecto asignado</option>
           <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion }}</option>
@@ -81,18 +90,29 @@
       </label>
     </div>
     <div class="actions">
-      <button class="action-btn primary" (click)="crearYSugerir()" [disabled]="isLoading">
+      <button class="action-btn primary" type="button" (click)="crearYSugerir()" [disabled]="isLoading">
         Crear borrador y proponer estructura
       </button>
     </div>
+
+    <div class="continuar" *ngIf="borradores.length">
+      <h4>Borradores en curso</h4>
+      <ul class="borrador-list">
+        <li *ngFor="let b of borradores">
+          <button type="button" class="btn-link" (click)="continuarBorrador(b.id)" [disabled]="isLoading">
+            #{{ b.id }} — {{ b.descripcion_actividad || 'Sin descripción' }}
+          </button>
+          <span class="muted">{{ b.ciudad || 's/ciudad' }} · {{ b.total_insumos || 0 }} insumo(s)</span>
+        </li>
+      </ul>
+    </div>
     <div class="continuar">
-      ¿Tienes un borrador en curso?
+      ¿Tienes un número de solicitud?
       <input type="number" [(ngModel)]="continuarId" placeholder="N° solicitud" min="1" />
-      <button class="action-btn" (click)="continuarBorrador()" [disabled]="!continuarId || isLoading">Continuar</button>
+      <button class="action-btn" type="button" (click)="continuarBorrador()" [disabled]="!continuarId || isLoading">Continuar</button>
     </div>
   </section>
 
-  <!-- PASO 2: Propuesta IA -->
   <ng-container *ngIf="paso === 2">
     <section class="card" *ngIf="preguntasIa.length">
       <h3>La IA necesita más información</h3>
@@ -101,7 +121,7 @@
         <input type="text" [(ngModel)]="respuestasPreguntas[i]" placeholder="Tu respuesta…" />
       </div>
       <div class="actions">
-        <button class="action-btn primary" (click)="refinar()" [disabled]="isLoading">Responder y refinar</button>
+        <button class="action-btn primary" type="button" (click)="refinar()" [disabled]="isLoading">Responder y refinar</button>
       </div>
     </section>
 
@@ -113,7 +133,7 @@
           <thead>
             <tr>
               <th></th><th>Tipo</th><th>Descripción</th><th>Und.</th>
-              <th>Rendimiento</th><th>Precio banco</th><th>Fuente</th><th></th>
+              <th>Rendimiento</th><th>Precio banco</th><th>Parcial</th><th>Fuente</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -127,14 +147,17 @@
               <td><input type="text" [(ngModel)]="f.descripcion" /></td>
               <td><input type="text" [(ngModel)]="f.unidad" class="w-und" /></td>
               <td><input type="number" step="0.01" min="0" [(ngModel)]="f.rendimiento" class="w-num" /></td>
+              <td>
+                <input type="number" min="0" step="1" [(ngModel)]="f.precio" class="w-num" placeholder="sin ref." />
+              </td>
               <td class="precio-banco">
-                <span *ngIf="f.precio !== null; else sinPrecioRef">{{ f.precio | number:'1.0-0' }}</span>
-                <ng-template #sinPrecioRef><span class="muted">sin ref.</span></ng-template>
+                <span *ngIf="parcialFila(f) !== null; else sinParcial">{{ parcialFila(f)! | number:'1.0-0' }}</span>
+                <ng-template #sinParcial><span class="muted">—</span></ng-template>
               </td>
               <td class="fuente" [title]="f.fuente">{{ f.fuente || '—' }}</td>
-              <td><button class="icon-btn" title="Quitar fila" (click)="eliminarFila(i)">✕</button></td>
+              <td><button class="icon-btn" type="button" title="Quitar fila" (click)="eliminarFila(i)">✕</button></td>
             </tr>
-            <tr *ngIf="!filas.length"><td colspan="8" class="muted center">Sin propuesta todavía.</td></tr>
+            <tr *ngIf="!filas.length"><td colspan="9" class="muted center">Sin propuesta todavía.</td></tr>
           </tbody>
         </table>
       </div>
@@ -151,26 +174,28 @@
         </ul>
       </div>
 
-      <div class="card aiu-summary-card" *ngIf="desgloseAiu" style="margin-top: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
-        <h4 style="color: #1e3a8a; margin-top: 0; display: flex; align-items: center; gap: 6px;">
-          <span class="material-symbols-outlined">calculate</span>
-          Cálculo Preliminar de Costo Directo y A.I.U.
-        </h4>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px;">
-          <div><span style="font-size: 11px; color: #64748b;">Costo Directo:</span><br/><strong>${{ desgloseAiu.costo_directo | number:'1.2-2' }}</strong></div>
-          <div><span style="font-size: 11px; color: #64748b;">Administración ({{ desgloseAiu.porcentajes.administracion }}%):</span><br/><strong>${{ desgloseAiu.valores.administracion | number:'1.2-2' }}</strong></div>
-          <div><span style="font-size: 11px; color: #64748b;">Imprevistos ({{ desgloseAiu.porcentajes.imprevistos }}%):</span><br/><strong>${{ desgloseAiu.valores.imprevistos | number:'1.2-2' }}</strong></div>
-          <div><span style="font-size: 11px; color: #64748b;">Utilidad ({{ desgloseAiu.porcentajes.utilidad }}%):</span><br/><strong>${{ desgloseAiu.valores.utilidad | number:'1.2-2' }}</strong></div>
-          <div><span style="font-size: 11px; color: #64748b;">IVA s/ Ut. ({{ desgloseAiu.porcentajes.iva_utilidad }}%):</span><br/><strong>${{ desgloseAiu.valores.iva_utilidad | number:'1.2-2' }}</strong></div>
-          <div style="background: #e2e8f0; padding: 6px 10px; border-radius: 6px;"><span style="font-size: 11px; color: #1e3a8a; font-weight: bold;">TOTAL UNITARIO:</span><br/><strong style="color: #1e3a8a; font-size: 15px;">${{ desgloseAiu.valores.costo_total | number:'1.2-2' }}</strong></div>
+      <div class="aiu-summary-card" *ngIf="filasIncluidas.length">
+        <div class="aiu-header">
+          <h4>Costo directo y A.I.U. (se actualiza al editar)</h4>
+        </div>
+        <div class="aiu-grid">
+          <div class="aiu-col">
+            <div class="aiu-row costo-directo"><span>Costo directo</span><strong>${{ desgloseAiuVivo.costo_directo | number:'1.2-2' }}</strong></div>
+            <div class="aiu-row"><span>Administración ({{ desgloseAiuVivo.porcentajes.administracion }}%)</span><strong>${{ desgloseAiuVivo.valores.administracion | number:'1.2-2' }}</strong></div>
+            <div class="aiu-row"><span>Imprevistos ({{ desgloseAiuVivo.porcentajes.imprevistos }}%)</span><strong>${{ desgloseAiuVivo.valores.imprevistos | number:'1.2-2' }}</strong></div>
+            <div class="aiu-row"><span>Utilidad ({{ desgloseAiuVivo.porcentajes.utilidad }}%)</span><strong>${{ desgloseAiuVivo.valores.utilidad | number:'1.2-2' }}</strong></div>
+            <div class="aiu-row"><span>IVA s/ utilidad ({{ desgloseAiuVivo.porcentajes.iva_utilidad }}%)</span><strong>${{ desgloseAiuVivo.valores.iva_utilidad | number:'1.2-2' }}</strong></div>
+            <div class="aiu-row total-general"><span>Total unitario</span><strong class="total-precio">${{ desgloseAiuVivo.valores.costo_total | number:'1.2-2' }}</strong></div>
+          </div>
         </div>
       </div>
 
       <div class="actions spread">
-        <button class="action-btn" (click)="agregarFilaVacia()">+ Agregar insumo</button>
+        <button class="action-btn" type="button" (click)="agregarFilaVacia()">+ Agregar insumo</button>
         <div>
-          <button class="action-btn" (click)="generarSugerencia()" [disabled]="isLoading">Regenerar propuesta</button>
-          <button class="action-btn primary" (click)="aplicarEstructura()" [disabled]="isLoading">
+          <button class="action-btn" type="button" (click)="irAPaso(1)">← Actividad</button>
+          <button class="action-btn" type="button" (click)="generarSugerencia()" [disabled]="isLoading">Regenerar propuesta</button>
+          <button class="action-btn primary" type="button" (click)="aplicarEstructura()" [disabled]="isLoading">
             Aplicar estructura
           </button>
         </div>
@@ -178,7 +203,6 @@
     </section>
   </ng-container>
 
-  <!-- PASO 3: Precios del contratista -->
   <section class="card" *ngIf="paso === 3">
     <h3>3 · Precios del contratista</h3>
     <p class="hint">
@@ -227,55 +251,73 @@
 
     <div class="actions spread">
       <span class="muted">Con precio: {{ conPrecio }} de {{ insumosBorrador.length }}</span>
-      <button class="action-btn primary" (click)="guardarPrecios()" [disabled]="isLoading">Guardar precios</button>
+      <button class="action-btn primary" type="button" (click)="guardarPrecios()" [disabled]="isLoading">Guardar precios</button>
     </div>
-    <div class="actions">
-      <button class="action-btn primary big" (click)="paso = 4" [disabled]="!insumosBorrador.length">
-        Revisar y enviar a análisis / expediente →
+    <div class="actions spread">
+      <button class="action-btn" type="button" (click)="irAPaso(2)">← Estructura</button>
+      <button class="action-btn primary big" type="button" (click)="irAExpediente()" [disabled]="!insumosBorrador.length">
+        Revisar y enviar a análisis →
       </button>
     </div>
   </section>
 
-  <!-- PASO 4: Envío a análisis y Expediente Oficial -->
   <section class="card" *ngIf="paso === 4">
-    <h3>4 · Expediente de Ítem No Previsto y Aprobación</h3>
+    <h3>4 · Envío a análisis y expediente</h3>
     <ul class="resumen">
-      <li>Solicitud: <strong>#{{ solicitudId }}</strong></li>
+      <li>Solicitud: <strong>#{{ solicitudId }}</strong> · Estado: <strong>{{ estadoSolicitud }}</strong></li>
       <li>Actividad: <strong>{{ descripcionActividad }}</strong></li>
       <li>Insumos: <strong>{{ insumosBorrador.length }}</strong> · Con precio: <strong>{{ conPrecio }}</strong></li>
       <li>Ciudad: <strong>{{ ciudad || 'no indicada' }}</strong></li>
     </ul>
 
-    <!-- Sección de Documentación Oficial y Aprobación Entidad -->
-    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin: 15px 0;">
-      <h4 style="color: #1e3a8a; margin-top: 0; display: flex; align-items: center; gap: 6px;">
+    <div class="item-aprobacion-box" *ngIf="estadoSolicitud === 'borrador'">
+      <h4>Siguiente paso: análisis comparativo</h4>
+      <p class="hint">
+        El APU entra al flujo analista → subgerente → legal. La incorporación al proyecto y al banco
+        se habilita cuando legal firme.
+      </p>
+      <label class="check-line">
+        <input type="checkbox" [(ngModel)]="omitirSinPrecio" />
+        Descartar los insumos que queden sin precio antes de analizar
+      </label>
+      <div class="actions spread">
+        <button class="action-btn" type="button" (click)="paso = 3">← Volver a precios</button>
+        <button class="action-btn primary big" type="button" (click)="enviarAnalisis()" [disabled]="isLoading">
+          Enviar a flujo de análisis comparativo
+        </button>
+      </div>
+    </div>
+
+    <div class="expediente-box">
+      <h4>
         <span class="material-symbols-outlined">verified</span>
-        Visto Bueno de la Entidad e Incorporación al Proyecto
+        Memoria técnica y visto bueno de la entidad
       </h4>
-      <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
-        Diligencia los datos del acta de aprobación de la entidad (IDU, Invías o Gobernación) para incorporar el ítem al presupuesto del proyecto y al banco de APUs.
+      <p class="hint">
+        Puedes ir documentando el acta. La incorporación al presupuesto solo está disponible
+        con firma legal.
       </p>
 
       <div class="form-grid">
         <label class="full">
-          Justificación Técnica de la Necesidad en Obra
+          Justificación técnica de la necesidad en obra
           <textarea rows="3" [(ngModel)]="justificacionTecnica"
             placeholder="Describe por qué es indispensable ejecutar este ítem no previsto y las condiciones técnicas de obra..."></textarea>
         </label>
         <label>
-          Localización de la Obra (Abscisas / Tramo)
+          Localización de la obra (abscisas / tramo)
           <input type="text" [(ngModel)]="localizacionObra" placeholder="Ej: K12+400 al K12+850 Calzada Izq." />
         </label>
         <label>
-          N° de Acta u Oficio de Aprobación
+          N° de acta u oficio de aprobación
           <input type="text" [(ngModel)]="numeroActaAprobacion" placeholder="Ej: ACTA-COMITÉ-014-2026" />
         </label>
         <label>
-          Fecha de Aprobación Entidad
+          Fecha de aprobación entidad
           <input type="date" [(ngModel)]="fechaAprobacionEntidad" />
         </label>
         <label>
-          Proyecto de Destino
+          Proyecto de destino
           <select [(ngModel)]="proyectoId">
             <option [ngValue]="null">Seleccionar proyecto...</option>
             <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion }}</option>
@@ -283,43 +325,36 @@
         </label>
       </div>
 
-      <div class="actions spread" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
-        <button class="action-btn" (click)="guardarJustificacion()">Guardar datos de acta</button>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <button class="action-btn" (click)="descargarPdf()" [disabled]="descargandoPdf" style="display: flex; align-items: center; gap: 4px;">
+      <div class="actions spread expediente-actions">
+        <button class="action-btn" type="button" (click)="guardarJustificacion()">Guardar datos de acta</button>
+        <div>
+          <button class="action-btn btn-pdf" type="button" (click)="descargarPdf()" [disabled]="descargandoPdf">
             <span class="material-symbols-outlined">picture_as_pdf</span>
-            {{ descargandoPdf ? 'Generando PDF...' : 'Memoria Técnica (PDF)' }}
+            {{ descargandoPdf ? 'Generando PDF...' : 'Memoria técnica (PDF)' }}
           </button>
-          <button class="action-btn" (click)="descargarExcel()" [disabled]="descargandoExcel" style="display: flex; align-items: center; gap: 4px;">
+          <button class="action-btn btn-excel" type="button" (click)="descargarExcel()" [disabled]="descargandoExcel">
             <span class="material-symbols-outlined">table_view</span>
-            {{ descargandoExcel ? 'Generando Excel...' : 'APU Formulado (Excel)' }}
+            {{ descargandoExcel ? 'Generando Excel...' : 'APU formulado (Excel)' }}
           </button>
         </div>
       </div>
 
-      <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe; display: flex; justify-content: space-between; align-items: center;">
+      <div class="incorporar-banner">
         <div>
-          <strong style="color: #1e3a8a;">Incorporación al Proyecto y Banco de APUs</strong>
-          <p style="font-size: 11px; color: #3b82f6; margin: 2px 0 0 0;">
-            Crea el ítem en el presupuesto y almacena el APU en el banco histórico con sello de aprobación.
+          <strong>Incorporación al proyecto y banco de APUs</strong>
+          <p *ngIf="!puedeIncorporar && estadoIncorporacion !== 'incorporado'">
+            Disponible cuando el estado sea <em>aprobado_legal</em>. Continúa el borrador con
+            <code>?id={{ solicitudId }}</code> después de la firma.
           </p>
+          <p *ngIf="estadoIncorporacion === 'incorporado'">Este APU ya está en el presupuesto y en el banco histórico.</p>
         </div>
-        <button class="action-btn primary big" (click)="incorporarAPU()" [disabled]="incorporando || estadoIncorporacion === 'incorporado'">
-          <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 18px;">library_add_check</span>
-          {{ estadoIncorporacion === 'incorporado' ? '¡APU Incorporado!' : (incorporando ? 'Incorporando...' : 'Incorporar al Proyecto y Banco') }}
+        <button class="action-btn primary big btn-incorporar" type="button"
+                (click)="incorporarAPU()"
+                [disabled]="incorporando || !puedeIncorporar">
+          <span class="material-symbols-outlined">library_add_check</span>
+          {{ estadoIncorporacion === 'incorporado' ? 'APU incorporado' : (incorporando ? 'Incorporando...' : 'Incorporar al proyecto y banco') }}
         </button>
       </div>
-    </div>
-
-    <label class="check-line">
-      <input type="checkbox" [(ngModel)]="omitirSinPrecio" />
-      Descartar los insumos que queden sin precio antes de analizar
-    </label>
-    <div class="actions spread">
-      <button class="action-btn" (click)="paso = 3">← Volver a precios</button>
-      <button class="action-btn secondary" (click)="enviarAnalisis()" [disabled]="isLoading">
-        Enviar a flujo de análisis comparativo (opcional)
-      </button>
     </div>
   </section>
 </div>
