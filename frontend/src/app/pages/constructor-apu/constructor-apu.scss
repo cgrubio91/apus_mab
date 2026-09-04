@@ -535,6 +535,23 @@ textarea {
   to { opacity: 1; transform: scale(1); }
 }
 
+/* --- RETRY PROGRESS BAR --- */
+.retry-progress-bar {
+  width: 100%;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 12px 0 6px;
+}
+
+.retry-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #f59e0b, #f97316);
+  border-radius: 3px;
+  transition: width 1s linear;
+}
+
 /* --- AIU SUMMARY CARD --- */
 .aiu-summary-card {
   background: #f8fafc;

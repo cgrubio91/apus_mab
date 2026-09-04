@@ -392,7 +392,8 @@ def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> d
     """Rellena insumos que quedaron sin precio usando tarifas y referencias CYPE Colombia."""
     try:
         from src.infrastructure.scraping.cype_source import CypeSource
-        cype_src = CypeSource()
+        cype_src = CypeSource(timeout=3)
+        consultas_externas = 0
         for ins in propuesta.get("insumos", []):
             if ins.get("precio") is None:
                 ref = cype_src.buscar_referencia_insumo(ins.get("descripcion", ""), ins.get("tipo_insumo", ""))
@@ -401,6 +402,9 @@ def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> d
                     ins["fuente"] = ref.get("fuente", "CYPE Colombia")
                     if ref.get("unidad") and not ins.get("unidad"):
                         ins["unidad"] = ref["unidad"]
+                consultas_externas += 1
+                if consultas_externas >= 2:
+                    break
     except Exception:
         log.warning("No se pudieron rellenar precios CYPE para la propuesta", exc_info=True)
     return propuesta

@@ -38,7 +38,7 @@ TARIFAS_MANO_DE_OBRA_CYPE = {
 class CypeSource:
     """Cliente para la API y desgloses de CYPE Colombia."""
 
-    def __init__(self, timeout: int = 8):
+    def __init__(self, timeout: int = 3):
         self.timeout = timeout
 
     def buscar(self, query: str, limite: int = 5) -> list[dict]:

@@ -9,6 +9,7 @@ import asyncio
 import logging
 from typing import List, Optional
 
+import requests
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
@@ -78,13 +79,43 @@ async def crear_borrador(payload: BorradorCreate, user: dict = Depends(_ROL_RESI
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
 
 
+def _obtener_status_error(e: Exception) -> int:
+    """Extrae el código de estado de cualquier excepción de requests/Http."""
+    status = 0
+    try:
+        if hasattr(e, 'response') and e.response is not None:
+            status = e.response.status_code
+        elif hasattr(e, 'status'):
+            status = e.status
+    except Exception:
+        pass
+    return status
+
+
 @router.post("/constructor-apu/{solicitud_id}/sugerir", tags=["Constructor APU"])
 async def sugerir_estructura(solicitud_id: int, user: dict = Depends(_ROL_RESIDENTE)) -> dict:
     try:
         return await asyncio.to_thread(constructor_apu.sugerir_estructura, solicitud_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
+    except requests.exceptions.HTTPError as e:
+        status_code = _obtener_status_error(e)
+        if status_code in (429, 500, 503):
+            log.warning("Gemini API overloaded for solicitud %d after retries", solicitud_id)
+            raise HTTPException(
+                status_code=503,
+                detail="El servicio de IA está temporalmente saturado. Espera 30 segundos y vuelve a intentarlo.",
+            )
+        log.exception("HTTP error sugiriendo estructura para solicitud %d", solicitud_id)
+        raise HTTPException(status_code=502, detail="Error de comunicación con el servicio de IA. Intenta nuevamente.")
+    except Exception as e:
+        status_code = _obtener_status_error(e)
+        if status_code in (429, 500, 503):
+            log.warning("Gemini API overloaded (non-HTTPError) for solicitud %d after retries", solicitud_id)
+            raise HTTPException(
+                status_code=503,
+                detail="El servicio de IA está temporalmente saturado. Espera 30 segundos y vuelve a intentarlo.",
+            )
         log.exception("Error sugiriendo estructura para solicitud %d", solicitud_id)
         raise HTTPException(status_code=500, detail="No se pudo generar la propuesta. Intenta nuevamente.")
 

@@ -157,14 +157,50 @@ export class ConstructorApu {
     });
   }
 
+  // Auto-retry state for IA overload
+  private sugerenciaRetries = 0;
+  private sugerenciaMaxRetries = 2;
+  private retryTimer: any = null;
+  retryCountdown = 0;
+
   generarSugerencia(): void {
     if (!this.solicitudId) return;
     this.isLoading = true;
     this.errorMessage = '';
+    this.retryCountdown = 0;
     this.iniciarProgresoScraping();
     this.apuService.sugerirEstructura(this.solicitudId).subscribe({
-      next: (res) => this._cargarPropuesta(res),
-      error: (e) => this._fallo(e, 'La IA no pudo generar la propuesta. Intenta de nuevo.'),
+      next: (res) => {
+        this.sugerenciaRetries = 0;
+        this._cargarPropuesta(res);
+        // NO navegar automáticamente: el residente decide cuándo ir a análisis
+        // this.paso = Math.max(this.paso, 2); // Removido: se maneja en _cargarPropuesta
+      },
+      error: (e) => {
+        const status = e?.status || 0;
+        const isOverloaded = status === 503 || status === 502;
+        if (isOverloaded && this.sugerenciaRetries < this.sugerenciaMaxRetries) {
+          this.sugerenciaRetries++;
+          this.progresoTexto = `⏳ IA temporalmente saturada. Reintentando automáticamente (${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
+          this.retryCountdown = 15;
+          this.cdr.markForCheck();
+          if (this.retryTimer) clearInterval(this.retryTimer);
+          this.retryTimer = setInterval(() => {
+            this.retryCountdown--;
+            if (this.retryCountdown > 0) {
+              this.progresoTexto = `⏳ Reintentando en ${this.retryCountdown}s (intento ${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
+              this.cdr.markForCheck();
+            } else {
+              clearInterval(this.retryTimer);
+              this.retryTimer = null;
+              this.generarSugerencia();
+            }
+          }, 1000);
+        } else {
+          this.sugerenciaRetries = 0;
+          this._fallo(e, 'La IA no pudo generar la propuesta. Intenta de nuevo.');
+        }
+      },
     });
   }
 
@@ -425,7 +461,7 @@ export class ConstructorApu {
     this.respuestasPreguntas = new Array(this.preguntasIa.length).fill('');
     this.isLoading = false;
     this.errorMessage = '';
-    this.paso = Math.max(this.paso, 2);
+    this.paso = 2;
     this.cdr.markForCheck();
   }
 

@@ -6,6 +6,7 @@ Abstracts AI backends with resilient parsing, retries, and connection pooling.
 import json
 import logging
 import os
+import random
 import re
 import time
 from typing import Optional
@@ -19,6 +20,19 @@ log = logging.getLogger("mapus.infrastructure.ai")
 
 MAX_DOC_CHARS = int(os.getenv("MAX_DOC_CHARS", "500000"))
 SESSION = requests.Session()
+
+# Retry settings for transient Gemini errors (429, 503, 500)
+_GEMINI_RETRY_CODES = {429, 500, 503}
+_GEMINI_MAX_RETRIES = 5
+_GEMINI_BASE_DELAY = 2.0   # seconds
+_GEMINI_MAX_DELAY = 60.0   # seconds
+
+
+def _backoff_delay(attempt: int, base: float = 3.0, cap: float = 30.0) -> float:
+    """Exponential backoff with jitter: base * 2^attempt + random jitter, capped."""
+    delay = min(base * (2 ** attempt), cap)
+    jitter = random.uniform(0, delay * 0.3)
+    return delay + jitter
 
 
 class AIProvider:
@@ -42,15 +56,55 @@ class AIProvider:
         return os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
 
     def _call_gemini(self, payload: dict, timeout: int = 300) -> dict:
+        """Call Gemini API with built-in retry for transient errors (429/500/503)."""
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self._get_gemini_model()}:generateContent"
-        resp = SESSION.post(
-            url,
-            headers={"Content-Type": "application/json", "X-Goog-Api-Key": self._get_gemini_key()},
-            json=payload,
-            timeout=(30, timeout),
-        )
-        resp.raise_for_status()
-        return resp.json()
+        last_exc = None
+
+        for attempt in range(_GEMINI_MAX_RETRIES):
+            try:
+                resp = SESSION.post(
+                    url,
+                    headers={"Content-Type": "application/json", "X-Goog-Api-Key": self._get_gemini_key()},
+                    json=payload,
+                    timeout=(30, timeout),
+                )
+                if resp.status_code in _GEMINI_RETRY_CODES:
+                    delay = _backoff_delay(attempt, _GEMINI_BASE_DELAY, _GEMINI_MAX_DELAY)
+                    log.warning(
+                        "Gemini API transient error %d (attempt %d/%d), retrying in %.1fs...",
+                        resp.status_code, attempt + 1, _GEMINI_MAX_RETRIES, delay,
+                    )
+                    last_exc = requests.exceptions.HTTPError(
+                        f"Gemini API error {resp.status_code}: {resp.text[:200]}",
+                        response=resp,
+                    )
+                    time.sleep(delay)
+                    continue
+
+                resp.raise_for_status()
+                return resp.json()
+
+            except requests.exceptions.ConnectionError as e:
+                delay = _backoff_delay(attempt, _GEMINI_BASE_DELAY, _GEMINI_MAX_DELAY)
+                log.warning(
+                    "Gemini connection error (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1, _GEMINI_MAX_RETRIES, delay, str(e)[:100],
+                )
+                last_exc = e
+                time.sleep(delay)
+            except requests.exceptions.Timeout as e:
+                delay = _backoff_delay(attempt, _GEMINI_BASE_DELAY, _GEMINI_MAX_DELAY)
+                log.warning(
+                    "Gemini timeout (attempt %d/%d), retrying in %.1fs",
+                    attempt + 1, _GEMINI_MAX_RETRIES, delay,
+                )
+                last_exc = e
+                time.sleep(delay)
+
+        # All retries exhausted
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Gemini API: all retry attempts exhausted")
 
     def _call_ollama(self, payload: dict, timeout: int = 300) -> dict:
         url = f"{self._get_ollama_host()}/api/chat"
@@ -78,7 +132,7 @@ class AIProvider:
 
     def generate_text(self, prompt: str, system: Optional[str] = None, timeout: int = 120) -> str:
         provider = self._get_provider()
-        max_attempts = 3
+        max_attempts = 4
 
         for attempt in range(max_attempts):
             try:
@@ -108,7 +162,9 @@ class AIProvider:
                 log.exception("Text generation attempt %d/%d failed", attempt + 1, max_attempts)
                 if attempt == max_attempts - 1:
                     raise
-                time.sleep(2 ** attempt)
+                delay = _backoff_delay(attempt, 3.0, 24.0)
+                log.info("Waiting %.1fs before retry...", delay)
+                time.sleep(delay)
 
     # ------------------------------------------------------------------
     # JSON Repair
@@ -233,7 +289,7 @@ class AIProvider:
             raise ValueError("'schema' debe ser un diccionario válido (JSON Schema).")
 
         document_text = document_text[:MAX_DOC_CHARS]
-        max_attempts = 2
+        max_attempts = 3
         provider = self._get_provider()
 
         if provider == "ollama":
@@ -261,6 +317,7 @@ NO incluyas explicaciones ni texto adicional, solo el JSON."""
                     log.exception("Ollama structured extraction attempt %d/%d failed", attempt + 1, max_attempts)
                     if attempt == max_attempts - 1:
                         raise
+                    time.sleep(_backoff_delay(attempt, 2.0, 15.0))
 
         for attempt in range(max_attempts):
             try:
@@ -288,6 +345,7 @@ NO incluyas explicaciones ni texto adicional, solo el JSON."""
                 log.exception("Gemini structured extraction attempt %d/%d failed", attempt + 1, max_attempts)
                 if attempt == max_attempts - 1:
                     raise
+                time.sleep(_backoff_delay(attempt, 3.0, 20.0))
         return []
 
     def extract_from_pdf_multimodal(self, pdf_base64: str, filename: str, prompt: str, schema: dict, timeout: int = 600) -> list:
