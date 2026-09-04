@@ -41,18 +41,36 @@ export class ConstructorApu {
 
   // Borrador activo
   solicitudId: number | null = null;
+  proyectoId: number | null = null;
+  proyectosDisponibles: any[] = [];
 
   // Paso 2: propuesta IA
   propuesta: any = null;
+  desgloseAiu: any = null;
   filas: FilaPropuesta[] = [];
   referenciasUsadas: any[] = [];
   conversacion: { rol: 'ia' | 'usuario'; texto: string }[] = [];
   respuestasPreguntas: string[] = [];
 
-  // Paso 3: precios
+  // Indicador dinámico de búsqueda en vivo / scraping
+  progresoTexto = '';
+  progresoPaso = 1;
+  private progresoTimer: any = null;
+
+  // Paso 3: precios y visto bueno de entidad
   insumosBorrador: any[] = [];
   preciosContratista: Record<number, number | null> = {};
   sinCoincidencia: any[] = [];
+
+  // Memoria técnica y aprobación formal
+  justificacionTecnica = '';
+  localizacionObra = '';
+  numeroActaAprobacion = '';
+  fechaAprobacionEntidad = '';
+  estadoIncorporacion = 'pendiente';
+  incorporando = false;
+  descargandoPdf = false;
+  descargandoExcel = false;
 
   omitirSinPrecio = false;
 
@@ -66,6 +84,42 @@ export class ConstructorApu {
       },
       error: () => { /* los selects quedan vacíos */ },
     });
+
+    this.apuService.getProyectosMapus().subscribe({
+      next: (res) => {
+        this.proyectosDisponibles = res.proyectos || [];
+        this.cdr.markForCheck();
+      },
+      error: () => { /* silencioso */ },
+    });
+  }
+
+  iniciarProgresoScraping(): void {
+    const pasos = [
+      'Paso 1/4: Interpretando especificaciones técnicas con Inteligencia Artificial...',
+      'Paso 2/4: Consultando tarifas de mercado en CYPE Colombia y Homecenter...',
+      'Paso 3/4: Evaluando rendimientos históricos y referencias viales...',
+      'Paso 4/4: Consolidando propuesta y calculando cascada de A.I.U....',
+    ];
+    this.progresoPaso = 1;
+    this.progresoTexto = pasos[0];
+    let idx = 0;
+    if (this.progresoTimer) clearInterval(this.progresoTimer);
+    this.progresoTimer = setInterval(() => {
+      idx++;
+      if (idx < pasos.length) {
+        this.progresoPaso = idx + 1;
+        this.progresoTexto = pasos[idx];
+        this.cdr.markForCheck();
+      }
+    }, 2500);
+  }
+
+  detenerProgresoScraping(): void {
+    if (this.progresoTimer) {
+      clearInterval(this.progresoTimer);
+      this.progresoTimer = null;
+    }
   }
 
   get totalInsumos(): number {
@@ -87,11 +141,13 @@ export class ConstructorApu {
     }
     this.isLoading = true;
     this.errorMessage = '';
+    this.iniciarProgresoScraping();
     this.apuService.crearBorrador({
       descripcion_actividad: this.descripcionActividad.trim(),
       unidad_actividad: this.unidadActividad.trim() || null,
       codigo_item: this.codigoItem.trim() || null,
       ciudad: this.ciudad || null,
+      proyecto_id: this.proyectoId || null,
     }).subscribe({
       next: (res) => {
         this.solicitudId = res.solicitud_id;
@@ -105,6 +161,7 @@ export class ConstructorApu {
     if (!this.solicitudId) return;
     this.isLoading = true;
     this.errorMessage = '';
+    this.iniciarProgresoScraping();
     this.apuService.sugerirEstructura(this.solicitudId).subscribe({
       next: (res) => this._cargarPropuesta(res),
       error: (e) => this._fallo(e, 'La IA no pudo generar la propuesta. Intenta de nuevo.'),
@@ -282,8 +339,79 @@ export class ConstructorApu {
     });
   }
 
+  guardarJustificacion(): void {
+    if (!this.solicitudId) return;
+    this.apuService.actualizarJustificacionApu(this.solicitudId, {
+      justificacion_tecnica: this.justificacionTecnica,
+      localizacion_obra: this.localizacionObra,
+      numero_acta_aprobacion: this.numeroActaAprobacion,
+      fecha_aprobacion_entidad: this.fechaAprobacionEntidad,
+    }).subscribe({
+      next: () => {
+        this.successMessage = 'Justificación técnica y datos de acta guardados.';
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.errorMessage = 'Error al guardar datos de justificación.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  incorporarAPU(): void {
+    if (!this.solicitudId) return;
+    this.incorporando = true;
+    this.errorMessage = '';
+    this.apuService.incorporarApuAProyecto(this.solicitudId, {
+      proyecto_id: this.proyectoId,
+      numero_acta: this.numeroActaAprobacion,
+      fecha_aprobacion: this.fechaAprobacionEntidad,
+      justificacion: this.justificacionTecnica,
+    }).subscribe({
+      next: (res) => {
+        this.incorporando = false;
+        this.estadoIncorporacion = 'incorporado';
+        this.successMessage = res.mensaje || '¡APU incorporado exitosamente al proyecto y al banco!';
+        this.cdr.markForCheck();
+      },
+      error: (e) => {
+        this.incorporando = false;
+        this.errorMessage = e?.error?.detail || 'No se pudo incorporar el APU.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
+  async descargarPdf(): Promise<void> {
+    if (!this.solicitudId) return;
+    this.descargandoPdf = true;
+    try {
+      await this.apuService.exportMemoriaPdf(this.solicitudId);
+    } catch (e) {
+      this.errorMessage = 'Error al descargar la memoria técnica en PDF.';
+    } finally {
+      this.descargandoPdf = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  async descargarExcel(): Promise<void> {
+    if (!this.solicitudId) return;
+    this.descargandoExcel = true;
+    try {
+      await this.apuService.exportApuFormulado(this.solicitudId);
+    } catch (e) {
+      this.errorMessage = 'Error al descargar el APU en Excel formulado.';
+    } finally {
+      this.descargandoExcel = false;
+      this.cdr.markForCheck();
+    }
+  }
+
   private _cargarPropuesta(res: any): void {
+    this.detenerProgresoScraping();
     this.propuesta = res.propuesta || {};
+    this.desgloseAiu = res.desglose_aiu || null;
     this.referenciasUsadas = res.referencias_usadas || [];
     this.filas = (this.propuesta.insumos || []).map((i: any) => ({
       incluir: true,
@@ -302,6 +430,7 @@ export class ConstructorApu {
   }
 
   private _fallo(e: any, fallback: string): void {
+    this.detenerProgresoScraping();
     this.errorMessage = e?.error?.detail || fallback;
     this.isLoading = false;
     this.cdr.markForCheck();

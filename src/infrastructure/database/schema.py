@@ -383,6 +383,19 @@ SCHEMA_STATEMENTS = [
     # libre `nombre_proyecto` ──
     "ALTER TABLE apus ADD COLUMN proyecto_id INT NULL",
     "ALTER TABLE apus ADD INDEX idx_apus_proyecto_id (proyecto_id)",
+
+    # ── Migración: Parámetros de A.I.U. configurables por proyecto ──
+    "ALTER TABLE proyectos ADD COLUMN aiu_administracion DECIMAL(5,2) DEFAULT 15.00",
+    "ALTER TABLE proyectos ADD COLUMN aiu_imprevistos DECIMAL(5,2) DEFAULT 3.00",
+    "ALTER TABLE proyectos ADD COLUMN aiu_utilidad DECIMAL(5,2) DEFAULT 5.00",
+    "ALTER TABLE proyectos ADD COLUMN aiu_iva_utilidad DECIMAL(5,2) DEFAULT 19.00",
+
+    # ── Migración: Memoria Técnica Justificativa y Aprobación Entidad ──
+    "ALTER TABLE solicitudes_apu ADD COLUMN justificacion_tecnica TEXT NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN localizacion_obra VARCHAR(255) NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN numero_acta_aprobacion VARCHAR(100) NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN fecha_aprobacion_entidad DATE NULL",
+    "ALTER TABLE solicitudes_apu ADD COLUMN estado_incorporacion VARCHAR(30) DEFAULT 'pendiente'",
 ]
 
 

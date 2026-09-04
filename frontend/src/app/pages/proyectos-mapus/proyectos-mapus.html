@@ -50,6 +50,10 @@
           </span>
         </div>
         <h3 class="proyecto-nombre">{{ p.descripcion || 'Sin nombre' }}</h3>
+        <div class="aiu-tag" style="font-size: 11px; color: #64748b; margin-bottom: 8px;">
+          <span class="material-symbols-outlined" style="font-size: 13px; vertical-align: middle;">percent</span>
+          AIU: {{ p.aiu_administracion || 15 }}% A / {{ p.aiu_imprevistos || 3 }}% I / {{ p.aiu_utilidad || 5 }}% U
+        </div>
         <div class="proyecto-metrics">
           <div class="metric">
             <span class="metric-value">{{ p.items_apu_cargados }}</span>
@@ -98,6 +102,31 @@
         <label>Presupuesto Total</label>
         <input type="number" [(ngModel)]="form.presupuesto_total" placeholder="0" />
       </div>
+
+      <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 16px;">
+        <label style="font-weight: 600; color: #1e3a8a; display: block; margin-bottom: 8px;">
+          Estructura de A.I.U. del Contrato (%)
+        </label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label style="font-size: 11px; color: #64748b;">% Administración</label>
+            <input type="number" [(ngModel)]="form.aiu_administracion" placeholder="15.0" />
+          </div>
+          <div>
+            <label style="font-size: 11px; color: #64748b;">% Imprevistos</label>
+            <input type="number" [(ngModel)]="form.aiu_imprevistos" placeholder="3.0" />
+          </div>
+          <div>
+            <label style="font-size: 11px; color: #64748b;">% Utilidad</label>
+            <input type="number" [(ngModel)]="form.aiu_utilidad" placeholder="5.0" />
+          </div>
+          <div>
+            <label style="font-size: 11px; color: #64748b;">% IVA s/ Utilidad</label>
+            <input type="number" [(ngModel)]="form.aiu_iva_utilidad" placeholder="19.0" />
+          </div>
+        </div>
+      </div>
+
       <div class="form-group">
         <label>ID Folder (Drive)</label>
         <input type="text" [(ngModel)]="form.id_folder" placeholder="local" />

@@ -24,6 +24,27 @@
   </div>
   <div class="alert info" *ngIf="isLoading"><span>Procesando…</span></div>
 
+  <!-- Overlay animado de scraping web en vivo -->
+  <div class="scraping-overlay animate-fade-in" *ngIf="isLoading && progresoTexto">
+    <div class="scraping-modal">
+      <div class="scraping-spinner">
+        <span class="material-symbols-outlined icon-spin">travel_explore</span>
+      </div>
+      <h4 class="scraping-title">Buscando y Analizando en Tiempo Real</h4>
+      <p class="scraping-text">{{ progresoTexto }}</p>
+      <div class="scraping-steps">
+        <div class="step-dot" [class.active]="progresoPaso >= 1">1</div>
+        <div class="step-line" [class.active]="progresoPaso >= 2"></div>
+        <div class="step-dot" [class.active]="progresoPaso >= 2">2</div>
+        <div class="step-line" [class.active]="progresoPaso >= 3"></div>
+        <div class="step-dot" [class.active]="progresoPaso >= 3">3</div>
+        <div class="step-line" [class.active]="progresoPaso >= 4"></div>
+        <div class="step-dot" [class.active]="progresoPaso >= 4">4</div>
+      </div>
+      <span class="scraping-hint">Consultando CYPE Colombia, SECOP II, ANI y Banco Histórico</span>
+    </div>
+  </div>
+
   <!-- PASO 1: Actividad -->
   <section class="card" *ngIf="paso === 1">
     <h3>1 · Define la actividad o ítem</h3>
@@ -46,6 +67,13 @@
         <select [(ngModel)]="ciudad">
           <option value="">Sin especificar</option>
           <option *ngFor="let c of ciudades" [value]="c">{{ c }}</option>
+        </select>
+      </label>
+      <label class="full">
+        Proyecto Asociado (opcional)
+        <select [(ngModel)]="proyectoId">
+          <option [ngValue]="null">Sin proyecto asignado</option>
+          <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion }}</option>
         </select>
       </label>
     </div>
@@ -120,6 +148,21 @@
         </ul>
       </div>
 
+      <div class="card aiu-summary-card" *ngIf="desgloseAiu" style="margin-top: 15px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px;">
+        <h4 style="color: #1e3a8a; margin-top: 0; display: flex; align-items: center; gap: 6px;">
+          <span class="material-symbols-outlined">calculate</span>
+          Cálculo Preliminar de Costo Directo y A.I.U.
+        </h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 10px;">
+          <div><span style="font-size: 11px; color: #64748b;">Costo Directo:</span><br/><strong>${{ desgloseAiu.costo_directo | number:'1.2-2' }}</strong></div>
+          <div><span style="font-size: 11px; color: #64748b;">Administración ({{ desgloseAiu.porcentajes.administracion }}%):</span><br/><strong>${{ desgloseAiu.valores.administracion | number:'1.2-2' }}</strong></div>
+          <div><span style="font-size: 11px; color: #64748b;">Imprevistos ({{ desgloseAiu.porcentajes.imprevistos }}%):</span><br/><strong>${{ desgloseAiu.valores.imprevistos | number:'1.2-2' }}</strong></div>
+          <div><span style="font-size: 11px; color: #64748b;">Utilidad ({{ desgloseAiu.porcentajes.utilidad }}%):</span><br/><strong>${{ desgloseAiu.valores.utilidad | number:'1.2-2' }}</strong></div>
+          <div><span style="font-size: 11px; color: #64748b;">IVA s/ Ut. ({{ desgloseAiu.porcentajes.iva_utilidad }}%):</span><br/><strong>${{ desgloseAiu.valores.iva_utilidad | number:'1.2-2' }}</strong></div>
+          <div style="background: #e2e8f0; padding: 6px 10px; border-radius: 6px;"><span style="font-size: 11px; color: #1e3a8a; font-weight: bold;">TOTAL UNITARIO:</span><br/><strong style="color: #1e3a8a; font-size: 15px;">${{ desgloseAiu.valores.costo_total | number:'1.2-2' }}</strong></div>
+        </div>
+      </div>
+
       <div class="actions spread">
         <button class="action-btn" (click)="agregarFilaVacia()">+ Agregar insumo</button>
         <div>
@@ -185,28 +228,94 @@
     </div>
     <div class="actions">
       <button class="action-btn primary big" (click)="paso = 4" [disabled]="!insumosBorrador.length">
-        Revisar y enviar a análisis →
+        Revisar y enviar a análisis / expediente →
       </button>
     </div>
   </section>
 
-  <!-- PASO 4: Envío a análisis -->
+  <!-- PASO 4: Envío a análisis y Expediente Oficial -->
   <section class="card" *ngIf="paso === 4">
-    <h3>4 · Enviar a análisis comparativo</h3>
+    <h3>4 · Expediente de Ítem No Previsto y Aprobación</h3>
     <ul class="resumen">
       <li>Solicitud: <strong>#{{ solicitudId }}</strong></li>
       <li>Actividad: <strong>{{ descripcionActividad }}</strong></li>
       <li>Insumos: <strong>{{ insumosBorrador.length }}</strong> · Con precio: <strong>{{ conPrecio }}</strong></li>
       <li>Ciudad: <strong>{{ ciudad || 'no indicada' }}</strong></li>
     </ul>
+
+    <!-- Sección de Documentación Oficial y Aprobación Entidad -->
+    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin: 15px 0;">
+      <h4 style="color: #1e3a8a; margin-top: 0; display: flex; align-items: center; gap: 6px;">
+        <span class="material-symbols-outlined">verified</span>
+        Visto Bueno de la Entidad e Incorporación al Proyecto
+      </h4>
+      <p style="font-size: 12px; color: #64748b; margin-bottom: 12px;">
+        Diligencia los datos del acta de aprobación de la entidad (IDU, Invías o Gobernación) para incorporar el ítem al presupuesto del proyecto y al banco de APUs.
+      </p>
+
+      <div class="form-grid">
+        <label class="full">
+          Justificación Técnica de la Necesidad en Obra
+          <textarea rows="3" [(ngModel)]="justificacionTecnica"
+            placeholder="Describe por qué es indispensable ejecutar este ítem no previsto y las condiciones técnicas de obra..."></textarea>
+        </label>
+        <label>
+          Localización de la Obra (Abscisas / Tramo)
+          <input type="text" [(ngModel)]="localizacionObra" placeholder="Ej: K12+400 al K12+850 Calzada Izq." />
+        </label>
+        <label>
+          N° de Acta u Oficio de Aprobación
+          <input type="text" [(ngModel)]="numeroActaAprobacion" placeholder="Ej: ACTA-COMITÉ-014-2026" />
+        </label>
+        <label>
+          Fecha de Aprobación Entidad
+          <input type="date" [(ngModel)]="fechaAprobacionEntidad" />
+        </label>
+        <label>
+          Proyecto de Destino
+          <select [(ngModel)]="proyectoId">
+            <option [ngValue]="null">Seleccionar proyecto...</option>
+            <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion }}</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="actions spread" style="margin-top: 15px; padding-top: 10px; border-top: 1px solid #e2e8f0;">
+        <button class="action-btn" (click)="guardarJustificacion()">Guardar datos de acta</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="action-btn" (click)="descargarPdf()" [disabled]="descargandoPdf" style="display: flex; align-items: center; gap: 4px;">
+            <span class="material-symbols-outlined">picture_as_pdf</span>
+            {{ descargandoPdf ? 'Generando PDF...' : 'Memoria Técnica (PDF)' }}
+          </button>
+          <button class="action-btn" (click)="descargarExcel()" [disabled]="descargandoExcel" style="display: flex; align-items: center; gap: 4px;">
+            <span class="material-symbols-outlined">table_view</span>
+            {{ descargandoExcel ? 'Generando Excel...' : 'APU Formulado (Excel)' }}
+          </button>
+        </div>
+      </div>
+
+      <div style="margin-top: 15px; padding: 12px; background: #eff6ff; border-radius: 6px; border: 1px solid #bfdbfe; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <strong style="color: #1e3a8a;">Incorporación al Proyecto y Banco de APUs</strong>
+          <p style="font-size: 11px; color: #3b82f6; margin: 2px 0 0 0;">
+            Crea el ítem en el presupuesto y almacena el APU en el banco histórico con sello de aprobación.
+          </p>
+        </div>
+        <button class="action-btn primary big" (click)="incorporarAPU()" [disabled]="incorporando || estadoIncorporacion === 'incorporado'">
+          <span class="material-symbols-outlined" style="vertical-align: middle; font-size: 18px;">library_add_check</span>
+          {{ estadoIncorporacion === 'incorporado' ? '¡APU Incorporado!' : (incorporando ? 'Incorporando...' : 'Incorporar al Proyecto y Banco') }}
+        </button>
+      </div>
+    </div>
+
     <label class="check-line">
       <input type="checkbox" [(ngModel)]="omitirSinPrecio" />
       Descartar los insumos que queden sin precio antes de analizar
     </label>
     <div class="actions spread">
       <button class="action-btn" (click)="paso = 3">← Volver a precios</button>
-      <button class="action-btn primary big" (click)="enviarAnalisis()" [disabled]="isLoading">
-        Enviar a análisis
+      <button class="action-btn secondary" (click)="enviarAnalisis()" [disabled]="isLoading">
+        Enviar a flujo de análisis comparativo (opcional)
       </button>
     </div>
   </section>

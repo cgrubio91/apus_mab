@@ -406,6 +406,61 @@ def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> d
     return propuesta
 
 
+def calcular_desglose_aiu(costo_directo: float, proyecto_id: Optional[int] = None) -> dict:
+    """Calcula el desglose formal de A.I.U. (Administración, Imprevistos, Utilidad e IVA sobre Utilidad).
+    Toma los porcentajes configurados en el proyecto o usa los valores estándar de obra en Colombia."""
+    from src.infrastructure.database.connection import execute_query
+    pct_a = 15.0
+    pct_i = 3.0
+    pct_u = 5.0
+    pct_iva = 19.0
+
+    if proyecto_id:
+        try:
+            rows = execute_query(
+                "SELECT aiu_administracion, aiu_imprevistos, aiu_utilidad, aiu_iva_utilidad FROM proyectos WHERE id = %s",
+                (proyecto_id,),
+            )
+            if rows:
+                r = rows[0]
+                pct_a = float(r["aiu_administracion"] if r["aiu_administracion"] is not None else 15.0)
+                pct_i = float(r["aiu_imprevistos"] if r["aiu_imprevistos"] is not None else 3.0)
+                pct_u = float(r["aiu_utilidad"] if r["aiu_utilidad"] is not None else 5.0)
+                pct_iva = float(r["aiu_iva_utilidad"] if r["aiu_iva_utilidad"] is not None else 19.0)
+        except Exception:
+            log.warning("No se pudo obtener AIU del proyecto %s, usando valores por defecto", proyecto_id)
+
+    cd = round(float(costo_directo or 0), 2)
+    val_a = round(cd * (pct_a / 100.0), 2)
+    val_i = round(cd * (pct_i / 100.0), 2)
+    val_u = round(cd * (pct_u / 100.0), 2)
+    val_iva_u = round(val_u * (pct_iva / 100.0), 2)
+    total_aiu = round(val_a + val_i + val_u + val_iva_u, 2)
+    costo_total = round(cd + total_aiu, 2)
+    pct_aiu_total = round((total_aiu / cd) * 100.0, 2) if cd > 0 else 0.0
+
+    return {
+        "costo_directo": cd,
+        "porcentajes": {
+            "administracion": pct_a,
+            "imprevistos": pct_i,
+            "utilidad": pct_u,
+            "iva_utilidad": pct_iva,
+            "aiu_total_porcentaje": pct_aiu_total,
+        },
+        "valores": {
+            "administracion": val_a,
+            "imprevistos": val_i,
+            "utilidad": val_u,
+            "iva_utilidad": val_iva_u,
+            "total_aiu": total_aiu,
+            "costo_total": costo_total,
+        },
+        "subtotal_aiu": total_aiu,
+        "costo_total": costo_total,
+    }
+
+
 def _validar_solicitud_borrador(solicitud_id: int) -> dict:
     solicitud = analisis_repo.get_solicitud(solicitud_id)
     if not solicitud:
@@ -465,9 +520,19 @@ def sugerir_estructura(solicitud_id: int) -> dict:
     refs_ranked = _rankear_referencias(todos_refs, ciudad=solicitud.get("ciudad"))
     propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
     propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
+
+    insumos = propuesta.get("insumos") or []
+    costo_directo = sum(
+        float(i.get("precio") or 0) * float(i.get("rendimiento") or 1)
+        for i in insumos
+        if i.get("precio") is not None
+    )
+    desglose_aiu = calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
+
     return {
         "solicitud_id": solicitud_id,
         "propuesta": propuesta,
+        "desglose_aiu": desglose_aiu,
         "referencias_usadas": [
             {"item": r.get("item"), "descripcion": r.get("items_descripcion"), "ciudad": r.get("ciudad"),
              "fecha": str(r.get("fecha")) if r.get("fecha") else None, "recencia": r.get("recencia"),
@@ -496,7 +561,16 @@ def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_act
     propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
                                      serie_indice=_cargar_serie_indice())
     propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
-    return {"solicitud_id": solicitud_id, "propuesta": propuesta}
+
+    insumos = propuesta.get("insumos") or []
+    costo_directo = sum(
+        float(i.get("precio") or 0) * float(i.get("rendimiento") or 1)
+        for i in insumos
+        if i.get("precio") is not None
+    )
+    desglose_aiu = calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
+
+    return {"solicitud_id": solicitud_id, "propuesta": propuesta, "desglose_aiu": desglose_aiu}
 
 
 def _fila_desde_propuesta(ins: dict, item: str, items_descripcion: str, item_unidad: str) -> dict:
@@ -705,3 +779,176 @@ def enviar_a_analisis(solicitud_id: int, omitir_sin_precio: bool = False,
     resultado = realizar_analisis(solicitud_id)
     resultado["insumos_enviados"] = len(insumos)
     return resultado
+
+
+def actualizar_justificacion(solicitud_id: int, justificacion_tecnica: Optional[str] = None,
+                            localizacion_obra: Optional[str] = None,
+                            numero_acta_aprobacion: Optional[str] = None,
+                            fecha_aprobacion_entidad: Optional[str] = None) -> dict:
+    from src.infrastructure.database.connection import execute_query
+    updates = []
+    params = []
+    if justificacion_tecnica is not None:
+        updates.append("justificacion_tecnica = %s")
+        params.append(justificacion_tecnica)
+    if localizacion_obra is not None:
+        updates.append("localizacion_obra = %s")
+        params.append(localizacion_obra)
+    if numero_acta_aprobacion is not None:
+        updates.append("numero_acta_aprobacion = %s")
+        params.append(numero_acta_aprobacion)
+    if fecha_aprobacion_entidad is not None:
+        updates.append("fecha_aprobacion_entidad = %s")
+        params.append(fecha_aprobacion_entidad or None)
+
+    if updates:
+        params.append(solicitud_id)
+        execute_query(
+            f"UPDATE solicitudes_apu SET {', '.join(updates)} WHERE id = %s",
+            tuple(params),
+            fetch=False,
+        )
+    return {"success": True, "solicitud_id": solicitud_id}
+
+
+def incorporar_a_proyecto_y_banco(solicitud_id: int, proyecto_id: Optional[int] = None,
+                                  numero_acta: Optional[str] = None,
+                                  fecha_aprobacion: Optional[str] = None,
+                                  justificacion: Optional[str] = None,
+                                  usuario_rol: str = "residente",
+                                  usuario_nombre: str = "Residente Técnico") -> dict:
+    """Incorporación formal del APU ya aprobado por la Entidad al proyecto y al banco histórico."""
+    from src.infrastructure.database.connection import execute_query
+    solicitud = analisis_repo.get_solicitud(solicitud_id)
+    if not solicitud:
+        raise ValueError(f"Solicitud #{solicitud_id} no encontrada")
+
+    insumos = solicitud.get("insumos") or []
+    if not insumos:
+        raise ValueError("La solicitud no contiene insumos estructurados")
+
+    # Actualizar datos de aprobación si vienen en la llamada
+    if justificacion or numero_acta or fecha_aprobacion:
+        actualizar_justificacion(
+            solicitud_id,
+            justificacion_tecnica=justificacion,
+            numero_acta_aprobacion=numero_acta,
+            fecha_aprobacion_entidad=fecha_aprobacion,
+        )
+
+    pid = proyecto_id or solicitud.get("proyecto_id")
+    codigo_item = (solicitud.get("codigo_item") or f"NPC-{solicitud_id}").strip()
+    nombre_item = (insumos[0].get("items_descripcion") or solicitud.get("descripcion_actividad") or "Ítem No Previsto").strip()
+    unidad_item = (solicitud.get("unidad_actividad") or insumos[0].get("item_unidad") or "und").strip()
+
+    # Calcular Costo Directo y AIU
+    costo_directo = sum(
+        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
+        for i in insumos
+    )
+    desglose = calcular_desglose_aiu(costo_directo, proyecto_id=pid)
+    costo_total_item = desglose["valores"]["costo_total"]
+
+    # 1. Incorporar a item_proyecto si hay proyecto asociado
+    item_proyecto_id = None
+    nombre_proyecto_final = "PROYECTO LOCAL"
+    if pid:
+        proy_rows = execute_query("SELECT descripcion FROM proyectos WHERE id = %s", (pid,))
+        if proy_rows and proy_rows[0].get("descripcion"):
+            nombre_proyecto_final = proy_rows[0]["descripcion"]
+
+        # Verificar si ya existe el ítem en el proyecto
+        existente = execute_query(
+            "SELECT id FROM item_proyecto WHERE proyecto = %s AND apu_solicitud_id = %s",
+            (pid, solicitud_id),
+        )
+        if existente:
+            item_proyecto_id = existente[0]["id"]
+            execute_query(
+                """UPDATE item_proyecto SET valor_unitario = %s, valor_presupuestado = %s,
+                          aprobado_interventoria = 1, aprobado_costos = 1
+                   WHERE id = %s""",
+                (costo_total_item, costo_total_item, item_proyecto_id),
+                fetch=False,
+            )
+        else:
+            execute_query(
+                """INSERT INTO item_proyecto (proyecto, codigo, nombre, unidad_medida, cantidad_presupuestada,
+                                              valor_unitario, valor_presupuestado, apu_solicitud_id,
+                                              aprobado_interventoria, aprobado_costos, tipo_item)
+                   VALUES (%s, %s, %s, %s, 1.0, %s, %s, %s, 1, 1, 'APU_NO_PREVISTO')""",
+                (pid, codigo_item, nombre_item, unidad_item, costo_total_item, costo_total_item, solicitud_id),
+                fetch=False,
+            )
+            item_proyecto_id = execute_query("SELECT LAST_INSERT_ID() AS id")[0]["id"]
+
+    # 2. Replicar insumos en la tabla `apus` (Banco central de APUs)
+    filas_apus = 0
+    ciudad = solicitud.get("ciudad") or "Bogotá"
+    hoy_str = date.today().isoformat()
+    for ins in insumos:
+        p_insumo = float(ins.get("precio_unitario_apu") or ins.get("precio_banco") or 0)
+        rend = float(ins.get("rendimiento_insumo") or 1)
+        parcial = round(p_insumo * rend, 2)
+        desc_ins = ins.get("insumo_descripcion") or "Insumo"
+        cod_ins = ins.get("codigo_insumo") or ""
+        tipo_ins = ins.get("tipo_insumo") or "Materiales"
+        und_ins = ins.get("insumo_unidad") or "und"
+        obs = f"Aprobado por Entidad (Acta {numero_acta or 'S/N'}) vía Solicitud #{solicitud_id}"
+
+        execute_query(
+            """INSERT INTO apus (
+                   nombre_proyecto, proyecto_id, ciudad, pais, entidad, contratista,
+                   item, items_descripcion, item_unidad, precio_unitario, precio_unitario_sin_aiu,
+                   codigo_insumo, tipo_insumo, insumo_descripcion, insumo_unidad,
+                   rendimiento_insumo, precio_unitario_apu, precio_parcial_apu,
+                   fecha_aprobacion_apu, observacion
+               ) VALUES (%s, %s, %s, 'Colombia', 'Entidad Contratante', %s,
+                         %s, %s, %s, %s, %s,
+                         %s, %s, %s, %s,
+                         %s, %s, %s,
+                         %s, %s)""",
+            (nombre_proyecto_final, pid, ciudad, solicitud.get("contratista") or "Contratista de Obra",
+             codigo_item, nombre_item, unidad_item, costo_total_item, costo_directo,
+             cod_ins, tipo_ins, desc_ins, und_ins,
+             rend, p_insumo, parcial,
+             hoy_str, obs),
+            fetch=False,
+        )
+        filas_apus += 1
+
+    # 3. Actualizar estado en solicitudes_apu
+    execute_query(
+        """UPDATE solicitudes_apu SET
+               estado = 'firmado_legal',
+               estado_incorporacion = 'incorporado',
+               proyecto_id = COALESCE(%s, proyecto_id)
+           WHERE id = %s""",
+        (pid, solicitud_id),
+        fetch=False,
+    )
+
+    # 4. Registrar en historial
+    analisis_repo.insertar_historial(
+        solicitud_id, "incorporado_proyecto", usuario_rol, usuario_nombre,
+        f"APU incorporado exitosamente al proyecto '{nombre_proyecto_final}' y al banco de APUs ({filas_apus} filas creadas). Valor unitario total con AIU: ${costo_total_item:,.2f}."
+    )
+
+    crear_notificacion(
+        "director",
+        f"APU #{solicitud_id} incorporado al proyecto",
+        f"El APU '{nombre_item}' fue incorporado al proyecto y al banco con valor unitario ${costo_total_item:,.2f}.",
+        tipo="flujo", solicitud_id=solicitud_id,
+    )
+
+    return {
+        "success": True,
+        "solicitud_id": solicitud_id,
+        "proyecto_id": pid,
+        "item_proyecto_id": item_proyecto_id,
+        "filas_banco_creadas": filas_apus,
+        "costo_directo": costo_directo,
+        "costo_total_unitario": costo_total_item,
+        "desglose_aiu": desglose,
+        "mensaje": f"APU #{solicitud_id} incorporado formalmente al proyecto y al banco de APUs.",
+    }

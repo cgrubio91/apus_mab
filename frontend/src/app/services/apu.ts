@@ -125,6 +125,10 @@ export class ApuService {
 
   constructor(private http: HttpClient) {}
 
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   getProjects(): Observable<any> {
     return this.http.get(`${this.baseUrl}/projects`);
   }
@@ -139,6 +143,10 @@ export class ApuService {
 
   crearProyecto(data: any): Observable<any> {
     return this.http.post(`${this.baseUrl}/proyectos-mapus`, data);
+  }
+
+  actualizarProyecto(proyectoId: number, data: any): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/proyectos-mapus/${proyectoId}`, data);
   }
 
   getApusDeProyecto(proyectoId: number, limit = 200, offset = 0): Observable<any> {
@@ -395,6 +403,38 @@ export class ApuService {
   enviarAAnalisis(solicitudId: number, omitirSinPrecio = false): Observable<any> {
     return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/enviar-analisis`,
       { omitir_sin_precio: omitirSinPrecio });
+  }
+
+  actualizarJustificacionApu(solicitudId: number, data: {
+    justificacion_tecnica?: string;
+    localizacion_obra?: string;
+    numero_acta_aprobacion?: string;
+    fecha_aprobacion_entidad?: string;
+  }): Observable<any> {
+    return this.http.patch(`${this.baseUrl}/constructor-apu/${solicitudId}/justificacion`, data);
+  }
+
+  incorporarApuAProyecto(solicitudId: number, data: {
+    proyecto_id?: number | null;
+    numero_acta?: string | null;
+    fecha_aprobacion?: string | null;
+    justificacion?: string | null;
+  }): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/incorporar`, data);
+  }
+
+  async exportMemoriaPdf(solicitudId: number): Promise<void> {
+    await this.downloadFile(
+      `${this.baseUrl}/constructor-apu/${solicitudId}/memoria-pdf`,
+      `memoria_tecnica_apu_${solicitudId}.pdf`,
+    );
+  }
+
+  async exportApuFormulado(solicitudId: number): Promise<void> {
+    await this.downloadFile(
+      `${this.baseUrl}/constructor-apu/${solicitudId}/export-excel`,
+      `apu_formulado_${solicitudId}.xlsx`,
+    );
   }
 
   // ── Notificaciones ──────────────────────────────────────────────

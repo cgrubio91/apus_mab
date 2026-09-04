@@ -264,6 +264,10 @@ async def listar_proyectos_mapus() -> dict:
     try:
         rows = execute_query(
             """SELECT p.id, p.id_proy, p.descripcion, p.presupuesto_total,
+                      COALESCE(p.aiu_administracion, 15.00) AS aiu_administracion,
+                      COALESCE(p.aiu_imprevistos, 3.00) AS aiu_imprevistos,
+                      COALESCE(p.aiu_utilidad, 5.00) AS aiu_utilidad,
+                      COALESCE(p.aiu_iva_utilidad, 19.00) AS aiu_iva_utilidad,
                       COUNT(ip.id) AS items_apu_cargados,
                       COUNT(CASE WHEN ip.aprobado_interventoria = 1 THEN 1 END) AS items_apu_aprobados,
                       COALESCE(SUM(ip.valor_presupuestado), 0) AS total_apu_cargado
@@ -307,7 +311,12 @@ async def detalle_items_proyecto(proyecto_id: int) -> dict:
         )
         proy = await asyncio.to_thread(
             execute_query,
-            "SELECT id, id_proy, descripcion, presupuesto_total FROM proyectos WHERE id = %s",
+            """SELECT id, id_proy, descripcion, presupuesto_total,
+                      COALESCE(aiu_administracion, 15.00) AS aiu_administracion,
+                      COALESCE(aiu_imprevistos, 3.00) AS aiu_imprevistos,
+                      COALESCE(aiu_utilidad, 5.00) AS aiu_utilidad,
+                      COALESCE(aiu_iva_utilidad, 19.00) AS aiu_iva_utilidad
+               FROM proyectos WHERE id = %s""",
             (proyecto_id,),
         )
         return {"success": True, "proyecto": (proy or [None])[0], "items": rows or []}
@@ -324,24 +333,79 @@ class CrearProyectoRequest(BaseModel):
     id_folder_bim: Optional[str] = None
     pdo_current_version_id: Optional[int] = None
     pdo_drive_subfolder_id: Optional[str] = None
+    aiu_administracion: Optional[float] = 15.00
+    aiu_imprevistos: Optional[float] = 3.00
+    aiu_utilidad: Optional[float] = 5.00
+    aiu_iva_utilidad: Optional[float] = 19.00
+
+
+class ActualizarProyectoRequest(BaseModel):
+    descripcion: Optional[str] = None
+    presupuesto_total: Optional[float] = None
+    aiu_administracion: Optional[float] = None
+    aiu_imprevistos: Optional[float] = None
+    aiu_utilidad: Optional[float] = None
+    aiu_iva_utilidad: Optional[float] = None
 
 
 @router.post("/proyectos-mapus", tags=["APUs"])
 async def crear_proyecto(payload: CrearProyectoRequest) -> dict:
     try:
         execute_query(
-            """INSERT INTO proyectos (id_proy, descripcion, presupuesto_total, id_folder, id_folder_bim, pdo_current_version_id, pdo_drive_subfolder_id)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+            """INSERT INTO proyectos (id_proy, descripcion, presupuesto_total, id_folder, id_folder_bim,
+                                      pdo_current_version_id, pdo_drive_subfolder_id,
+                                      aiu_administracion, aiu_imprevistos, aiu_utilidad, aiu_iva_utilidad)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (payload.id_proy, payload.descripcion, payload.presupuesto_total, payload.id_folder,
-             payload.id_folder_bim, payload.pdo_current_version_id, payload.pdo_drive_subfolder_id),
+             payload.id_folder_bim, payload.pdo_current_version_id, payload.pdo_drive_subfolder_id,
+             payload.aiu_administracion, payload.aiu_imprevistos, payload.aiu_utilidad, payload.aiu_iva_utilidad),
             fetch=False,
         )
         project_id = execute_query("SELECT LAST_INSERT_ID() AS id")[0]["id"]
-        log.info("Proyecto %d creado: %s", project_id, payload.descripcion)
+        log.info("Proyecto %d creado con AIU paramétrico: %s", project_id, payload.descripcion)
         return {"success": True, "id": project_id}
     except Exception:
         log.exception("Error creando proyecto")
         raise HTTPException(status_code=500, detail="Error al crear proyecto.")
+
+
+@router.patch("/proyectos-mapus/{proyecto_id}", tags=["APUs"])
+async def actualizar_proyecto(proyecto_id: int, payload: ActualizarProyectoRequest) -> dict:
+    try:
+        updates = []
+        params = []
+        if payload.descripcion is not None:
+            updates.append("descripcion = %s")
+            params.append(payload.descripcion)
+        if payload.presupuesto_total is not None:
+            updates.append("presupuesto_total = %s")
+            params.append(payload.presupuesto_total)
+        if payload.aiu_administracion is not None:
+            updates.append("aiu_administracion = %s")
+            params.append(payload.aiu_administracion)
+        if payload.aiu_imprevistos is not None:
+            updates.append("aiu_imprevistos = %s")
+            params.append(payload.aiu_imprevistos)
+        if payload.aiu_utilidad is not None:
+            updates.append("aiu_utilidad = %s")
+            params.append(payload.aiu_utilidad)
+        if payload.aiu_iva_utilidad is not None:
+            updates.append("aiu_iva_utilidad = %s")
+            params.append(payload.aiu_iva_utilidad)
+
+        if not updates:
+            return {"success": True, "mensaje": "Sin cambios"}
+
+        params.append(proyecto_id)
+        execute_query(
+            f"UPDATE proyectos SET {', '.join(updates)} WHERE id = %s",
+            tuple(params),
+            fetch=False,
+        )
+        return {"success": True, "id": proyecto_id}
+    except Exception:
+        log.exception("Error actualizando proyecto %d", proyecto_id)
+        raise HTTPException(status_code=500, detail="Error al actualizar proyecto.")
 
 
 @router.get("/proyectos-mapus/{proyecto_id}/apus", tags=["APUs"])

@@ -9,6 +9,10 @@ export interface ProyectoMapus {
   id_proy: number;
   descripcion: string;
   presupuesto_total: number;
+  aiu_administracion?: number;
+  aiu_imprevistos?: number;
+  aiu_utilidad?: number;
+  aiu_iva_utilidad?: number;
   items_apu_cargados: number;
   items_apu_aprobados: number;
   total_apu_cargado: number;
@@ -32,6 +36,10 @@ export class ProyectosMapus implements OnInit {
     id_proy: 0,
     descripcion: '',
     presupuesto_total: 0,
+    aiu_administracion: 15.00,
+    aiu_imprevistos: 3.00,
+    aiu_utilidad: 5.00,
+    aiu_iva_utilidad: 19.00,
     id_folder: 'local',
     id_folder_bim: '',
     pdo_current_version_id: null as number | null,
@@ -64,7 +72,19 @@ export class ProyectosMapus implements OnInit {
   }
 
   abrirModal(): void {
-    this.form = { id_proy: 0, descripcion: '', presupuesto_total: 0, id_folder: 'local', id_folder_bim: '', pdo_current_version_id: null, pdo_drive_subfolder_id: '' };
+    this.form = {
+      id_proy: 0,
+      descripcion: '',
+      presupuesto_total: 0,
+      aiu_administracion: 15.00,
+      aiu_imprevistos: 3.00,
+      aiu_utilidad: 5.00,
+      aiu_iva_utilidad: 19.00,
+      id_folder: 'local',
+      id_folder_bim: '',
+      pdo_current_version_id: null,
+      pdo_drive_subfolder_id: '',
+    };
     this.showModal = true;
   }
 

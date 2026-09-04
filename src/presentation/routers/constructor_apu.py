@@ -9,7 +9,7 @@ import asyncio
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 
 from src.application.use_cases import constructor_apu
@@ -220,3 +220,135 @@ async def enviar_a_analisis(solicitud_id: int, payload: Optional[EnviarAnalisisR
     except Exception:
         log.exception("Error enviando a análisis la solicitud %d", solicitud_id)
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
+
+
+class ActualizarJustificacionRequest(BaseModel):
+    justificacion_tecnica: Optional[str] = None
+    localizacion_obra: Optional[str] = None
+    numero_acta_aprobacion: Optional[str] = None
+    fecha_aprobacion_entidad: Optional[str] = None
+
+
+@router.patch("/constructor-apu/{solicitud_id}/justificacion", tags=["Constructor APU"])
+async def actualizar_justificacion_endpoint(
+    solicitud_id: int, payload: ActualizarJustificacionRequest, user: dict = Depends(_ROL_RESIDENTE)
+) -> dict:
+    try:
+        return await asyncio.to_thread(
+            constructor_apu.actualizar_justificacion,
+            solicitud_id,
+            justificacion_tecnica=payload.justificacion_tecnica,
+            localizacion_obra=payload.localizacion_obra,
+            numero_acta_aprobacion=payload.numero_acta_aprobacion,
+            fecha_aprobacion_entidad=payload.fecha_aprobacion_entidad,
+        )
+    except Exception:
+        log.exception("Error actualizando justificación para solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error al actualizar datos de justificación.")
+
+
+class IncorporarProyectoRequest(BaseModel):
+    proyecto_id: Optional[int] = None
+    numero_acta: Optional[str] = None
+    fecha_aprobacion: Optional[str] = None
+    justificacion: Optional[str] = None
+
+
+@router.post("/constructor-apu/{solicitud_id}/incorporar", tags=["Constructor APU"])
+async def incorporar_proyecto_endpoint(
+    solicitud_id: int, payload: IncorporarProyectoRequest, user: dict = Depends(_ROL_RESIDENTE)
+) -> dict:
+    try:
+        return await asyncio.to_thread(
+            constructor_apu.incorporar_a_proyecto_y_banco,
+            solicitud_id,
+            proyecto_id=payload.proyecto_id,
+            numero_acta=payload.numero_acta,
+            fecha_aprobacion=payload.fecha_aprobacion,
+            justificacion=payload.justificacion,
+            usuario_rol=user["rol"],
+            usuario_nombre=user["nombre"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error incorporando APU %d al proyecto", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno al incorporar el APU.")
+
+
+@router.get("/constructor-apu/{solicitud_id}/memoria-pdf", tags=["Constructor APU"])
+async def descargar_memoria_pdf(solicitud_id: int, user: dict = Depends(require_role("user"))) -> Response:
+    """Genera y descarga la Memoria Técnica Justificativa oficial en formato PDF."""
+    from src.infrastructure.database.repositories.analisis_repository import analisis_repo
+    from src.infrastructure.database.connection import execute_query
+    from src.infrastructure.reporting.memoria_pdf import generar_memoria_pdf
+
+    solicitud = await asyncio.to_thread(analisis_repo.get_solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    insumos = solicitud.get("insumos") or []
+    costo_directo = sum(
+        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
+        for i in insumos
+    )
+    desglose = constructor_apu.calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
+
+    proyecto = None
+    if solicitud.get("proyecto_id"):
+        p_rows = await asyncio.to_thread(
+            execute_query, "SELECT * FROM proyectos WHERE id = %s", (solicitud["proyecto_id"],)
+        )
+        if p_rows:
+            proyecto = p_rows[0]
+
+    try:
+        pdf_bytes = await asyncio.to_thread(generar_memoria_pdf, solicitud, desglose, proyecto)
+        filename = f"memoria_tecnica_apu_{solicitud_id}.pdf"
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception:
+        log.exception("Error generando PDF de memoria justificativa para solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error generando el archivo PDF de la memoria técnica.")
+
+
+@router.get("/constructor-apu/{solicitud_id}/export-excel", tags=["Constructor APU"])
+async def descargar_apu_excel(solicitud_id: int, user: dict = Depends(require_role("user"))) -> Response:
+    """Genera y descarga el APU en Excel (.xlsx) con fórmulas vivas auditables."""
+    from src.infrastructure.database.repositories.analisis_repository import analisis_repo
+    from src.infrastructure.database.connection import execute_query
+    from src.infrastructure.reporting.apu_excel_formulado import generar_apu_excel_formulado
+
+    solicitud = await asyncio.to_thread(analisis_repo.get_solicitud, solicitud_id)
+    if not solicitud:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+
+    insumos = solicitud.get("insumos") or []
+    costo_directo = sum(
+        float(i.get("precio_unitario_apu") or i.get("precio_banco") or 0) * float(i.get("rendimiento_insumo") or 1)
+        for i in insumos
+    )
+    desglose = constructor_apu.calcular_desglose_aiu(costo_directo, proyecto_id=solicitud.get("proyecto_id"))
+
+    proyecto = None
+    if solicitud.get("proyecto_id"):
+        p_rows = await asyncio.to_thread(
+            execute_query, "SELECT * FROM proyectos WHERE id = %s", (solicitud["proyecto_id"],)
+        )
+        if p_rows:
+            proyecto = p_rows[0]
+
+    try:
+        excel_bytes = await asyncio.to_thread(generar_apu_excel_formulado, solicitud, desglose, proyecto)
+        filename = f"apu_formulado_{solicitud_id}.xlsx"
+        return Response(
+            content=excel_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception:
+        log.exception("Error generando Excel formulado para solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error generando el archivo Excel formulado.")

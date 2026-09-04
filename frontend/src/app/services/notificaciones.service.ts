@@ -16,7 +16,7 @@ export class NotificacionesService implements OnDestroy {
   private auth = inject(AuthService);
   private zone = inject(NgZone);
 
-  private timer: any = null;
+  private eventSource: EventSource | null = null;
   private authSub: Subscription;
   private conocidas = new Set<number>();
   private primeraCarga = true;
@@ -40,19 +40,47 @@ export class NotificacionesService implements OnDestroy {
   }
 
   start(): void {
-    if (this.timer) return;
-    this.refresh();
-    // El polling corre fuera de la zona de Angular para no disparar detección
-    // de cambios cada minuto; solo se re-entra cuando llega la respuesta.
-    this.zone.runOutsideAngular(() => {
-      this.timer = setInterval(() => this.refresh(), POLL_INTERVAL_MS);
-    });
+    if (this.eventSource) return;
+    const token = this.auth.getToken();
+    if (!token) return;
+
+    if (typeof EventSource !== 'undefined') {
+      this.zone.runOutsideAngular(() => {
+        try {
+          const url = `${this.apu.getBaseUrl()}/notificaciones/stream?token=${encodeURIComponent(token)}`;
+          this.eventSource = new EventSource(url);
+
+          this.eventSource.addEventListener('notificaciones', (event: MessageEvent) => {
+            try {
+              const res = JSON.parse(event.data);
+              this.zone.run(() => {
+                const lista = res.notificaciones || [];
+                this.notificarNuevas(lista);
+                this.notificaciones$.next(lista);
+                this.noLeidas$.next(res.no_leidas || 0);
+              });
+            } catch (err) {
+              console.warn('Error parseando evento de notificaciones SSE', err);
+            }
+          });
+
+          this.eventSource.onerror = () => {
+            // El navegador reconecta automáticamente tras fallos de conexión
+          };
+        } catch (e) {
+          // Fallback a refresh puntual si EventSource falla al inicializar
+          this.refresh();
+        }
+      });
+    } else {
+      this.refresh();
+    }
   }
 
   stop(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
+    if (this.eventSource) {
+      this.eventSource.close();
+      this.eventSource = null;
     }
     this.primeraCarga = true;
     this.conocidas.clear();
@@ -71,7 +99,7 @@ export class NotificacionesService implements OnDestroy {
           this.noLeidas$.next(res.no_leidas || 0);
         });
       },
-      error: () => { /* silencioso: el polling reintenta en el siguiente ciclo */ },
+      error: () => { /* silencioso */ },
     });
   }
 

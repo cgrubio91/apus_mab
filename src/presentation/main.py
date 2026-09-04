@@ -55,7 +55,23 @@ async def lifespan(app: FastAPI):
         ensure_schema()
     except Exception as e:
         log.warning("Startup schema setup warning: %s", e)
+
+    # Iniciar scheduler automático en segundo plano
+    try:
+        from src.infrastructure.jobs.background_scheduler import (
+            start_background_scheduler,
+            stop_background_scheduler,
+        )
+        start_background_scheduler()
+    except Exception as e:
+        log.warning("No se pudo iniciar el scheduler background: %s", e)
+
     yield
+
+    try:
+        stop_background_scheduler()
+    except Exception:
+        pass
 
 
 def create_app() -> FastAPI:
