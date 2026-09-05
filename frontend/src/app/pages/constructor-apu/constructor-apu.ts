@@ -12,6 +12,7 @@ interface FilaPropuesta {
   rendimiento: number | null;
   precio: number | null;
   fuente: string;
+  fuente_link: string;
 }
 
 interface BorradorResumen {
@@ -80,7 +81,7 @@ export class ConstructorApu implements OnInit, OnDestroy {
 
   omitirSinPrecio = false;
 
-  tiposInsumo = ['Materiales', 'Equipos', 'Mano de obra', 'Transporte', 'Herramienta', 'Indirectos', 'Otro'];
+  tiposInsumo = ['Materiales', 'Equipos', 'Mano de obra', 'Transporte', 'Herramienta', 'Otro'];
 
   private sugerenciaRetries = 0;
   private sugerenciaMaxRetries = 2;
@@ -134,6 +135,25 @@ export class ConstructorApu implements OnInit, OnDestroy {
     });
   }
 
+  eliminarBorrador(id: number, event?: Event): void {
+    event?.stopPropagation();
+    if (!confirm(`¿Eliminar el borrador #${id}? Esta acción no se puede deshacer.`)) return;
+    this.isLoading = true;
+    this.apuService.deleteSolicitud(id).subscribe({
+      next: () => {
+        this.isLoading = false;
+        this.successMessage = `Borrador #${id} eliminado correctamente.`;
+        this.cargarListaBorradores();
+        if (this.solicitudId === id) {
+          this.solicitudId = null;
+          this.paso = 1;
+        }
+        this.cdr.markForCheck();
+      },
+      error: (e) => this._fallo(e, 'No se pudo eliminar el borrador.'),
+    });
+  }
+
   iniciarProgresoScraping(): void {
     const pasos = [
       'Paso 1/4: Interpretando especificaciones técnicas con Inteligencia Artificial...',
@@ -174,6 +194,15 @@ export class ConstructorApu implements OnInit, OnDestroy {
     return Object.values(this.preciosContratista).filter(v => v !== null && Number(v) > 0).length;
   }
 
+  aiuConfig = {
+    administracion: 15,
+    imprevistos: 3,
+    utilidad: 5,
+    iva_utilidad: 19,
+  };
+  editandoAiu = false;
+  guardandoAiuProyecto = false;
+
   get filasIncluidas(): FilaPropuesta[] {
     return this.filas.filter(f => f.incluir && (f.descripcion || '').trim());
   }
@@ -188,23 +217,33 @@ export class ConstructorApu implements OnInit, OnDestroy {
   }
 
   get desgloseAiuVivo(): any {
-    const pct = this.desgloseAiu?.porcentajes || {
-      administracion: 15, imprevistos: 3, utilidad: 5, iva_utilidad: 19,
-    };
+    const pct = this.aiuConfig;
     const cd = Math.round(this.costoDirectoPreliminar * 100) / 100;
-    const valA = Math.round(cd * (pct.administracion / 100) * 100) / 100;
-    const valI = Math.round(cd * (pct.imprevistos / 100) * 100) / 100;
-    const valU = Math.round(cd * (pct.utilidad / 100) * 100) / 100;
-    const valIva = Math.round(valU * (pct.iva_utilidad / 100) * 100) / 100;
+    const pctAdm = Number(pct.administracion || 0);
+    const pctImp = Number(pct.imprevistos || 0);
+    const pctUt = Number(pct.utilidad || 0);
+    const pctIva = Number(pct.iva_utilidad || 0);
+    const valA = Math.round(cd * (pctAdm / 100) * 100) / 100;
+    const valI = Math.round(cd * (pctImp / 100) * 100) / 100;
+    const valU = Math.round(cd * (pctUt / 100) * 100) / 100;
+    const valIva = Math.round(valU * (pctIva / 100) * 100) / 100;
     const totalAiu = Math.round((valA + valI + valU + valIva) * 100) / 100;
+    const totalPct = cd > 0 ? Math.round((totalAiu / cd) * 10000) / 100 : (pctAdm + pctImp + pctUt);
     return {
       costo_directo: cd,
-      porcentajes: pct,
+      porcentajes: {
+        administracion: pctAdm,
+        imprevistos: pctImp,
+        utilidad: pctUt,
+        iva_utilidad: pctIva,
+        aiu_total_porcentaje: totalPct,
+      },
       valores: {
         administracion: valA,
         imprevistos: valI,
         utilidad: valU,
         iva_utilidad: valIva,
+        total_aiu: totalAiu,
         costo_total: Math.round((cd + totalAiu) * 100) / 100,
       },
     };
@@ -252,13 +291,57 @@ export class ConstructorApu implements OnInit, OnDestroy {
     });
   }
 
+  onProyectoChange(): void {
+    if (!this.proyectoId) return;
+    const proy = this.proyectosDisponibles.find(p => Number(p.id) === Number(this.proyectoId));
+    if (proy) {
+      if (proy.aiu_administracion != null) this.aiuConfig.administracion = Number(proy.aiu_administracion);
+      if (proy.aiu_imprevistos != null) this.aiuConfig.imprevistos = Number(proy.aiu_imprevistos);
+      if (proy.aiu_utilidad != null) this.aiuConfig.utilidad = Number(proy.aiu_utilidad);
+      if (proy.aiu_iva_utilidad != null) this.aiuConfig.iva_utilidad = Number(proy.aiu_iva_utilidad);
+      this.cdr.markForCheck();
+    }
+  }
+
+  guardarAiuEnProyecto(): void {
+    if (!this.proyectoId) {
+      this.errorMessage = 'Selecciona un proyecto antes de guardar la configuración de A.I.U.';
+      return;
+    }
+    this.guardandoAiuProyecto = true;
+    this.apuService.updateProyectoMapus(this.proyectoId, {
+      aiu_administracion: Number(this.aiuConfig.administracion),
+      aiu_imprevistos: Number(this.aiuConfig.imprevistos),
+      aiu_utilidad: Number(this.aiuConfig.utilidad),
+      aiu_iva_utilidad: Number(this.aiuConfig.iva_utilidad),
+    }).subscribe({
+      next: () => {
+        this.guardandoAiuProyecto = false;
+        this.successMessage = 'Porcentajes de A.I.U. guardados exitosamente en el proyecto.';
+        const proy = this.proyectosDisponibles.find(p => Number(p.id) === Number(this.proyectoId));
+        if (proy) {
+          proy.aiu_administracion = Number(this.aiuConfig.administracion);
+          proy.aiu_imprevistos = Number(this.aiuConfig.imprevistos);
+          proy.aiu_utilidad = Number(this.aiuConfig.utilidad);
+          proy.aiu_iva_utilidad = Number(this.aiuConfig.iva_utilidad);
+        }
+        this.cdr.markForCheck();
+      },
+      error: (e) => {
+        this.guardandoAiuProyecto = false;
+        this.errorMessage = e?.error?.detail || 'No se pudo guardar la configuración de A.I.U. en el proyecto.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
+
   generarSugerencia(): void {
     if (!this.solicitudId) return;
     this.isLoading = true;
     this.errorMessage = '';
     this.retryCountdown = 0;
     this.iniciarProgresoScraping();
-    this.apuService.sugerirEstructura(this.solicitudId).subscribe({
+    this.apuService.sugerirEstructura(this.solicitudId, this.aiuConfig).subscribe({
       next: (res) => {
         this.sugerenciaRetries = 0;
         this._cargarPropuesta(res);
@@ -304,7 +387,7 @@ export class ConstructorApu implements OnInit, OnDestroy {
     this.isLoading = true;
     this.errorMessage = '';
     const conversacion = [...this.conversacion, ...respuestas];
-    this.apuService.refinarPropuesta(this.solicitudId, conversacion, this.propuesta).subscribe({
+    this.apuService.refinarPropuesta(this.solicitudId, conversacion, this.propuesta, this.aiuConfig).subscribe({
       next: (res) => {
         this.conversacion = [
           ...this.conversacion,
@@ -318,11 +401,30 @@ export class ConstructorApu implements OnInit, OnDestroy {
   }
 
   agregarFilaVacia(): void {
-    this.filas.push({ incluir: true, tipo_insumo: 'Materiales', descripcion: '', unidad: '', rendimiento: null, precio: null, fuente: '' });
+    this.filas.push({
+      incluir: true,
+      tipo_insumo: 'Materiales',
+      descripcion: '',
+      unidad: '',
+      rendimiento: null,
+      precio: null,
+      fuente: '',
+      fuente_link: '',
+    });
   }
 
   eliminarFila(idx: number): void {
     this.filas.splice(idx, 1);
+  }
+
+  navegarFuente(link?: string, event?: Event): void {
+    if (!link) return;
+    if (link.startsWith('http')) {
+      window.open(link, '_blank', 'noopener,noreferrer');
+    } else {
+      event?.preventDefault();
+      this.router.navigateByUrl(link);
+    }
   }
 
   aplicarEstructura(): void {
@@ -335,8 +437,13 @@ export class ConstructorApu implements OnInit, OnDestroy {
     const propuestaFinal = {
       ...(this.propuesta || {}),
       insumos: insumos.map(f => ({
-        tipo_insumo: f.tipo_insumo, descripcion: f.descripcion.trim(), unidad: f.unidad,
-        rendimiento: f.rendimiento, precio: f.precio, fuente: f.fuente,
+        tipo_insumo: f.tipo_insumo,
+        descripcion: f.descripcion.trim(),
+        unidad: f.unidad,
+        rendimiento: f.rendimiento,
+        precio: f.precio,
+        fuente: f.fuente,
+        fuente_link: f.fuente_link || '',
       })),
     };
     this.isLoading = true;
@@ -546,8 +653,35 @@ export class ConstructorApu implements OnInit, OnDestroy {
     }
   }
 
+  private _esIndirectoOAiu(desc?: string, tipo?: string): boolean {
+    const t = (tipo || '').trim().toLowerCase();
+    if (t === 'indirectos' || t === 'indirecto') return true;
+    const d = (desc || '').trim().toLowerCase();
+    const terminos = [
+      'administracion', 'administración', 'imprevisto', 'imprevistos',
+      'utilidad', 'utilidades', 'aiu', 'a.i.u', 'a.i.u.'
+    ];
+    return terminos.some(term => d.includes(term));
+  }
+
+  private _inferirFuenteLink(fuente?: string, link?: string): string {
+    if (link) return link;
+    if (!fuente) return '';
+    const f = fuente.toLowerCase();
+    if (f.includes('cype')) return 'https://generadordeprecios.info/obra_nueva/Colombia.html';
+    if (f.includes('banco') || f.includes('histórica') || f.includes('historica')) return '/banco-apus';
+    if (f.includes('homecenter') || f.includes('sodimac')) return 'https://www.homecenter.com.co';
+    if (f.includes('secop')) return 'https://community.secop.gov.co/Public/Tendering/ContractNoticeManagement/Index';
+    return '';
+  }
+
   private _aplicarDetalleSolicitud(s: any): void {
-    this.insumosBorrador = s.insumos || [];
+    this.insumosBorrador = (s.insumos || [])
+      .filter((ins: any) => !this._esIndirectoOAiu(ins.insumo_descripcion, ins.tipo_insumo))
+      .map((ins: any) => ({
+        ...ins,
+        fuente_link: this._inferirFuenteLink(ins.fuente_precio, ins.fuente_link),
+      }));
     this.preciosContratista = {};
     for (const ins of this.insumosBorrador) {
       this.preciosContratista[ins.id] = ins.precio_unitario_apu != null ? Number(ins.precio_unitario_apu) : null;
@@ -558,23 +692,37 @@ export class ConstructorApu implements OnInit, OnDestroy {
     this.localizacionObra = s.localizacion_obra || this.localizacionObra;
     this.numeroActaAprobacion = s.numero_acta_aprobacion || this.numeroActaAprobacion;
     this.fechaAprobacionEntidad = s.fecha_aprobacion_entidad || this.fechaAprobacionEntidad;
-    if (s.proyecto_id) this.proyectoId = s.proyecto_id;
+    if (s.proyecto_id) {
+      this.proyectoId = s.proyecto_id;
+      this.onProyectoChange();
+    }
   }
 
   private _cargarPropuesta(res: any): void {
     this.detenerProgresoScraping();
     this.propuesta = res.propuesta || {};
     this.desgloseAiu = res.desglose_aiu || null;
+    if (res.desglose_aiu?.porcentajes) {
+      this.aiuConfig = {
+        administracion: Number(res.desglose_aiu.porcentajes.administracion ?? this.aiuConfig.administracion),
+        imprevistos: Number(res.desglose_aiu.porcentajes.imprevistos ?? this.aiuConfig.imprevistos),
+        utilidad: Number(res.desglose_aiu.porcentajes.utilidad ?? this.aiuConfig.utilidad),
+        iva_utilidad: Number(res.desglose_aiu.porcentajes.iva_utilidad ?? this.aiuConfig.iva_utilidad),
+      };
+    }
     this.referenciasUsadas = res.referencias_usadas || this.referenciasUsadas;
-    this.filas = (this.propuesta.insumos || []).map((i: any) => ({
-      incluir: true,
-      tipo_insumo: i.tipo_insumo || 'Materiales',
-      descripcion: i.descripcion || '',
-      unidad: i.unidad || '',
-      rendimiento: i.rendimiento ?? null,
-      precio: i.precio ?? null,
-      fuente: i.fuente || '',
-    }));
+    this.filas = (this.propuesta.insumos || [])
+      .filter((i: any) => !this._esIndirectoOAiu(i.descripcion, i.tipo_insumo))
+      .map((i: any) => ({
+        incluir: true,
+        tipo_insumo: i.tipo_insumo || 'Materiales',
+        descripcion: i.descripcion || '',
+        unidad: i.unidad || '',
+        rendimiento: i.rendimiento ?? null,
+        precio: i.precio ?? null,
+        fuente: i.fuente || '',
+        fuente_link: this._inferirFuenteLink(i.fuente, i.fuente_link),
+      }));
     this.respuestasPreguntas = new Array(this.preguntasIa.length).fill('');
     this.isLoading = false;
     this.errorMessage = '';

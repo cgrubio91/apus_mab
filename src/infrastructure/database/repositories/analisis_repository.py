@@ -834,11 +834,38 @@ class AnalisisMySQLRepository:
                         "DELETE FROM aprendizaje_rechazos WHERE analisis_id IN (SELECT id FROM analisis_apu WHERE solicitud_id = %s)",
                         (solicitud_id,),
                     )
+                    cursor.execute("DELETE FROM notificaciones WHERE solicitud_id = %s", (solicitud_id,))
                     cursor.execute("DELETE FROM solicitudes_apu WHERE id = %s", (solicitud_id,))
                     conn.commit()
                     return cursor.rowcount > 0
         except Exception:
             log.exception("Error eliminando solicitud %d", solicitud_id)
+            raise
+
+    def eliminar_solicitudes_lote(self, solicitud_ids: list[int]) -> int:
+        if not solicitud_ids:
+            return 0
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    format_strings = ",".join(["%s"] * len(solicitud_ids))
+                    cursor.execute(
+                        f"DELETE FROM aprendizaje_rechazos WHERE analisis_id IN (SELECT id FROM analisis_apu WHERE solicitud_id IN ({format_strings}))",
+                        tuple(solicitud_ids),
+                    )
+                    cursor.execute(
+                        f"DELETE FROM notificaciones WHERE solicitud_id IN ({format_strings})",
+                        tuple(solicitud_ids),
+                    )
+                    cursor.execute(
+                        f"DELETE FROM solicitudes_apu WHERE id IN ({format_strings})",
+                        tuple(solicitud_ids),
+                    )
+                    afectadas = cursor.rowcount
+                    conn.commit()
+                    return afectadas
+        except Exception:
+            log.exception("Error eliminando lote de solicitudes %s", solicitud_ids)
             raise
 
 

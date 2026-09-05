@@ -403,11 +403,22 @@ def ensure_schema():
     from src.infrastructure.database.connection import execute_query
     import logging
     log = logging.getLogger("mapus.schema")
+    # MySQL error codes that indicate idempotent schema elements already exist:
+    # 1060: Duplicate column name
+    # 1061: Duplicate key name
+    # 1068: Multiple primary key defined
+    # 1091: Can't DROP '...'; check that column/key exists
+    ignorable_codes = {1060, 1061, 1068, 1091, "Duplicate column", "Duplicate key", "Multiple primary key", "already exists"}
     for stmt in SCHEMA_STATEMENTS:
         try:
-            execute_query(stmt, fetch=False)
+            execute_query(stmt, fetch=False, silent_errors=ignorable_codes)
         except Exception as e:
-            log.warning("Schema statement warning: %s — %s", stmt[:80], e)
+            errno = getattr(e, "errno", None)
+            msg = str(e)
+            if errno in ignorable_codes or any(term in msg for term in ["Duplicate column", "Duplicate key", "Multiple primary key", "already exists"]):
+                log.debug("Schema migration already applied: %s", stmt[:60])
+            else:
+                log.warning("Schema statement warning: %s — %s", stmt[:80], e)
     _seed_interventoria_data()
     log.info("Database schema verified — all tables active")
 

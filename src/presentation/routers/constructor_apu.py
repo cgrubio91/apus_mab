@@ -25,9 +25,14 @@ class BorradorCreate(BaseModel):
     proyecto_id: Optional[int] = None
 
 
+class SugerirRequest(BaseModel):
+    porcentajes_aiu: Optional[dict] = None
+
+
 class RefinarRequest(BaseModel):
     conversacion: List[dict] = Field(..., description="Historial [{rol: 'ia'|'usuario', texto}]")
     propuesta_actual: Optional[dict] = None
+    porcentajes_aiu: Optional[dict] = None
 
 
 class AplicarEstructuraRequest(BaseModel):
@@ -103,9 +108,11 @@ def _obtener_status_error(e: Exception) -> int:
 
 
 @router.post("/constructor-apu/{solicitud_id}/sugerir", tags=["Constructor APU"])
-async def sugerir_estructura(solicitud_id: int, user: dict = Depends(_ROL_RESIDENTE)) -> dict:
+async def sugerir_estructura(solicitud_id: int, payload: Optional[SugerirRequest] = None,
+                             user: dict = Depends(_ROL_RESIDENTE)) -> dict:
     try:
-        return await asyncio.to_thread(constructor_apu.sugerir_estructura, solicitud_id)
+        pct_aiu = payload.porcentajes_aiu if payload else None
+        return await asyncio.to_thread(constructor_apu.sugerir_estructura, solicitud_id, porcentajes_aiu=pct_aiu)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except requests.exceptions.HTTPError as e:
@@ -134,7 +141,8 @@ async def sugerir_estructura(solicitud_id: int, user: dict = Depends(_ROL_RESIDE
 async def refinar_propuesta(solicitud_id: int, payload: RefinarRequest, user: dict = Depends(_ROL_RESIDENTE)) -> dict:
     try:
         return await asyncio.to_thread(
-            constructor_apu.refinar_propuesta, solicitud_id, payload.conversacion, payload.propuesta_actual,
+            constructor_apu.refinar_propuesta, solicitud_id, payload.conversacion,
+            payload.propuesta_actual, porcentajes_aiu=payload.porcentajes_aiu,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

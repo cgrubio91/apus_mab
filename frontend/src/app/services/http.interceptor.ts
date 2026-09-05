@@ -28,10 +28,16 @@ export class ExtendedTimeoutInterceptor implements HttpInterceptor {
       });
     }
 
-    const timeoutMs =
-      req.url.includes('/extract-file') || req.url.includes('/extract-file-async')
-        ? 2 * 60 * 60 * 1000
-        : 30 * 1000;
+    const isAiOrLongTask =
+      req.url.includes('/extract-file') ||
+      req.url.includes('/extract-file-async') ||
+      req.url.includes('/constructor-apu') ||
+      req.url.includes('/analisis-apu') ||
+      req.url.includes('/chat-assistant');
+
+    const timeoutMs = isAiOrLongTask
+      ? 180 * 1000 // 3 minutos para operaciones con IA / scraping / análisis
+      : 30 * 1000;
 
     return next.handle(req).pipe(
       timeout(timeoutMs),

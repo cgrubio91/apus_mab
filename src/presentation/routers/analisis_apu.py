@@ -24,6 +24,7 @@ from src.application.use_cases.manage_analisis import (
     subir_insumo_al_banco,
     get_aprendizaje_rechazos,
     eliminar_solicitud,
+    eliminar_solicitudes_lote,
 )
 from src.presentation.auth import get_current_user, require_role, get_optional_user
 
@@ -34,6 +35,10 @@ class SeleccionarProyectoRequest(BaseModel):
 
 class TipoComparacionRequest(BaseModel):
     tipo: str
+
+
+class EliminarLoteRequest(BaseModel):
+    solicitud_ids: List[int]
 
 
 class SubirInsumoRequest(BaseModel):
@@ -373,6 +378,17 @@ async def eliminar_solicitud_endpoint(solicitud_id: int, user: dict = Depends(re
         raise HTTPException(status_code=400, detail=str(e))
     except Exception:
         log.exception("Error eliminando solicitud %d", solicitud_id)
+        raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
+
+
+@router.post("/analisis-apu/eliminar-lote", tags=["Análisis APU"])
+async def eliminar_lote_endpoint(body: EliminarLoteRequest, user: dict = Depends(require_role("analista"))) -> dict:
+    try:
+        return eliminar_solicitudes_lote(body.solicitud_ids)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("Error eliminando lote de solicitudes")
         raise HTTPException(status_code=500, detail="Error interno del servidor. Revisa los logs para más detalle.")
 
 

@@ -990,3 +990,20 @@ def eliminar_solicitud(solicitud_id: int) -> dict:
         raise ValueError("No se puede eliminar una solicitud ya firmada legalmente")
     analisis_repo.eliminar_solicitud(solicitud_id)
     return {"success": True, "mensaje": f"Solicitud #{solicitud_id} eliminada correctamente."}
+
+
+def eliminar_solicitudes_lote(solicitud_ids: list[int]) -> dict:
+    if not solicitud_ids:
+        return {"success": True, "eliminadas": 0, "mensaje": "No se proporcionaron IDs para eliminar."}
+    
+    # Filtrar que los IDs sean enteros válidos
+    ids_limpios = [int(sid) for sid in solicitud_ids if str(sid).isdigit() and int(sid) > 0]
+    if not ids_limpios:
+        raise ValueError("Lista de IDs inválida")
+
+    afectadas = analisis_repo.eliminar_solicitudes_lote(ids_limpios)
+    return {
+        "success": True,
+        "eliminadas": afectadas,
+        "mensaje": f"Se eliminaron {afectadas} solicitud(es) correctamente.",
+    }

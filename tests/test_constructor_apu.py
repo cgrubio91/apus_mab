@@ -17,7 +17,9 @@ from src.application.use_cases.constructor_apu import (
     _parse_fecha,
     _puntaje_recencia,
     _rankear_referencias,
+    _aplicar_jerarquia_precios,
     calcular_costo_directo,
+    calcular_desglose_aiu,
 )
 
 HOY = date(2026, 8, 24)
@@ -159,6 +161,22 @@ def test_normalizar_propuesta_sanea_ia():
     assert data["preguntas"] == ["¿Diámetro?", "¿Profundidad?", "extra 4"]
 
 
+def test_normalizar_propuesta_excluye_aiu_e_indirectos():
+    data = _normalizar_propuesta({
+        "item_descripcion": "Concreto 1500 PSI",
+        "insumos": [
+            {"tipo_insumo": "Materiales", "descripcion": "Arena", "rendimiento": 1, "precio": 50000},
+            {"tipo_insumo": "Indirectos", "descripcion": "ADMINISTRACION", "rendimiento": 0.2, "precio": 10000},
+            {"tipo_insumo": "Indirectos", "descripcion": "IMPREVISTOS", "rendimiento": 0.05, "precio": 2500},
+            {"tipo_insumo": "Otro", "descripcion": "Utilidad de obra", "rendimiento": 0.05, "precio": 2500},
+            {"tipo_insumo": "Mano de obra", "descripcion": "Oficial", "rendimiento": 0.2, "precio": 30000},
+        ],
+    })
+    descs = [i["descripcion"] for i in data["insumos"]]
+    assert descs == ["Arena", "Oficial"]
+    assert all(i["tipo_insumo"] != "Indirectos" for i in data["insumos"])
+
+
 def test_calcular_costo_directo_propuesta_y_bd():
     propuesta = [
         {"precio": 1000, "rendimiento": 2},
@@ -172,3 +190,112 @@ def test_calcular_costo_directo_propuesta_y_bd():
     ]
     assert calcular_costo_directo(filas_bd, exigir_precio=True) == 30.0
     assert calcular_costo_directo(filas_bd, exigir_precio=False) == 130.0
+
+
+def test_calcular_desglose_aiu_personalizado():
+    cd = 100000.0
+    # Default: Adm 15%, Imp 3%, Ut 5%, IVA Ut 19%
+    default_aiu = calcular_desglose_aiu(cd)
+    assert default_aiu["valores"]["administracion"] == 15000.0
+    assert default_aiu["valores"]["imprevistos"] == 3000.0
+    assert default_aiu["valores"]["utilidad"] == 5000.0
+    assert default_aiu["valores"]["iva_utilidad"] == 950.0
+    assert default_aiu["valores"]["total_aiu"] == 23950.0
+    assert default_aiu["valores"]["costo_total"] == 123950.0
+    assert default_aiu["porcentajes"]["aiu_total_porcentaje"] == 23.95
+
+    # Custom: Adm 18%, Imp 2%, Ut 4%, IVA Ut 19%
+    custom_aiu = calcular_desglose_aiu(cd, {
+        "administracion": 18,
+        "imprevistos": 2,
+        "utilidad": 4,
+        "iva_utilidad": 19,
+    })
+    assert custom_aiu["valores"]["administracion"] == 18000.0
+    assert custom_aiu["valores"]["imprevistos"] == 2000.0
+    assert custom_aiu["valores"]["utilidad"] == 4000.0
+    assert custom_aiu["valores"]["iva_utilidad"] == 760.0
+    assert custom_aiu["valores"]["total_aiu"] == 24760.0
+    assert custom_aiu["valores"]["costo_total"] == 124760.0
+    assert custom_aiu["porcentajes"]["aiu_total_porcentaje"] == 24.76
+
+
+def test_aplicar_jerarquia_precios_prioridad():
+    class DummyCype:
+        def buscar_referencia_insumo(self, desc, tipo=None, ciudad=None):
+            if "acero" in desc.lower():
+                return {"precio": 4800, "fuente": "CYPE Colombia - Tarifas Oficiales"}
+            return None
+
+    class DummyMateriales:
+        def buscar_referencia(self, desc, tipo=None):
+            if "arena" in desc.lower():
+                return {
+                    "precio": 14900,
+                    "fuente": "Homecenter · BLF",
+                    "fuente_link": "https://www.homecenter.com.co/homecenter-co/product/297066/",
+                    "unidad": "Und",
+                }
+            return None
+
+    class DummyExtRepo:
+        def buscar(self, desc, fuente=None, ciudad=None, **kwargs):
+            if fuente in ("SECOP II", "SECOP") and "cemento" in desc.lower():
+                return [{"precio": 32000, "fuente": "SECOP II", "granularidad": "material"}]
+            if fuente in ("SECOP II", "SECOP") and "pintura" in desc.lower():
+                return [{"precio": 45000, "fuente": "SECOP II", "url": "https://secop.gov.co/doc/123", "granularidad": "material"}]
+            if fuente in ("SECOP II", "SECOP") and "retroexcavadora" in desc.lower():
+                # Contrato macro de licitación pública: DEBE SER DESCARTADO
+                return [{"precio": 144353664, "fuente": "SECOP II: ANI", "granularidad": "contrato"}]
+            return []
+
+    insumos = [
+        {"descripcion": "Acero de refuerzo 60ksi", "tipo_insumo": "Materiales"},
+        {"descripcion": "Cemento gris tipo 1", "tipo_insumo": "Materiales"},
+        {"descripcion": "Arena lavada de río", "tipo_insumo": "Materiales"},
+        {"descripcion": "Pintura anticorrosiva", "tipo_insumo": "Materiales"},
+        {"descripcion": "Retroexcavadora sobre llantas", "tipo_insumo": "Equipos"},
+        {"descripcion": "Insumo exótico desconocido", "tipo_insumo": "Materiales"},
+    ]
+    precios_ref_banco = {
+        "cemento gris": 30000,
+    }
+
+    res = _aplicar_jerarquia_precios(
+        propuesta={"insumos": insumos},
+        solicitud={"ciudad": "Medellín"},
+        precios_ref_banco=precios_ref_banco,
+        cype_source=DummyCype(),
+        referencia_externa_repo=DummyExtRepo(),
+        materiales_source=DummyMateriales(),
+    )
+    ins_res = res["insumos"]
+
+    # 1. Acero debe venir de CYPE (1ª prioridad)
+    assert ins_res[0]["precio"] == 4800
+    assert "CYPE" in ins_res[0]["fuente"]
+    assert "generadordeprecios.info" in ins_res[0]["fuente_link"]
+
+    # 2. Cemento debe venir del Banco de APUs (2ª prioridad, prevalece sobre Homecenter y SECOP)
+    assert ins_res[1]["precio"] == 30000
+    assert "Banco" in ins_res[1]["fuente"]
+    assert ins_res[1]["fuente_link"] == "/banco-apus"
+
+    # 3. Arena lavada debe venir de Homecenter (3ª prioridad: catálogo comercial en vivo)
+    assert ins_res[2]["precio"] == 14900
+    assert "Homecenter" in ins_res[2]["fuente"]
+    assert "297066" in ins_res[2]["fuente_link"]
+
+    # 4. Pintura viene de SECOP II (4ª prioridad: insumo unitario válido)
+    assert ins_res[3]["precio"] == 45000
+    assert "SECOP II" in ins_res[3]["fuente"]
+    assert ins_res[3]["fuente_link"] == "https://secop.gov.co/doc/123"
+
+    # 5. Retroexcavadora: el registro de SECOP es un contrato macro ($144M), DEBE SER DESCARTADO -> queda Pendiente
+    assert ins_res[4]["precio"] is None
+    assert "Pendiente cotización" in ins_res[4]["fuente"]
+
+    # 6. Insumo exótico no tiene precio en ninguna fuente (5ª prioridad)
+    assert ins_res[5]["precio"] is None
+    assert "Pendiente cotización" in ins_res[5]["fuente"]
+

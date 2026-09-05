@@ -70,9 +70,12 @@
             <td>{{ s.link_documento }}</td>
             <td>{{ s.fecha_solicitud }}</td>
             <td><span class="badge {{ estadoBadgeClass(s.estado) }}">{{ estadoLabel(s.estado) }}</span></td>
-            <td>
-              <button class="action-btn small" (click)="viewSolicitud(s)">
+            <td style="white-space: nowrap;">
+              <button class="action-btn small" (click)="viewSolicitud(s)" style="margin-right: 6px;">
                 {{ s.estado === 'pendiente_analisis' ? 'Analizar' : 'Ver Detalle' }}
+              </button>
+              <button class="action-btn small danger" type="button" title="Eliminar solicitud" (click)="eliminarUna(s, $event)">
+                <span class="material-symbols-outlined" style="font-size: 15px; vertical-align: middle;">delete</span>
               </button>
             </td>
           </tr>

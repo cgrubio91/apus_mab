@@ -23,9 +23,21 @@ async def _ejecutar_ciclo_actualizacion():
 
     # 1. Actualizar serie DANE ICCP
     try:
-        from src.application.use_cases.ingesta_referencias import ingerir_dane
-        resultado_dane = await asyncio.to_thread(ingerir_dane, "ICCP")
-        log.info("Sincronización DANE completada: %s registros actualizados.", resultado_dane.get("registros", 0))
+        from src.config.settings import settings
+        if settings.DANE_ICCP_DATASET_ID:
+            from src.application.use_cases.indices_costos import ingerir_dane
+            resultado_dane = await asyncio.to_thread(
+                ingerir_dane,
+                settings.DANE_ICCP_DATASET_ID,
+                settings.DANE_ICCP_SERIE or "ICCP",
+            )
+            log.info(
+                "Sincronización DANE completada: %s puntos / %s registros afectados.",
+                resultado_dane.get("puntos", 0),
+                resultado_dane.get("afectados", 0),
+            )
+        else:
+            log.info("DANE_ICCP_DATASET_ID no configurado; omitiendo sincronización DANE automática.")
     except Exception:
         log.warning("No se pudo actualizar el índice DANE en este ciclo", exc_info=True)
 

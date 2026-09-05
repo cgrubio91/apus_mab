@@ -130,7 +130,7 @@ def put_connection(conn):
             pass
 
 
-def execute_query(query, params=None, fetch=True, dict_cursor=True):
+def execute_query(query, params=None, fetch=True, dict_cursor=True, silent_errors=None):
     conn = None
     try:
         conn = get_db_connection()
@@ -150,7 +150,18 @@ def execute_query(query, params=None, fetch=True, dict_cursor=True):
     except Exception as e:
         if conn:
             conn.rollback()
-        log.error("Query execution failed: %s | Query: %s", e, query[:200])
+        errno = getattr(e, "errno", None)
+        msg = str(e)
+        is_silent = False
+        if silent_errors:
+            if errno in silent_errors:
+                is_silent = True
+            elif any(isinstance(s, str) and s in msg for s in silent_errors):
+                is_silent = True
+        if is_silent:
+            log.debug("Benign database notice: %s | Query: %s", e, query[:100])
+        else:
+            log.error("Query execution failed: %s | Query: %s", e, query[:200])
         raise
     finally:
         put_connection(conn)

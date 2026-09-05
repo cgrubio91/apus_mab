@@ -83,7 +83,7 @@
       </label>
       <label class="full">
         Proyecto asociado (opcional)
-        <select [(ngModel)]="proyectoId">
+        <select [(ngModel)]="proyectoId" (ngModelChange)="onProyectoChange()">
           <option [ngValue]="null">Sin proyecto asignado</option>
           <option *ngFor="let p of proyectosDisponibles" [ngValue]="p.id">#{{ p.id_proy }} — {{ p.descripcion }}</option>
         </select>
@@ -98,11 +98,16 @@
     <div class="continuar" *ngIf="borradores.length">
       <h4>Borradores en curso</h4>
       <ul class="borrador-list">
-        <li *ngFor="let b of borradores">
-          <button type="button" class="btn-link" (click)="continuarBorrador(b.id)" [disabled]="isLoading">
-            #{{ b.id }} — {{ b.descripcion_actividad || 'Sin descripción' }}
+        <li *ngFor="let b of borradores" class="borrador-item">
+          <div class="borrador-info">
+            <button type="button" class="btn-link" (click)="continuarBorrador(b.id)" [disabled]="isLoading">
+              #{{ b.id }} — {{ b.descripcion_actividad || 'Sin descripción' }}
+            </button>
+            <span class="muted">{{ b.ciudad || 's/ciudad' }} · {{ b.total_insumos || 0 }} insumo(s)</span>
+          </div>
+          <button type="button" class="borrador-delete-btn" title="Eliminar borrador" (click)="eliminarBorrador(b.id, $event)" [disabled]="isLoading">
+            ✕
           </button>
-          <span class="muted">{{ b.ciudad || 's/ciudad' }} · {{ b.total_insumos || 0 }} insumo(s)</span>
         </li>
       </ul>
     </div>
@@ -154,7 +159,13 @@
                 <span *ngIf="parcialFila(f) !== null; else sinParcial">{{ parcialFila(f)! | number:'1.0-0' }}</span>
                 <ng-template #sinParcial><span class="muted">—</span></ng-template>
               </td>
-              <td class="fuente" [title]="f.fuente">{{ f.fuente || '—' }}</td>
+              <td class="fuente" [title]="f.fuente">
+                <a *ngIf="f.fuente_link; else fuentePlain" [href]="f.fuente_link"
+                   (click)="navegarFuente(f.fuente_link, $event)"
+                   [target]="f.fuente_link.startsWith('http') ? '_blank' : '_self'"
+                   class="fuente-link">{{ f.fuente || '—' }}</a>
+                <ng-template #fuentePlain>{{ f.fuente || '—' }}</ng-template>
+              </td>
               <td><button class="icon-btn" type="button" title="Quitar fila" (click)="eliminarFila(i)">✕</button></td>
             </tr>
             <tr *ngIf="!filas.length"><td colspan="9" class="muted center">Sin propuesta todavía.</td></tr>
@@ -177,6 +188,36 @@
       <div class="aiu-summary-card" *ngIf="filasIncluidas.length">
         <div class="aiu-header">
           <h4>Costo directo y A.I.U. (se actualiza al editar)</h4>
+          <button type="button" class="btn-aiu-toggle" (click)="editandoAiu = !editandoAiu">
+            {{ editandoAiu ? 'Ocultar ajuste' : '⚙ Ajustar % A.I.U.' }}
+          </button>
+        </div>
+
+        <div class="aiu-custom-panel" *ngIf="editandoAiu">
+          <div class="aiu-inputs-row">
+            <label>
+              <span>% Administración</span>
+              <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuConfig.administracion" />
+            </label>
+            <label>
+              <span>% Imprevistos</span>
+              <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuConfig.imprevistos" />
+            </label>
+            <label>
+              <span>% Utilidad</span>
+              <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuConfig.utilidad" />
+            </label>
+            <label>
+              <span>% IVA s/ Utilidad</span>
+              <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuConfig.iva_utilidad" />
+            </label>
+          </div>
+          <div class="aiu-save-row" *ngIf="proyectoId">
+            <button type="button" class="action-btn small" (click)="guardarAiuEnProyecto()" [disabled]="guardandoAiuProyecto">
+              {{ guardandoAiuProyecto ? 'Guardando...' : '💾 Guardar estos % en el proyecto actual' }}
+            </button>
+            <span class="muted small">Se aplicarán por defecto a los futuros ítems y cálculos de este proyecto.</span>
+          </div>
         </div>
         <div class="aiu-grid">
           <div class="aiu-col">
@@ -243,7 +284,13 @@
             <td>
               <input type="number" min="0" [(ngModel)]="preciosContratista[ins.id]" class="w-num" />
             </td>
-            <td class="fuente" [title]="ins.fuente_precio">{{ ins.fuente_precio || '—' }}</td>
+            <td class="fuente" [title]="ins.fuente_precio">
+              <a *ngIf="ins.fuente_link; else fuenteBancoPlain" [href]="ins.fuente_link"
+                 (click)="navegarFuente(ins.fuente_link, $event)"
+                 [target]="ins.fuente_link.startsWith('http') ? '_blank' : '_self'"
+                 class="fuente-link">{{ ins.fuente_precio || '—' }}</a>
+              <ng-template #fuenteBancoPlain>{{ ins.fuente_precio || '—' }}</ng-template>
+            </td>
           </tr>
         </tbody>
       </table>

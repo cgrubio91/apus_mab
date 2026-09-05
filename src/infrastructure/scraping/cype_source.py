@@ -226,7 +226,7 @@ class CypeSource:
 
         # 2. Caso Materiales comunes de estructura
         # Acero
-        if "acero" in desc_lower or "refuerzo" in desc_lower or "varilla" in desc_lower:
+        if ("acero" in desc_lower or "refuerzo" in desc_lower or "varilla" in desc_lower) and "equipo" not in tipo_lower:
             return {
                 "descripcion": "Acero en barras corrugadas Grado 60 (fy=4200 kg/cm²)",
                 "precio": Decimal("3149.64"),
@@ -234,7 +234,7 @@ class CypeSource:
                 "fuente": f"{FUENTE} · mt07aco060a Acero fy=4200",
             }
         # Concreto premezclado / Concreto 3000 PSI / f'c=210
-        if "concreto" in desc_lower:
+        if "concreto" in desc_lower and "vibrador" not in desc_lower and "mezcladora" not in desc_lower and "equipo" not in tipo_lower:
             precio_concreto = Decimal("707791.40") if "3000" in desc_lower or "210" in desc_lower else Decimal("685000.00")
             return {
                 "descripcion": "Concreto f'c=210 kg/cm² (21 MPa / 3000 PSI)",
@@ -257,12 +257,16 @@ class CypeSource:
             items = self.buscar(termino_buscar, limite=2)
             if items and items[0].get("url"):
                 desglose = self.extraer_desglose(items[0]["url"])
-                if desglose and desglose.get("precio_total"):
-                    return {
-                        "descripcion": desglose.get("titulo", descripcion),
-                        "precio": desglose["precio_total"],
-                        "unidad": desglose.get("unidad", "und"),
-                        "fuente": f"{FUENTE} · {desglose.get('codigo', 'APU')}",
-                    }
+                if desglose and desglose.get("insumos"):
+                    palabras_clave = [w for w in desc_lower.split() if len(w) > 3]
+                    for ins in desglose["insumos"]:
+                        ins_d = (ins.get("descripcion") or "").lower()
+                        if any(pk in ins_d for pk in palabras_clave) and ins.get("precio"):
+                            return {
+                                "descripcion": ins.get("descripcion", descripcion),
+                                "precio": ins["precio"],
+                                "unidad": ins.get("unidad", "und"),
+                                "fuente": f"{FUENTE} · {ins.get('codigo', 'insumo')}",
+                            }
 
         return None

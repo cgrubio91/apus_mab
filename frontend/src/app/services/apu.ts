@@ -149,6 +149,10 @@ export class ApuService {
     return this.http.patch(`${this.baseUrl}/proyectos-mapus/${proyectoId}`, data);
   }
 
+  updateProyectoMapus(proyectoId: number, data: any): Observable<any> {
+    return this.actualizarProyecto(proyectoId, data);
+  }
+
   getApusDeProyecto(proyectoId: number, limit = 200, offset = 0): Observable<any> {
     return this.http.get(`${this.baseUrl}/proyectos-mapus/${proyectoId}/apus`, {
       params: { limit, offset },
@@ -356,6 +360,10 @@ export class ApuService {
     return this.http.delete(`${this.baseUrl}/analisis-apu/${solicitudId}`);
   }
 
+  deleteSolicitudesLote(ids: number[]): Observable<any> {
+    return this.http.post(`${this.baseUrl}/analisis-apu/eliminar-lote`, { solicitud_ids: ids });
+  }
+
   // ── Constructor de APU (flujo del residente) ────────────────────
   listarBorradoresConstructor(): Observable<any> {
     return this.http.get(`${this.baseUrl}/constructor-apu`);
@@ -371,18 +379,22 @@ export class ApuService {
     return this.http.post(`${this.baseUrl}/constructor-apu`, payload);
   }
 
-  sugerirEstructura(solicitudId: number): Observable<any> {
-    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/sugerir`, {});
+  sugerirEstructura(solicitudId: number, porcentajesAiu?: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/sugerir`, {
+      porcentajes_aiu: porcentajesAiu || null,
+    });
   }
 
   refinarPropuesta(
     solicitudId: number,
     conversacion: { rol: 'ia' | 'usuario'; texto: string }[],
     propuestaActual?: any,
+    porcentajesAiu?: any,
   ): Observable<any> {
     return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/refinar`, {
       conversacion,
       propuesta_actual: propuestaActual || null,
+      porcentajes_aiu: porcentajesAiu || null,
     });
   }
 

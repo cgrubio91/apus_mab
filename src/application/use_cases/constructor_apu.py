@@ -13,8 +13,9 @@ Flujo liderado por el residente técnico:
 
 import json
 import logging
+import re
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Any
 
 from src.application.use_cases.extract_city import extraer_ciudad_texto
 from src.application.use_cases.manage_analisis import realizar_analisis
@@ -30,7 +31,28 @@ from src.infrastructure.pricing.indexacion import indexar_observaciones
 
 log = logging.getLogger("mapus.application.constructor")
 
-TIPOS_INSUMO_VALIDOS = ["Materiales", "Equipos", "Mano de obra", "Transporte", "Herramienta", "Indirectos", "Otro"]
+TIPOS_INSUMO_VALIDOS = ["Materiales", "Equipos", "Mano de obra", "Transporte", "Herramienta", "Otro"]
+
+
+def _es_indirecto_o_aiu(desc: Optional[str] = None, tipo: Optional[str] = None) -> bool:
+    """Detecta si un insumo corresponde a costos indirectos o A.I.U.
+    (Administración, Imprevistos, Utilidad), los cuales NO deben ir en la tabla
+    de costos directos del APU sino en la cascada contractual de A.I.U."""
+    t = (tipo or "").strip().lower()
+    if t in ("indirectos", "indirecto"):
+        return True
+    d = (desc or "").strip().lower()
+    terminos_aiu = [
+        "administracion", "administración", "imprevisto", "imprevistos",
+        "utilidad", "utilidades", "a.i.u", "aiu", "a.i.u.",
+    ]
+    for term in terminos_aiu:
+        if term in ("aiu", "a.i.u"):
+            if re.search(r"\b(a\.?i\.?u\.?)\b", d):
+                return True
+        elif term in d:
+            return True
+    return False
 
 # Ventanas de vigencia para preferir referencias del banco (días).
 RECENCIA_EXCELENTE_DIAS = 180      # ≤ 6 meses
@@ -192,6 +214,8 @@ def _normalizar_propuesta(propuesta: dict) -> dict:
         if not descripcion:
             continue
         tipo = (ins.get("tipo_insumo") or "").strip()
+        if _es_indirecto_o_aiu(descripcion, tipo):
+            continue
         if tipo not in TIPOS_INSUMO_VALIDOS:
             tipo = next((t for t in TIPOS_INSUMO_VALIDOS if t.lower() == tipo.lower()), "Otro")
         insumos.append({
@@ -248,10 +272,14 @@ def _compactar_referencias_para_ia(refs_ranked: list[dict], max_refs: int = 4,
     for r in refs_ranked[:max_refs]:
         insumos = []
         for ins in (r.get("insumos") or [])[:max_insumos_por_ref]:
+            desc = ins.get("insumo_descripcion")
+            tipo = ins.get("tipo_insumo")
+            if _es_indirecto_o_aiu(desc, tipo):
+                continue
             precio = ins.get("precio_unitario_apu")
             insumos.append({
-                "tipo": ins.get("tipo_insumo"),
-                "desc": ins.get("insumo_descripcion"),
+                "tipo": tipo,
+                "desc": desc,
                 "und": ins.get("insumo_unidad"),
                 "rend": ins.get("rendimiento_insumo"),
                 "precio": float(precio) if precio else None,
@@ -296,6 +324,9 @@ def _rendimientos_por_insumo(refs_ranked: list[dict], max_refs: int = 6,
     for r in refs_ranked[:max_refs]:
         for ins in (r.get("insumos") or []):
             desc = (ins.get("insumo_descripcion") or "").strip()
+            tipo = ins.get("tipo_insumo")
+            if _es_indirecto_o_aiu(desc, tipo):
+                continue
             rend = ins.get("rendimiento_insumo")
             try:
                 rend = float(rend)
@@ -341,6 +372,9 @@ def _precios_por_insumo(refs_ranked: list[dict], serie_indice: Optional[dict] = 
         fecha_ref = r.get("fecha")
         for ins in (r.get("insumos") or []):
             desc = (ins.get("insumo_descripcion") or "").strip()
+            tipo = ins.get("tipo_insumo")
+            if _es_indirecto_o_aiu(desc, tipo):
+                continue
             precio = ins.get("precio_unitario_apu")
             try:
                 precio = float(precio)
@@ -429,16 +463,19 @@ PRECIOS DE REFERENCIA POR INSUMO (MEDIANA {etiqueta_precios}, con nº de muestra
 {json.dumps(precios_ref, default=str, ensure_ascii=False, indent=2)}
 
 INSTRUCCIONES:
-1. Propón la ESTRUCTURA completa del APU para esta actividad: lista de insumos por tipo
+1. Propón ÚNICAMENTE la ESTRUCTURA DE COSTOS DIRECTOS del APU para esta actividad: lista de insumos por tipo
    ({", ".join(TIPOS_INSUMO_VALIDOS)}), con unidad, RENDIMIENTO (usa 1 cuando el insumo entra por cantidad
    directa, ej. materiales medidos en m³) y PRECIO UNITARIO.
-2. Los PRECIOS y rendimientos deben salir de las REFERENCIAS del banco: elige SIEMPRE el dato más
-   reciente y, si existe, el de la misma ciudad de la obra. En "fuente" explica de qué referencia
-   salió (ej.: "Banco: <proyecto> · <ciudad> · <fecha>").
+   REGLA OBLIGATORIA: NUNCA incluyas ítems de "Administración", "Imprevistos", "Utilidad", "Indirectos" ni "A.I.U.".
+   El A.I.U. se liquida de forma separada y automática en el pie del APU sobre el Costo Directo total según los
+   parámetros contractuales del proyecto. Todos los insumos aquí deben ser estrictamente costos directos de ejecución.
+2. JERARQUÍA ESTRICTA DE FUENTES PARA PRECIOS:
+   - 1ª Prioridad (CYPE Colombia): Aplica para mano de obra (jornales/hora de oficial, obrero, ayudante) y materiales estándar de mercado vigentes. Rotula la fuente como "CYPE Colombia".
+   - 2ª Prioridad (SECOP II): Si no está en CYPE pero proviene de contratación pública estatal de SECOP II, rotula la fuente como "SECOP II: <entidad>".
+   - 3ª Prioridad (Banco de APUs): Si no está en las anteriores, usa la MEDIANA indexada del banco histórico de APUs, rotulando "Banco: <proyecto> · <ciudad>".
+   - Si no hay referencia en ninguna fuente, deja el precio en null y fuente "Pendiente cotización contratista".
    Para el RENDIMIENTO, cuando el insumo aparezca en "RENDIMIENTOS DE REFERENCIA" usa la MEDIANA
    (es robusta a datos atípicos), no el valor de un solo APU; ten en cuenta el nº de muestras (n).
-   Para el PRECIO, cuando el insumo aparezca en "PRECIOS DE REFERENCIA POR INSUMO" parte de su
-   "precio_mediana_hoy" (si viene indexado, ya está a pesos de hoy) y ajústalo según ciudad/mercado.
 3. Si no hay referencia para un insumo indispensable, inclúyelo con precio null y explícalo en "notas".
 4. Si falta información clave que cambie la estructura o los rendimientos (diámetros, profundidades,
    distancias de transporte, condiciones del terreno, etc.), hazlo en "preguntas" (máximo 3, concretas).
@@ -455,42 +492,195 @@ Sin texto adicional."""
     return _normalizar_propuesta(_extraer_json_ia(respuesta))
 
 
-def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None) -> dict:
-    """Rellena insumos que quedaron sin precio usando tarifas y referencias CYPE Colombia."""
-    ciudad_txt = (ciudad or "").strip()
-    try:
-        from src.infrastructure.scraping.cype_source import CypeSource
-        cype_src = CypeSource(timeout=3)
-        consultas_externas = 0
-        for ins in propuesta.get("insumos", []):
-            if ins.get("precio") is None:
-                ref = cype_src.buscar_referencia_insumo(ins.get("descripcion", ""), ins.get("tipo_insumo", ""))
-                if ref and ref.get("precio"):
-                    ins["precio"] = float(ref["precio"])
-                    fuente = ref.get("fuente", "CYPE Colombia")
-                    if ciudad_txt:
+def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
+                               refs_ranked: Optional[list[dict]] = None,
+                               precios_ref_banco: Optional[Any] = None,
+                               cype_source: Optional[Any] = None,
+                               referencia_externa_repo: Optional[Any] = None,
+                               materiales_source: Optional[Any] = None) -> dict:
+    """Aplica la jerarquía obligatoria de precios por insumo:
+       1º CYPE Colombia (tarifas oficiales y de mercado vigentes)
+       2º Banco de APUs (mediana histórica indexada a pesos de hoy o referencias del banco)
+       3º Catálogo de Materiales Comerciales en Vivo (Homecenter Colombia y marcas de ferretería)
+       4º SECOP II (precios de contratación pública estatal, excluyendo contratos macro)
+       5º Sin precio (null, pendiente de cotización por contratista)
+    """
+    ciudad_txt = (solicitud.get("ciudad") or "").strip()
+    if isinstance(precios_ref_banco, dict):
+        precios_banco_dict = precios_ref_banco
+    else:
+        precios_banco_dict = {p["clave"]: p for p in (precios_ref_banco or []) if "clave" in p}
+
+    cype_src = cype_source
+    if cype_src is None:
+        try:
+            from src.infrastructure.scraping.cype_source import CypeSource
+            cype_src = CypeSource(timeout=3)
+        except Exception:
+            cype_src = None
+
+    if referencia_externa_repo is None:
+        try:
+            from src.infrastructure.database.repositories.referencia_externa_repository import (
+                referencia_externa_repo as ext_repo,
+            )
+            referencia_externa_repo = ext_repo
+        except Exception:
+            referencia_externa_repo = None
+
+    mat_src = materiales_source
+    if mat_src is None:
+        try:
+            from src.infrastructure.scraping.catalogo_materiales import CatalogoMaterialesSource
+            mat_src = CatalogoMaterialesSource(timeout=5)
+        except Exception:
+            mat_src = None
+
+    for ins in propuesta.get("insumos", []):
+        desc = (ins.get("descripcion") or "").strip()
+        tipo = (ins.get("tipo_insumo") or "").strip()
+        if not desc:
+            continue
+
+        asignado = False
+
+        # ── 1ª PRIORIDAD: CYPE COLOMBIA ──
+        if cype_src:
+            try:
+                ref_cype = cype_src.buscar_referencia_insumo(desc, tipo)
+                if ref_cype and ref_cype.get("precio") is not None and float(ref_cype["precio"]) > 0:
+                    ins["precio"] = float(ref_cype["precio"])
+                    fuente = ref_cype.get("fuente", "CYPE Colombia")
+                    if ciudad_txt and "zona" not in fuente.lower():
                         fuente = f"{fuente} · zona {ciudad_txt}"
                     ins["fuente"] = fuente
-                    if ref.get("unidad") and not ins.get("unidad"):
-                        ins["unidad"] = ref["unidad"]
-                consultas_externas += 1
-                if consultas_externas >= 2:
-                    break
-    except Exception:
-        log.warning("No se pudieron rellenar precios CYPE para la propuesta", exc_info=True)
+                    ins["fuente_link"] = "https://generadordeprecios.info/obra_nueva/Colombia.html"
+                    if ref_cype.get("unidad") and not ins.get("unidad"):
+                        ins["unidad"] = ref_cype["unidad"]
+                    asignado = True
+            except Exception:
+                pass
+
+        if asignado:
+            continue
+
+        # ── 2ª PRIORIDAD: BANCO DE APUs (Histórico) ──
+        tokens = _tokenizar(desc)
+        candidatos_clave = list(tokens)
+        if desc.lower().strip() not in candidatos_clave:
+            candidatos_clave.append(desc.lower().strip())
+
+        for k in candidatos_clave:
+            for b_key in precios_banco_dict:
+                if k == b_key or k in b_key or b_key in k:
+                    b_info = precios_banco_dict[b_key]
+                    p_val = b_info.get("precio_mediana_hoy") if isinstance(b_info, dict) else b_info
+                    if p_val is not None and float(p_val) > 0:
+                        ins["precio"] = float(p_val)
+                        n_muestras = b_info.get("n", 1) if isinstance(b_info, dict) else 1
+                        ins["fuente"] = f"Banco de APUs: Mediana histórica ({n_muestras} muestra{'s' if n_muestras > 1 else ''})"
+                        ins["fuente_link"] = "/banco-apus"
+                        asignado = True
+                        break
+            if asignado:
+                break
+
+        if not asignado and ins.get("precio") is not None and float(ins["precio"]) > 0:
+            fuente_ia = (ins.get("fuente") or "").strip()
+            if not fuente_ia or ("cype" not in fuente_ia.lower() and "secop" not in fuente_ia.lower() and "homecenter" not in fuente_ia.lower()):
+                ins["fuente"] = fuente_ia if fuente_ia.startswith("Banco") else f"Banco de APUs: {fuente_ia or 'Referencia histórica'}"
+                ins["fuente_link"] = "/banco-apus"
+                asignado = True
+
+        if asignado:
+            continue
+
+        # ── 3ª PRIORIDAD: CATÁLOGO EN VIVO HOMECENTER / CONSTRUCTOR (Materiales Comerciales) ──
+        if mat_src and (not tipo or tipo.lower() in ("materiales", "material", "herramienta", "herramientas", "otro")):
+            try:
+                ref_mat = mat_src.buscar_referencia(desc, tipo)
+                if ref_mat and ref_mat.get("precio") is not None and float(ref_mat["precio"]) > 0:
+                    ins["precio"] = float(ref_mat["precio"])
+                    ins["fuente"] = ref_mat.get("fuente", "Homecenter")
+                    ins["fuente_link"] = ref_mat.get("fuente_link") or "https://www.homecenter.com.co"
+                    if ref_mat.get("unidad") and not ins.get("unidad"):
+                        ins["unidad"] = ref_mat["unidad"]
+                    asignado = True
+            except Exception:
+                pass
+
+        if asignado:
+            continue
+
+        # ── 4ª PRIORIDAD: SECOP II (Contratación Pública - SOLO granularidad de insumo unitario) ──
+        if referencia_externa_repo:
+            try:
+                filas_secop = referencia_externa_repo.buscar(desc, fuente="SECOP II", limite=3)
+                if not filas_secop:
+                    filas_secop = referencia_externa_repo.buscar(desc, fuente="SECOP", limite=3)
+                for fs in filas_secop:
+                    # OMITIR contratos completos: son licitaciones globales macro, no precios unitarios
+                    if fs.get("granularidad") == "contrato":
+                        continue
+                    p_val = fs.get("precio") if fs.get("precio") is not None else fs.get("precio_unitario")
+                    if p_val is not None and 0 < float(p_val) <= 2_500_000:
+                        ins["precio"] = float(p_val)
+                        ent = fs.get("entidad") or fs.get("proveedor") or "SECOP II"
+                        fecha_str = f" · {fs['fecha']}" if fs.get("fecha") else ""
+                        ins["fuente"] = f"SECOP II: {ent}{fecha_str}"
+                        secop_url = fs.get("url") or ""
+                        ins["fuente_link"] = secop_url if secop_url else "https://community.secop.gov.co/Public/Tendering/ContractNoticeManagement/Index"
+                        if fs.get("unidad") and not ins.get("unidad"):
+                            ins["unidad"] = fs["unidad"]
+                        asignado = True
+                        break
+            except Exception:
+                pass
+
+        if asignado:
+            continue
+
+        # ── 5ª PRIORIDAD: SIN PRECIO ──
+        if not asignado:
+            ins["precio"] = None
+            ins["fuente"] = "Pendiente cotización contratista"
+
     return propuesta
 
 
-def calcular_desglose_aiu(costo_directo: float, proyecto_id: Optional[int] = None) -> dict:
+def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None,
+                            solicitud: Optional[dict] = None) -> dict:
+    """Compatibilidad con tests y llamadas heredadas. Delega a la jerarquía de precios."""
+    sol = dict(solicitud or {})
+    if ciudad and not sol.get("ciudad"):
+        sol["ciudad"] = ciudad
+    return _aplicar_jerarquia_precios(propuesta=propuesta, solicitud=sol)
+
+
+def calcular_desglose_aiu(costo_directo: float, proyecto_id: Optional[int] = None,
+                          porcentajes_custom: Optional[dict] = None) -> dict:
     """Calcula el desglose formal de A.I.U. (Administración, Imprevistos, Utilidad e IVA sobre Utilidad).
-    Toma los porcentajes configurados en el proyecto o usa los valores estándar de obra en Colombia."""
+    Toma los porcentajes personalizados dados, los configurados en el proyecto o los valores estándar de obra en Colombia."""
     from src.infrastructure.database.connection import execute_query
+    if isinstance(proyecto_id, dict) and porcentajes_custom is None:
+        porcentajes_custom = proyecto_id
+        proyecto_id = None
+
     pct_a = 15.0
     pct_i = 3.0
     pct_u = 5.0
     pct_iva = 19.0
 
-    if proyecto_id:
+    if porcentajes_custom and isinstance(porcentajes_custom, dict):
+        if porcentajes_custom.get("administracion") is not None:
+            pct_a = float(porcentajes_custom["administracion"])
+        if porcentajes_custom.get("imprevistos") is not None:
+            pct_i = float(porcentajes_custom["imprevistos"])
+        if porcentajes_custom.get("utilidad") is not None:
+            pct_u = float(porcentajes_custom["utilidad"])
+        if porcentajes_custom.get("iva_utilidad") is not None:
+            pct_iva = float(porcentajes_custom["iva_utilidad"])
+    elif proyecto_id:
         try:
             rows = execute_query(
                 "SELECT aiu_administracion, aiu_imprevistos, aiu_utilidad, aiu_iva_utilidad FROM proyectos WHERE id = %s",
@@ -595,10 +785,12 @@ def _referencias_para_propuesta(solicitud: dict) -> list[dict]:
 
 
 def _respuesta_propuesta(solicitud_id: int, solicitud: dict, propuesta: dict,
-                         refs_ranked: Optional[list[dict]] = None) -> dict:
+                         refs_ranked: Optional[list[dict]] = None,
+                         porcentajes_aiu: Optional[dict] = None) -> dict:
     desglose_aiu = calcular_desglose_aiu(
         calcular_costo_directo(propuesta.get("insumos") or [], exigir_precio=True),
         proyecto_id=solicitud.get("proyecto_id"),
+        porcentajes_custom=porcentajes_aiu,
     )
     payload = {
         "solicitud_id": solicitud_id,
@@ -637,15 +829,18 @@ def listar_borradores(limite: int = 20) -> dict:
     }
 
 
-def sugerir_estructura(solicitud_id: int) -> dict:
+def sugerir_estructura(solicitud_id: int, porcentajes_aiu: Optional[dict] = None) -> dict:
     solicitud = _validar_solicitud_borrador(solicitud_id)
     refs_ranked = _referencias_para_propuesta(solicitud)
-    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=_cargar_serie_indice())
-    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
-    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked)
+    serie_indice = _cargar_serie_indice()
+    precios_ref = _precios_por_insumo(refs_ranked, serie_indice=serie_indice)
+    propuesta = _construir_propuesta(solicitud, refs_ranked, serie_indice=serie_indice)
+    propuesta = _aplicar_jerarquia_precios(propuesta, solicitud, refs_ranked=refs_ranked, precios_ref_banco=precios_ref)
+    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked, porcentajes_aiu=porcentajes_aiu)
 
 
-def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_actual: Optional[dict] = None) -> dict:
+def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_actual: Optional[dict] = None,
+                      porcentajes_aiu: Optional[dict] = None) -> dict:
     """Itera sobre la propuesta respondiendo preguntas del residente. La conversación
     completa la mantiene el cliente (rol: 'ia' | 'usuario')."""
     solicitud = _validar_solicitud_borrador(solicitud_id)
@@ -653,13 +848,15 @@ def refinar_propuesta(solicitud_id: int, conversacion: list[dict], propuesta_act
         raise ValueError("La conversación no puede estar vacía")
 
     refs_ranked = _referencias_para_propuesta(solicitud)
+    serie_indice = _cargar_serie_indice()
+    precios_ref = _precios_por_insumo(refs_ranked, serie_indice=serie_indice)
     mensajes = list(conversacion)[-12:]
     if propuesta_actual:
         mensajes.insert(0, {"rol": "ia", "texto": json.dumps(propuesta_actual, ensure_ascii=False)[:8000]})
     propuesta = _construir_propuesta(solicitud, refs_ranked, conversacion=mensajes,
-                                     serie_indice=_cargar_serie_indice())
-    propuesta = _rellenar_precios_reales(propuesta, ciudad=solicitud.get("ciudad"))
-    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked)
+                                     serie_indice=serie_indice)
+    propuesta = _aplicar_jerarquia_precios(propuesta, solicitud, refs_ranked=refs_ranked, precios_ref_banco=precios_ref)
+    return _respuesta_propuesta(solicitud_id, solicitud, propuesta, refs_ranked, porcentajes_aiu=porcentajes_aiu)
 
 
 def _fila_desde_propuesta(ins: dict, item: str, items_descripcion: str, item_unidad: str) -> dict:

@@ -186,6 +186,8 @@ export interface SolicitudApu {
   insumos?: SolicitudInsumo[];
   grupos_archivos?: GrupoArchivo[];
   historial?: HistorialAprobacion[];
+  primer_item?: string;
+  descripcion_actividad?: string;
   analisis?: AnalisisApu;
   created_at?: string;
   updated_at?: string;
@@ -706,19 +708,46 @@ export class AnalisisApu implements OnInit {
     const confirmMsg = `¿Eliminar ${ids.length} solicitud(es)? Esta acción no se puede deshacer.`;
     if (!confirm(confirmMsg)) return;
     this.loading = true;
-    let completed = 0;
-    let errors = 0;
-    ids.forEach(id => {
-      this.apuService.deleteSolicitud(id).subscribe({
-        next: () => {
-          completed++;
-          if (completed + errors === ids.length) this._finishDelete();
-        },
-        error: () => {
-          errors++;
-          if (completed + errors === ids.length) this._finishDelete();
-        },
-      });
+    this.apuService.deleteSolicitudesLote(ids).subscribe({
+      next: () => {
+        this._finishDelete();
+      },
+      error: (err) => {
+        console.error('Error al eliminar lote, intentando individualmente:', err);
+        let completed = 0;
+        let errors = 0;
+        ids.forEach(id => {
+          this.apuService.deleteSolicitud(id).subscribe({
+            next: () => {
+              completed++;
+              if (completed + errors === ids.length) this._finishDelete();
+            },
+            error: () => {
+              errors++;
+              if (completed + errors === ids.length) this._finishDelete();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  eliminarUna(s: SolicitudApu, event?: Event): void {
+    event?.stopPropagation();
+    if (!s.id) return;
+    const confirmMsg = `¿Eliminar la solicitud #${s.id} (${s.primer_item || s.nombre_proyecto || 'Borrador'})?`;
+    if (!confirm(confirmMsg)) return;
+    this.loading = true;
+    this.apuService.deleteSolicitud(s.id).subscribe({
+      next: () => {
+        this.selectedIds.delete(s.id!);
+        this._finishDelete();
+      },
+      error: (e) => {
+        this.loading = false;
+        alert(e?.error?.detail || 'No se pudo eliminar la solicitud.');
+        this.cdr.detectChanges();
+      },
     });
   }
 

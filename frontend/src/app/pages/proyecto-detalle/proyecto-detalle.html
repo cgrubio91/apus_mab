@@ -24,6 +24,79 @@
   </div>
 
   <div class="detalle-content animate-fade-in" *ngIf="!cargando && !error">
+    <!-- Configuración Paramétrica de A.I.U. -->
+    <div class="aiu-config-card" *ngIf="proyecto as p">
+      <div class="aiu-config-head">
+        <div class="head-title">
+          <span class="material-symbols-outlined icon-aiu">calculate</span>
+          <div>
+            <h4>Cascada de A.I.U. del Contrato</h4>
+            <p class="subtitle">Factores indirectos aplicados a los APUs y análisis de este proyecto</p>
+          </div>
+        </div>
+        <button class="btn-edit-aiu" *ngIf="!editandoAiu" (click)="iniciarEdicionAiu()">
+          <span class="material-symbols-outlined">tune</span>
+          Configurar % A.I.U.
+        </button>
+      </div>
+
+      <!-- Modo vista resumen -->
+      <div class="aiu-badges-grid" *ngIf="!editandoAiu">
+        <div class="aiu-badge">
+          <span class="lbl">Administración</span>
+          <span class="val">{{ p.aiu_administracion || 15 }}%</span>
+        </div>
+        <div class="aiu-badge">
+          <span class="lbl">Imprevistos</span>
+          <span class="val">{{ p.aiu_imprevistos || 3 }}%</span>
+        </div>
+        <div class="aiu-badge">
+          <span class="lbl">Utilidad</span>
+          <span class="val">{{ p.aiu_utilidad || 5 }}%</span>
+        </div>
+        <div class="aiu-badge">
+          <span class="lbl">IVA s/ Utilidad</span>
+          <span class="val">{{ p.aiu_iva_utilidad || 19 }}%</span>
+        </div>
+        <div class="aiu-badge highlight">
+          <span class="lbl">Total A.I.U. Efectivo</span>
+          <span class="val">{{ totalAiuPorcentaje(p) | number:'1.2-2' }}%</span>
+        </div>
+      </div>
+
+      <!-- Modo edición -->
+      <div class="aiu-edit-form" *ngIf="editandoAiu">
+        <div class="inputs-grid">
+          <label>
+            <span>% Administración</span>
+            <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuForm.administracion" />
+          </label>
+          <label>
+            <span>% Imprevistos</span>
+            <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuForm.imprevistos" />
+          </label>
+          <label>
+            <span>% Utilidad</span>
+            <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuForm.utilidad" />
+          </label>
+          <label>
+            <span>% IVA s/ Utilidad</span>
+            <input type="number" step="0.1" min="0" max="100" [(ngModel)]="aiuForm.iva_utilidad" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <span class="live-total">Total A.I.U. resultante: <strong>{{ totalAiuFormulario | number:'1.2-2' }}%</strong></span>
+          <div class="btn-group">
+            <button type="button" class="btn-cancel" (click)="editandoAiu = false" [disabled]="guardandoAiu">Cancelar</button>
+            <button type="button" class="btn-save" (click)="guardarAiu()" [disabled]="guardandoAiu">
+              {{ guardandoAiu ? 'Guardando...' : 'Guardar configuración' }}
+            </button>
+          </div>
+        </div>
+        <p class="success-msg" *ngIf="mensajeAiu">{{ mensajeAiu }}</p>
+      </div>
+    </div>
+
     <!-- APUs asignados directamente al banco -->
     <div class="apu-section" *ngIf="!cargandoApusBanco && apusBanco.length > 0">
       <div class="apu-section-head">

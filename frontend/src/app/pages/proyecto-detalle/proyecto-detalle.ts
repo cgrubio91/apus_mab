@@ -1,5 +1,6 @@
 import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApuService, ApuRecord } from '../../services/apu';
 
@@ -26,13 +27,22 @@ interface ItemProyecto {
 @Component({
   selector: 'app-proyecto-detalle',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, RouterLink, FormsModule],
   templateUrl: './proyecto-detalle.html',
   styleUrl: './proyecto-detalle.scss',
 })
 export class ProyectoDetalle implements OnInit {
   proyectoId!: number;
-  proyecto: { id: number; id_proy: number; descripcion: string; presupuesto_total: number } | null = null;
+  proyecto: {
+    id: number;
+    id_proy: number;
+    descripcion: string;
+    presupuesto_total: number;
+    aiu_administracion?: number;
+    aiu_imprevistos?: number;
+    aiu_utilidad?: number;
+    aiu_iva_utilidad?: number;
+  } | null = null;
 
   cargando = true;
   error = '';
@@ -45,11 +55,78 @@ export class ProyectoDetalle implements OnInit {
   apusBancoTotal = 0;
   cargandoApusBanco = true;
 
+  editandoAiu = false;
+  guardandoAiu = false;
+  mensajeAiu = '';
+  aiuForm = {
+    administracion: 15,
+    imprevistos: 3,
+    utilidad: 5,
+    iva_utilidad: 19,
+  };
+
   constructor(
     private route: ActivatedRoute,
     private apuService: ApuService,
     private cdr: ChangeDetectorRef
   ) {}
+
+  iniciarEdicionAiu(): void {
+    if (!this.proyecto) return;
+    this.aiuForm = {
+      administracion: Number(this.proyecto.aiu_administracion ?? 15),
+      imprevistos: Number(this.proyecto.aiu_imprevistos ?? 3),
+      utilidad: Number(this.proyecto.aiu_utilidad ?? 5),
+      iva_utilidad: Number(this.proyecto.aiu_iva_utilidad ?? 19),
+    };
+    this.editandoAiu = true;
+    this.mensajeAiu = '';
+  }
+
+  totalAiuPorcentaje(p: any): number {
+    const a = Number(p?.aiu_administracion ?? 15);
+    const i = Number(p?.aiu_imprevistos ?? 3);
+    const u = Number(p?.aiu_utilidad ?? 5);
+    const iva = Number(p?.aiu_iva_utilidad ?? 19);
+    return a + i + u + (u * iva / 100);
+  }
+
+  get totalAiuFormulario(): number {
+    const a = Number(this.aiuForm.administracion || 0);
+    const i = Number(this.aiuForm.imprevistos || 0);
+    const u = Number(this.aiuForm.utilidad || 0);
+    const iva = Number(this.aiuForm.iva_utilidad || 0);
+    return a + i + u + (u * iva / 100);
+  }
+
+  guardarAiu(): void {
+    this.guardandoAiu = true;
+    this.mensajeAiu = '';
+    this.apuService.updateProyectoMapus(this.proyectoId, {
+      aiu_administracion: Number(this.aiuForm.administracion),
+      aiu_imprevistos: Number(this.aiuForm.imprevistos),
+      aiu_utilidad: Number(this.aiuForm.utilidad),
+      aiu_iva_utilidad: Number(this.aiuForm.iva_utilidad),
+    }).subscribe({
+      next: () => {
+        this.guardandoAiu = false;
+        if (this.proyecto) {
+          this.proyecto.aiu_administracion = Number(this.aiuForm.administracion);
+          this.proyecto.aiu_imprevistos = Number(this.aiuForm.imprevistos);
+          this.proyecto.aiu_utilidad = Number(this.aiuForm.utilidad);
+          this.proyecto.aiu_iva_utilidad = Number(this.aiuForm.iva_utilidad);
+        }
+        this.editandoAiu = false;
+        this.mensajeAiu = 'Configuración de A.I.U. actualizada con éxito.';
+        this.cdr.markForCheck();
+      },
+      error: (err: any) => {
+        this.guardandoAiu = false;
+        this.error = err?.error?.detail || 'Error al guardar la configuración de A.I.U.';
+        this.cdr.markForCheck();
+      },
+    });
+  }
 
   ngOnInit(): void {
     this.proyectoId = Number(this.route.snapshot.paramMap.get('id'));

@@ -38,6 +38,8 @@ class SocrataClient:
     def _headers(self) -> dict:
         headers = {"Accept": "application/json"}
         token = (self.app_token or "").strip()
+        if ":" in token:
+            token = token.split(":")[0].strip()
         if token:
             headers["X-App-Token"] = token
         return headers
@@ -59,6 +61,13 @@ class SocrataClient:
                     if not isinstance(data, list):
                         raise SocrataError("Respuesta Socrata inesperada (no es una lista)")
                     return data
+
+                # Si el app_token es inválido o expiró, degradar de inmediato a acceso público sin reintentos lentos
+                if resp.status_code == 403 and "Invalid app_token" in resp.text and self.app_token:
+                    log.warning("Socrata rechazó el app_token (%s). Reintentando inmediatamente como acceso público...", self.app_token[:8] + "...")
+                    self.app_token = None
+                    continue
+
                 # 4xx (menos 429) no se reintenta: es un error de la consulta.
                 if 400 <= resp.status_code < 500 and resp.status_code != 429:
                     raise SocrataError(f"Socrata {resp.status_code}: {resp.text[:300]}")
