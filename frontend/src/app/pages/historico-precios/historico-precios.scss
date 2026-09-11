@@ -211,6 +211,104 @@
   }
 }
 
+// ── Filtro de año (aparece una vez hay resultados) ──────────────────
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+
+  label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #546e7a;
+  }
+
+  select {
+    padding: 6px 10px;
+    border: 1px solid #cfd8dc;
+    border-radius: 8px;
+    font-size: 13px;
+    background: #fff;
+  }
+}
+
+.table-title {
+  margin: 0;
+  padding: 14px 16px 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #37474f;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.table-hint {
+  font-size: 11px;
+  font-weight: 400;
+  color: #90a4ae;
+}
+
+// ── Fila de insumo (agrupadora, desplegable) ────────────────────────
+.insumo-row {
+  cursor: pointer;
+
+  &:hover { background: #fafafa; }
+  &.expanded { background: #f5f9ff; }
+
+  td { font-weight: 500; }
+}
+
+.insumo-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 420px;
+  // La descripción del insumo puede ser muy larga; se recorta sin romper la fila.
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chevron {
+  font-size: 18px;
+  color: #90a4ae;
+  flex-shrink: 0;
+}
+
+.ciudades-cell {
+  color: #607d8b;
+  font-size: 12px;
+  font-weight: 400;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.periodo-ciudad {
+  color: #607d8b;
+}
+
+// ── Sub-fila de período (evolución mensual del insumo) ──────────────
+.periodo-row {
+  background: #fcfcfd;
+  color: #607d8b;
+
+  td { font-size: 12px; }
+}
+
+.periodo-cell {
+  padding-left: 42px !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.periodo-registros {
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 768px) {
   .historico-container {
     padding: 0.75rem;

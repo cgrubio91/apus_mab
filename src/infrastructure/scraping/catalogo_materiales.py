@@ -17,7 +17,7 @@ import requests
 
 log = logging.getLogger("mapus.infrastructure.materiales")
 
-FUENTE = "Homecenter"
+FUENTE = "Constructor Homecenter"
 SEARCH_URL = "https://www.homecenter.com.co/homecenter-co/search?Ntt="
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",

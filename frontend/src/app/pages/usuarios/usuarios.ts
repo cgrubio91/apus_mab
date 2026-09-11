@@ -24,6 +24,19 @@ export class Usuarios implements OnInit {
   errorMessage = '';
   successMessage = '';
 
+  // Paginación (el backend pagina con limite/offset)
+  total = 0;
+  limite = 20;
+  offset = 0;
+
+  get paginaActual(): number {
+    return Math.floor(this.offset / this.limite) + 1;
+  }
+
+  get totalPaginas(): number {
+    return Math.max(1, Math.ceil(this.total / this.limite));
+  }
+
   showCreateForm = false;
   showRoleInfo = false;
   nuevo = { telefono: '', nombre: '', email: '', password: '', rol: 'user' };
@@ -49,9 +62,10 @@ export class Usuarios implements OnInit {
   loadUsers(): void {
     this.isLoading = true;
     this.errorMessage = '';
-    this.apuService.getUsers().subscribe({
+    this.apuService.getUsers(this.limite, this.offset).subscribe({
       next: (res) => {
         this.usuarios = res.users || [];
+        this.total = res.total ?? this.usuarios.length;
         this.isLoading = false;
         this.cdr.markForCheck();
       },
@@ -65,9 +79,23 @@ export class Usuarios implements OnInit {
     });
   }
 
+  paginaAnterior(): void {
+    if (this.offset > 0) {
+      this.offset = Math.max(0, this.offset - this.limite);
+      this.loadUsers();
+    }
+  }
+
+  paginaSiguiente(): void {
+    if (this.offset + this.limite < this.total) {
+      this.offset += this.limite;
+      this.loadUsers();
+    }
+  }
+
   crear(): void {
-    if (!this.nuevo.telefono || !this.nuevo.nombre || this.nuevo.password.length < 6) {
-      this.errorMessage = 'Completa teléfono, nombre y una contraseña de mínimo 6 caracteres.';
+    if (!this.nuevo.telefono || !this.nuevo.nombre || !this.claveValida(this.nuevo.password)) {
+      this.errorMessage = 'Completa teléfono, nombre y una contraseña de mínimo 8 caracteres con letra y número.';
       return;
     }
     if (this.nuevo.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.nuevo.email)) {
@@ -125,6 +153,11 @@ export class Usuarios implements OnInit {
 
   trackById(_i: number, u: UsuarioAdmin): number {
     return u.id;
+  }
+
+  // H6: espejo de la política del backend (src/presentation/auth.py: validar_password).
+  private claveValida(pw: string): boolean {
+    return !!pw && pw.length >= 8 && /[A-Za-z]/.test(pw) && /\d/.test(pw);
   }
 }
 

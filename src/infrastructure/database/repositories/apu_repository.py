@@ -75,9 +75,18 @@ def _std_field(item: Dict[str, Any], field_name: str, is_numeric: bool = False, 
 
 class ApuMySQLRepository:
 
+    # Whitelist de columnas ordenables: debe cubrir todas las que la tabla de
+    # `consulta-apus` marca como `sortable`, o esas cabeceras devuelven 422 al
+    # hacer clic. Son nombres de columna reales de `apus` (se interpolan en el
+    # ORDER BY, así que nunca añadir aquí nada que no sea una columna existente).
     _allowed_sort_fields = {
-        "id", "nombre_proyecto", "ciudad", "precio_unitario",
-        "contratista", "entidad", "fecha_aprobacion_apu", "precio_parcial_apu",
+        "id", "nombre_proyecto", "ciudad", "pais", "entidad", "contratista",
+        "numero_contrato", "fecha_aprobacion_apu", "fecha_analisis_apu",
+        "item", "items_descripcion", "item_unidad",
+        "precio_unitario", "precio_unitario_sin_aiu",
+        "codigo_insumo", "tipo_insumo", "insumo_descripcion", "insumo_unidad",
+        "rendimiento_insumo", "precio_unitario_apu", "precio_parcial_apu",
+        "observacion",
     }
     _max_limit = 500
 

@@ -70,9 +70,9 @@ class TestApusV1Endpoints:
         resp = client.get("/api/v1/apus/filter-options")
         assert resp.status_code == 200
         data = resp.json()
-        assert "ciudad" in data
-        assert "tipo_insumo" in data
-        assert "Bogotá" in data["ciudad"]
+        assert "ciudades" in data
+        assert "tipos_insumo" in data
+        assert "Bogotá" in data["ciudades"]
 
     def test_get_projects_v1(self, client: TestClient):
         resp = client.get("/api/v1/projects")

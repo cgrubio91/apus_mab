@@ -15,12 +15,12 @@ Diseño:
 """
 
 import logging
-import os
 import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from src.config.settings import settings
 from src.domain.entities.referencia_externa import ReferenciaExterna
 from src.infrastructure.scraping.socrata_client import SocrataClient
 
@@ -29,7 +29,7 @@ log = logging.getLogger("mapus.infrastructure.secop")
 FUENTE = "SECOP II"
 
 # SECOP II - Contratos Electrónicos (datos.gov.co). Configurable por entorno.
-DATASET_CONTRATOS = os.getenv("SECOP_DATASET_ID", "jbjy-vk9h")
+DATASET_CONTRATOS = settings.SECOP_DATASET_ID or "jbjy-vk9h"
 
 # Nombres de columna candidatos por campo lógico (tolerante a drift de esquema).
 _CAMPOS_TEXTO = ["objeto_del_contrato", "descripcion_del_proceso", "objeto_a_contratar"]

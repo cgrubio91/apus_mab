@@ -130,6 +130,16 @@
   color: #90a4ae;
 }
 
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  font-size: 0.85rem;
+  color: #607d8b;
+}
+
 .table-card {
   background: #fff;
   border: 1px solid #e0e0e0;

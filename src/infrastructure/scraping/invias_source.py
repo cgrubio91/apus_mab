@@ -20,7 +20,11 @@ FUENTE = "INVÍAS"
 
 
 def urls_semilla() -> list[str]:
-    """URLs de documentos INVÍAS configuradas en INVIAS_URLS_SEED."""
+    """URLs de documentos INVÍAS configuradas en INVIAS_URLS_SEED.
+
+    `settings` es la fuente canónica; se re-lee el entorno en cada llamada
+    (ver idu_source.urls_semilla).
+    """
     raw = os.getenv("INVIAS_URLS_SEED") or settings.INVIAS_URLS_SEED or ""
     return [u.strip() for u in raw.replace("\n", ",").replace(" ", ",").split(",") if u.strip()]
 

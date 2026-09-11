@@ -43,65 +43,102 @@
   </div>
 
   <div class="results" *ngIf="!isLoading && buscado">
-    <div class="empty-state" *ngIf="puntos.length === 0">
+    <div class="empty-state" *ngIf="!tieneResultados">
       No hay datos de precios para ese insumo con los filtros seleccionados.
     </div>
 
-    <ng-container *ngIf="puntos.length > 0">
-      <div class="summary-row">
-        <div class="summary-card">
-          <span class="summary-label">PERÍODOS</span>
-          <span class="summary-value">{{ puntos.length }}</span>
-        </div>
-        <div class="summary-card">
-          <span class="summary-label">ÚLTIMO PROMEDIO</span>
-          <span class="summary-value">{{ formatCOP(puntos[puntos.length - 1].precio_promedio) }}</span>
-        </div>
-        <div class="summary-card" *ngIf="variacionTotal() !== null">
-          <span class="summary-label">VARIACIÓN TOTAL</span>
-          <span class="summary-value" [class.up]="variacionTotal()! > 0" [class.down]="variacionTotal()! < 0">
-            <span class="material-symbols-outlined">{{ variacionTotal()! > 0 ? 'trending_up' : 'trending_down' }}</span> {{ variacionTotal()! | number:'1.1-1' }}%
-          </span>
-        </div>
+    <ng-container *ngIf="tieneResultados">
+      <div class="filter-row" *ngIf="anios.length > 1">
+        <label for="anio">Año</label>
+        <select id="anio" [(ngModel)]="anioSeleccionado" (ngModelChange)="onAnioChange()">
+          <option value="">Todos</option>
+          <option *ngFor="let a of anios" [value]="a">{{ a }}</option>
+        </select>
       </div>
 
-      <div class="chart-card">
-        <h3>Precio promedio por mes</h3>
-        <div class="chart">
-          <div class="chart-bar-wrap" *ngFor="let p of puntos; trackBy: trackByPeriodo"
-               [title]="p.periodo + ' · Promedio: ' + formatCOP(p.precio_promedio) + ' · Mín: ' + formatCOP(p.precio_minimo) + ' · Máx: ' + formatCOP(p.precio_maximo) + ' · ' + p.registros + ' registros'">
-            <div class="chart-bar" [style.height.%]="barHeight(p)"></div>
-            <span class="chart-label">{{ p.periodo }}</span>
+      <div class="empty-state" *ngIf="puntos.length === 0">
+        No hay datos para el año {{ anioSeleccionado }}. Prueba con "Todos".
+      </div>
+
+      <ng-container *ngIf="puntos.length > 0">
+        <div class="summary-row">
+          <div class="summary-card">
+            <span class="summary-label">PERÍODOS</span>
+            <span class="summary-value">{{ puntos.length }}</span>
+          </div>
+          <div class="summary-card">
+            <span class="summary-label">ÚLTIMO PROMEDIO</span>
+            <span class="summary-value">{{ formatCOP(puntos[puntos.length - 1].precio_promedio) }}</span>
+          </div>
+          <div class="summary-card" *ngIf="variacionTotal() !== null">
+            <span class="summary-label">VARIACIÓN TOTAL</span>
+            <span class="summary-value" [class.up]="variacionTotal()! > 0" [class.down]="variacionTotal()! < 0">
+              <span class="material-symbols-outlined">{{ variacionTotal()! > 0 ? 'trending_up' : 'trending_down' }}</span> {{ variacionTotal()! | number:'1.1-1' }}%
+            </span>
           </div>
         </div>
-      </div>
 
-      <div class="table-card">
-        <table>
-          <thead>
-            <tr>
-              <th>PERÍODO</th>
-              <th>PROMEDIO</th>
-              <th>MÍNIMO</th>
-              <th>MÁXIMO</th>
-              <th>REGISTROS</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr *ngFor="let p of puntos; trackBy: trackByPeriodo">
-              <td>{{ p.periodo }}</td>
-              <td>{{ formatCOP(p.precio_promedio) }}</td>
-              <td>{{ formatCOP(p.precio_minimo) }}</td>
-              <td>{{ formatCOP(p.precio_maximo) }}</td>
-              <td>
-                <button class="registros-link" (click)="verRegistros(p)" title="Ver estos registros en el Banco de APUs">
-                  {{ p.registros }} <span class="material-symbols-outlined">open_in_new</span>
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+        <div class="chart-card">
+          <h3>Precio promedio por mes</h3>
+          <div class="chart">
+            <div class="chart-bar-wrap" *ngFor="let p of puntos; trackBy: trackByPeriodo"
+                 [title]="p.periodo + ' · Promedio: ' + formatCOP(p.precio_promedio) + ' · Mín: ' + formatCOP(p.precio_minimo) + ' · Máx: ' + formatCOP(p.precio_maximo) + ' · ' + p.registros + ' registros'">
+              <div class="chart-bar" [style.height.%]="barHeight(p)"></div>
+              <span class="chart-label">{{ p.periodo }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <h3 class="table-title">
+            Insumos encontrados
+            <span class="table-hint">Clic en una fila para ver su evolución por ciudad y mes</span>
+          </h3>
+          <table>
+            <thead>
+              <tr>
+                <th>INSUMO</th>
+                <th>CIUDADES</th>
+                <th>PROMEDIO</th>
+                <th>MÍNIMO</th>
+                <th>MÁXIMO</th>
+                <th>REGISTROS</th>
+              </tr>
+            </thead>
+            <tbody>
+              <ng-container *ngFor="let ins of insumos; trackBy: trackByInsumo">
+                <tr class="insumo-row" [class.expanded]="estaExpandido(ins)" (click)="toggleInsumo(ins)">
+                  <td class="insumo-cell" [title]="ins.insumo_descripcion">
+                    <span class="material-symbols-outlined chevron">
+                      {{ estaExpandido(ins) ? 'expand_more' : 'chevron_right' }}
+                    </span>
+                    {{ ins.insumo_descripcion }}
+                  </td>
+                  <td class="ciudades-cell" [title]="ins.ciudades.join(', ')">{{ resumenCiudades(ins) }}</td>
+                  <td>{{ formatCOP(ins.precio_promedio) }}</td>
+                  <td>{{ formatCOP(ins.precio_minimo) }}</td>
+                  <td>{{ formatCOP(ins.precio_maximo) }}</td>
+                  <td>
+                    <button class="registros-link" (click)="verRegistros(ins.insumo_descripcion); $event.stopPropagation()"
+                            title="Ver estos registros en el Banco de APUs">
+                      {{ ins.registros }} <span class="material-symbols-outlined">open_in_new</span>
+                    </button>
+                  </td>
+                </tr>
+                <tr class="periodo-row" *ngFor="let d of ins.detalle; trackBy: trackByDetalle"
+                    [hidden]="!estaExpandido(ins)">
+                  <td class="periodo-cell">{{ d.periodo }}</td>
+                  <td class="periodo-ciudad">{{ d.ciudad }}</td>
+                  <td>{{ formatCOP(d.precio_promedio) }}</td>
+                  <td>{{ formatCOP(d.precio_minimo) }}</td>
+                  <td>{{ formatCOP(d.precio_maximo) }}</td>
+                  <td class="periodo-registros">{{ d.registros }}</td>
+                </tr>
+              </ng-container>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
     </ng-container>
   </div>
 </div>

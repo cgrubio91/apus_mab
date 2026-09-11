@@ -43,7 +43,13 @@ _rate_store = RateStore()
 # Límites por IP: (clave, máx solicitudes, ventana en segundos).
 # Los endpoints que consumen IA (chat, extracción, análisis) tienen límites
 # más estrictos porque cada llamada cuesta cuota de Gemini.
+# H5: login/register también se limitan para frenar brute-force y spam.
 _RATE_RULES: list[tuple[str, str, int, float]] = [
+    ("/auth/login", "auth", 10, 60),
+    ("/auth/register", "auth", 5, 60),
+    ("/auth/refresh", "auth", 20, 60),
+    ("/auth/forgot-password", "auth", 3, 60),
+    ("/auth/reset-password", "auth", 5, 60),
     ("/chat-assistant", "chat", 30, 60),
     ("/extract-file", "extract", 10, 60),
     ("/extract-file-async", "extract", 10, 60),

@@ -40,12 +40,15 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash-lite}
-      AI_PROVIDER: ${AI_PROVIDER:-ollama}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
       OLLAMA_HOST: http://host.docker.internal:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma4:31b-cloud}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:7b}
+      # Obligatoria: con ENV=production settings.py aborta el arranque si falta.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       CORS_ORIGINS: http://localhost:4200
-      ENV: production
+      # Este compose monta el código con --reload: es un entorno de desarrollo.
+      ENV: development
     depends_on:
       mysql:
         condition: service_healthy

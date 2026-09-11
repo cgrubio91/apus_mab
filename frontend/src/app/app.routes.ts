@@ -1,17 +1,6 @@
 import { Routes } from '@angular/router';
 import { inject } from '@angular/core';
 import { Router } from '@angular/router';
-import { DashboardApus } from './pages/dashboard-apus/dashboard-apus';
-import { ConsultaApus } from './pages/consulta-apus/consulta-apus';
-import { NuevosApuIa } from './pages/nuevos-apu-ia/nuevos-apu-ia';
-import { ChatApus } from './pages/chat-apus/chat-apus';
-import { AnalisisApu } from './pages/analisis-apu/analisis-apu';
-import { ConstructorApu } from './pages/constructor-apu/constructor-apu';
-import { HistoricoPrecios } from './pages/historico-precios/historico-precios';
-import { ProyectosMapus } from './pages/proyectos-mapus/proyectos-mapus';
-import { ProyectoDetalle } from './pages/proyecto-detalle/proyecto-detalle';
-import { Usuarios } from './pages/usuarios/usuarios';
-import { Login } from './pages/login/login';
 import { AuthGuard } from './services/auth.guard';
 import { AuthService } from './services/auth.service';
 
@@ -24,17 +13,62 @@ const adminGuard = () => {
   return router.parseUrl(auth.isLoggedIn() ? '/dashboard-apus' : '/login');
 };
 
+// H14: lazy loading con loadComponent — cada página se carga bajo demanda
+// en lugar de inflar el bundle inicial (antes 681 KB).
 export const routes: Routes = [
   { path: '', redirectTo: '/dashboard-apus', pathMatch: 'full' },
-  { path: 'login', component: Login },
-  { path: 'dashboard-apus', component: DashboardApus, canActivate: [AuthGuard] },
+  {
+    path: 'login',
+    loadComponent: () => import('./pages/login/login').then(m => m.Login),
+  },
+  {
+    path: 'dashboard-apus',
+    loadComponent: () => import('./pages/dashboard-apus/dashboard-apus').then(m => m.DashboardApus),
+    canActivate: [AuthGuard],
+  },
+  // H13: el flujo legacy "Nuevos APU IA" se retiró (ver plan.md); se conserva
+  // solo la redirección para no romper marcadores antiguos.
   { path: 'nuevos-apu-ia', redirectTo: 'constructor-apu', pathMatch: 'full' },
-  { path: 'consulta-apus', component: ConsultaApus, canActivate: [AuthGuard] },
-  { path: 'chat-apus', component: ChatApus, canActivate: [AuthGuard] },
-  { path: 'analisis-apu', component: AnalisisApu, canActivate: [AuthGuard] },
-  { path: 'constructor-apu', component: ConstructorApu, canActivate: [AuthGuard] },
-  { path: 'historico-precios', component: HistoricoPrecios, canActivate: [AuthGuard] },
-  { path: 'proyectos-mapus', component: ProyectosMapus, canActivate: [AuthGuard] },
-  { path: 'proyectos-mapus/:id', component: ProyectoDetalle, canActivate: [AuthGuard] },
-  { path: 'usuarios', component: Usuarios, canActivate: [AuthGuard, adminGuard] },
+  {
+    path: 'consulta-apus',
+    loadComponent: () => import('./pages/consulta-apus/consulta-apus').then(m => m.ConsultaApus),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'chat-apus',
+    loadComponent: () => import('./pages/chat-apus/chat-apus').then(m => m.ChatApus),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'analisis-apu',
+    loadComponent: () => import('./pages/analisis-apu/analisis-apu').then(m => m.AnalisisApu),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'constructor-apu',
+    loadComponent: () => import('./pages/constructor-apu/constructor-apu').then(m => m.ConstructorApu),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'historico-precios',
+    loadComponent: () => import('./pages/historico-precios/historico-precios').then(m => m.HistoricoPrecios),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'proyectos-mapus',
+    loadComponent: () => import('./pages/proyectos-mapus/proyectos-mapus').then(m => m.ProyectosMapus),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'proyectos-mapus/:id',
+    loadComponent: () => import('./pages/proyecto-detalle/proyecto-detalle').then(m => m.ProyectoDetalle),
+    canActivate: [AuthGuard],
+  },
+  {
+    path: 'usuarios',
+    loadComponent: () => import('./pages/usuarios/usuarios').then(m => m.Usuarios),
+    canActivate: [AuthGuard, adminGuard],
+  },
+  // Ruta catch-all: una URL inválida vuelve al dashboard (o al login vía AuthGuard).
+  { path: '**', redirectTo: '/dashboard-apus' },
 ];

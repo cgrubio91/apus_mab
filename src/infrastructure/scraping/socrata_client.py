@@ -13,11 +13,12 @@ Notas de entorno:
 """
 
 import logging
-import os
 import time
 from typing import Optional
 
 import requests
+
+from src.config.settings import settings
 
 log = logging.getLogger("mapus.infrastructure.socrata")
 
@@ -31,8 +32,8 @@ class SocrataError(RuntimeError):
 class SocrataClient:
     def __init__(self, domain: Optional[str] = None, app_token: Optional[str] = None,
                  timeout: int = 40):
-        self.domain = (domain or os.getenv("SOCRATA_DOMAIN", "www.datos.gov.co")).strip().rstrip("/")
-        self.app_token = app_token if app_token is not None else os.getenv("SOCRATA_APP_TOKEN")
+        self.domain = (domain or settings.SOCRATA_DOMAIN or "www.datos.gov.co").strip().rstrip("/")
+        self.app_token = app_token if app_token is not None else settings.SOCRATA_APP_TOKEN
         self.timeout = timeout
 
     def _headers(self) -> dict:

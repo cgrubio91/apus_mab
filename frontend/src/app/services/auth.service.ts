@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { Observable, BehaviorSubject, throwError } from 'rxjs';
 import { tap, catchError } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
-import { TOKEN_KEY, USER_KEY, isTokenExpired } from './auth.storage';
+import { TOKEN_KEY, USER_KEY, REFRESH_KEY, isTokenExpired } from './auth.storage';
 
 export interface AuthUser {
   id: number;
@@ -45,6 +45,7 @@ export class AuthService {
     return this.http.post(`${environment.apiUrl}/auth/login`, { telefono, password }).pipe(
       tap((res: any) => {
         localStorage.setItem(this.TOKEN_KEY, res.access_token);
+        if (res.refresh_token) localStorage.setItem(REFRESH_KEY, res.refresh_token);
         localStorage.setItem(this.USER_KEY, JSON.stringify(res.user));
         this.isAuthenticatedSubject.next(true);
         this.currentUserSubject.next(res.user);
@@ -59,9 +60,18 @@ export class AuthService {
   logout(): void {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);
+    localStorage.removeItem(REFRESH_KEY);
     this.isAuthenticatedSubject.next(false);
     this.currentUserSubject.next(null);
     this.router.navigate(['/login']);
+  }
+
+  forgotPassword(identificador: string): Observable<any> {
+    return this.http.post(`${environment.apiUrl}/auth/forgot-password`, { identificador });
+  }
+
+  resetPassword(token: string, new_password: string): Observable<any> {
+    return this.http.post(`${environment.apiUrl}/auth/reset-password`, { token, new_password });
   }
 
   private _hasToken(): boolean {

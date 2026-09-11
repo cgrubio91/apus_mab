@@ -130,7 +130,15 @@ def put_connection(conn):
             pass
 
 
-def execute_query(query, params=None, fetch=True, dict_cursor=True, silent_errors=None):
+def execute_query(query, params=None, fetch=True, dict_cursor=True, silent_errors=None,
+                  return_lastrowid=False):
+    """Ejecuta una consulta tomando una conexión del pool.
+
+    `return_lastrowid=True` devuelve el AUTO_INCREMENT generado por el INSERT.
+    Es obligatorio usarlo en lugar de un `SELECT LAST_INSERT_ID()` posterior: cada
+    llamada toma una conexión distinta del pool, y LAST_INSERT_ID() es por sesión,
+    así que en otra conexión devuelve 0 (o el id de otra petición).
+    """
     conn = None
     try:
         conn = get_db_connection()
@@ -143,7 +151,7 @@ def execute_query(query, params=None, fetch=True, dict_cursor=True, silent_error
             return results
 
         conn.commit()
-        affected = cursor.rowcount
+        affected = cursor.lastrowid if return_lastrowid else cursor.rowcount
         cursor.close()
         return affected
 

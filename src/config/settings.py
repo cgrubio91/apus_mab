@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # Auth
     JWT_SECRET_KEY: Optional[str] = None
     JWT_EXPIRE_MINUTES: int = 480
+    REFRESH_EXPIRE_DAYS: int = 7
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
     # Database (MySQL)
     DB_HOST: Optional[str] = None
@@ -23,7 +25,9 @@ class Settings(BaseSettings):
     DB_NAME: Optional[str] = None
     DB_USER: Optional[str] = None
     DB_PASSWORD: Optional[str] = None
-    DB_SSLMODE: str = "prefer"
+    # H8: MySQL no tiene modo "prefer" (era resabio de PostgreSQL).
+    # Valores válidos: "disabled" (defecto, sin TLS) | "require" | "verify-ca" | "verify-full".
+    DB_SSLMODE: str = "disabled"
     DB_POOL_MIN: int = 1
     DB_POOL_MAX: int = 10
     CLOUD_SQL_CONNECTION_NAME: Optional[str] = None

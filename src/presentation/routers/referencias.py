@@ -56,9 +56,9 @@ async def ingerir_secop_endpoint(payload: IngestaSecopRequest,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo desde SECOP")
-        raise HTTPException(status_code=502, detail=f"Fallo consultando SECOP: {e}")
+        raise HTTPException(status_code=502, detail="Fallo consultando SECOP. Intenta nuevamente.")
 
 
 class IngestaCypeRequest(BaseModel):
@@ -73,9 +73,9 @@ async def ingerir_cype_endpoint(payload: IngestaCypeRequest,
         return ingerir_cype(payload.query, limite=payload.limite)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo desde CYPE")
-        raise HTTPException(status_code=502, detail=f"Fallo consultando CYPE: {e}")
+        raise HTTPException(status_code=502, detail="Fallo consultando CYPE. Intenta nuevamente.")
 
 
 class IngestaHomecenterRequest(BaseModel):
@@ -90,9 +90,9 @@ async def ingerir_homecenter_endpoint(payload: IngestaHomecenterRequest,
         return ingerir_homecenter(payload.query, limite=payload.limite)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo desde Homecenter")
-        raise HTTPException(status_code=502, detail=f"Fallo consultando Homecenter: {e}")
+        raise HTTPException(status_code=502, detail="Fallo consultando Homecenter. Intenta nuevamente.")
 
 
 class IngestaAniRequest(BaseModel):
@@ -108,9 +108,9 @@ async def ingerir_ani_endpoint(payload: IngestaAniRequest,
         return ingerir_ani(payload.keyword, ciudad=payload.ciudad, limite=payload.limite)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo desde ANI")
-        raise HTTPException(status_code=502, detail=f"Fallo consultando ANI: {e}")
+        raise HTTPException(status_code=502, detail="Fallo consultando ANI. Intenta nuevamente.")
 
 
 class IngestaDocumentalRequest(BaseModel):
@@ -127,9 +127,9 @@ async def ingerir_idu_endpoint(payload: IngestaDocumentalRequest,
         return ingerir_idu(urls=payload.urls, ciudad=payload.ciudad, fecha=payload.fecha)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo documentos IDU")
-        raise HTTPException(status_code=502, detail=f"Fallo procesando documentos IDU: {e}")
+        raise HTTPException(status_code=502, detail="Fallo procesando documentos IDU. Intenta nuevamente.")
 
 
 @router.post("/invias/ingerir")
@@ -139,9 +139,9 @@ async def ingerir_invias_endpoint(payload: IngestaDocumentalRequest,
         return ingerir_invias(urls=payload.urls, ciudad=payload.ciudad, fecha=payload.fecha)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo documentos INVÍAS")
-        raise HTTPException(status_code=502, detail=f"Fallo procesando documentos INVÍAS: {e}")
+        raise HTTPException(status_code=502, detail="Fallo procesando documentos INVÍAS. Intenta nuevamente.")
 
 
 @router.get("")
@@ -208,9 +208,9 @@ async def ingerir_dane_endpoint(payload: IngestaDaneRequest,
                             campo_valor=payload.campo_valor, where=payload.where)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("Error ingiriendo serie DANE")
-        raise HTTPException(status_code=502, detail=f"Fallo consultando DANE: {e}")
+        raise HTTPException(status_code=502, detail="Fallo consultando DANE. Intenta nuevamente.")
 
 
 @router.post("/indices/cargar")
@@ -239,6 +239,6 @@ async def backfill_catalogo_endpoint(
         if origen == "externas":
             return backfill_desde_referencias_externas(limite=limite)
         return backfill_desde_banco(limite=limite)
-    except Exception as e:
+    except Exception:
         log.exception("Error en backfill del catálogo (%s)", origen)
-        raise HTTPException(status_code=500, detail=f"Fallo en backfill: {e}")
+        raise HTTPException(status_code=500, detail="Fallo en backfill. Revisa los logs.")

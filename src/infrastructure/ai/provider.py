@@ -5,7 +5,6 @@ Abstracts AI backends with resilient parsing, retries, and connection pooling.
 
 import json
 import logging
-import os
 import random
 import re
 import time
@@ -14,11 +13,13 @@ from typing import Optional
 import requests
 from dotenv import load_dotenv
 
+from src.config.settings import settings
+
 load_dotenv()
 
 log = logging.getLogger("mapus.infrastructure.ai")
 
-MAX_DOC_CHARS = int(os.getenv("MAX_DOC_CHARS", "500000"))
+MAX_DOC_CHARS = settings.MAX_DOC_CHARS
 SESSION = requests.Session()
 
 # Retry settings for transient Gemini errors (429, 503, 500)
@@ -38,22 +39,22 @@ def _backoff_delay(attempt: int, base: float = 3.0, cap: float = 30.0) -> float:
 class AIProvider:
 
     def _get_provider(self) -> str:
-        return os.getenv("AI_PROVIDER", "gemini").strip().lower()
+        return (settings.AI_PROVIDER or "gemini").strip().lower()
 
     def _get_gemini_key(self) -> str:
-        key = os.getenv("GEMINI_API_KEY")
+        key = settings.GEMINI_API_KEY
         if self._get_provider() == "gemini" and not key:
             raise RuntimeError("GEMINI_API_KEY no configurada en las variables de entorno.")
         return key
 
     def _get_gemini_model(self) -> str:
-        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        return settings.GEMINI_MODEL or "gemini-2.5-flash"
 
     def _get_ollama_host(self) -> str:
-        return os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+        return (settings.OLLAMA_HOST or "http://localhost:11434").rstrip("/")
 
     def _get_ollama_model(self) -> str:
-        return os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b")
+        return settings.OLLAMA_MODEL or "qwen2.5-coder:7b"
 
     def _call_gemini(self, payload: dict, timeout: int = 300) -> dict:
         """Call Gemini API with built-in retry for transient errors (429/500/503)."""

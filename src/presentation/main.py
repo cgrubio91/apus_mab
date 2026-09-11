@@ -20,15 +20,36 @@ _INDEX_NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate
 
 load_dotenv()
 
-# ── Logging ──────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
-# Ensure src is on path
+# Ensure src is on path (antes de importar settings: el logging lo necesita)
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from src.config.settings import settings
+
+
+class _JsonFormatter(logging.Formatter):
+    """Logs estructurados en JSON para producción (CloudWatch/Datadog)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        import json as _json
+
+        return _json.dumps({
+            "ts": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        })
+
+
+# ── Logging ──────────────────────────────────────────────────────────
+_log_handler = logging.StreamHandler()
+if (settings.ENV or "").lower() == "production":
+    _log_handler.setFormatter(_JsonFormatter())
+else:
+    _log_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+logging.basicConfig(level=logging.INFO, handlers=[_log_handler])
 
 from src.infrastructure.database.connection import execute_query
 from src.infrastructure.database.schema import ensure_schema
@@ -38,8 +59,8 @@ from src.presentation.middleware import log_and_rate_limit
 
 log = logging.getLogger("mapus")
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
-if CORS_ORIGINS == ["*"] and os.getenv("ENV", "").lower() == "production":
+CORS_ORIGINS = [o.strip() for o in (settings.CORS_ORIGINS or "*").split(",") if o.strip()] or ["*"]
+if CORS_ORIGINS == ["*"] and (settings.ENV or "").lower() == "production":
     # allow_origins="*" + allow_credentials=True es una combinación insegura:
     # cualquier sitio podría hacer peticiones autenticadas. En producción se exige
     # una lista explícita de orígenes.
@@ -75,7 +96,17 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="MAPUS API", version="2.1.0", lifespan=lifespan)
+    app = FastAPI(
+        title="MAPUS API",
+        version="2.1.0",
+        lifespan=lifespan,
+        description=(
+            "Gestión de APUs de obra civil: extracción con IA (Gemini), "
+            "chat NL→SQL, flujo de aprobación multinivel y asistente de WhatsApp."
+        ),
+        contact={"name": "MAPUS", "url": "https://github.com/anomalyco/opencode"},
+        license_info={"name": "Uso interno"},
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -119,7 +150,7 @@ def create_app() -> FastAPI:
             execute_query("SELECT 1")
         except Exception as e:
             status["status"] = "error"
-            status["database"] = str(e)
+            status["database"] = "disconnected"
             log.error("Health check failed: %s", e)
         return status
 

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 
 from fastapi import APIRouter, Request
 from twilio.request_validator import RequestValidator
@@ -11,13 +10,14 @@ from src.application.use_cases.whatsapp_assistant import (
     guardar_conversacion,
     process_message,
 )
+from src.config.settings import settings
 
 log = logging.getLogger("mapus.presentation.whatsapp")
 router = APIRouter()
 
-ACCOUNT_SID = os.getenv("ACCOUNT_SID")
-AUTH_TOKEN = os.getenv("AUTH_TOKEN")
-FROM_WHATSAPP = os.getenv("FROM_WHATSAPP")
+ACCOUNT_SID = settings.ACCOUNT_SID
+AUTH_TOKEN = settings.AUTH_TOKEN
+FROM_WHATSAPP = settings.FROM_WHATSAPP
 
 twilio_client = Client(ACCOUNT_SID, AUTH_TOKEN) if ACCOUNT_SID and AUTH_TOKEN else None
 twilio_validator = RequestValidator(AUTH_TOKEN) if AUTH_TOKEN else None
@@ -45,13 +45,18 @@ async def whatsapp_webhook(request: Request):
     from_number = (form.get("From") or "").strip()
     message_body = (form.get("Body") or "").strip()
 
-    if twilio_validator:
-        signature = request.headers.get("X-Twilio-Signature", "")
-        params = {k: v for k, v in form.items()}
-        url = str(request.url).replace("http://", "https://")
-        if not twilio_validator.validate(url, params, signature):
-            log.warning("Invalid Twilio signature from %s", from_number)
-            return "UNAUTHORIZED"
+    if not twilio_validator:
+        # Fail-closed (H7): sin AUTH_TOKEN no se puede validar la firma de
+        # Twilio, así que se rechaza todo para no exponer el asistente.
+        log.error("Twilio AUTH_TOKEN no configurado; rechazando webhook de %s", from_number)
+        return "UNAUTHORIZED"
+
+    signature = request.headers.get("X-Twilio-Signature", "")
+    params = {k: v for k, v in form.items()}
+    url = str(request.url).replace("http://", "https://")
+    if not twilio_validator.validate(url, params, signature):
+        log.warning("Invalid Twilio signature from %s", from_number)
+        return "UNAUTHORIZED"
 
     log.info("WhatsApp from %s: %s", from_number, message_body[:120])
 

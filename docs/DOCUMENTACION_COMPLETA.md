@@ -1281,4 +1281,80 @@ npm test
 
 ---
 
+## 12. Cambios de la auditoría — Septiembre 2026
+
+### Seguridad
+- **H1:** `incorporar_a_proyecto_y_banco` insertaba `tipo_item='APU_NO_PREVISTO'`, valor fuera del
+  `ENUM('PREVISTO','NP','NPP')` → ahora inserta `'NP'`. Migración de limpieza normaliza valores legacy.
+- **H2:** `GET /health` devolvía `str(e)` de la BD (público) → ahora devuelve `"disconnected"` y el detalle
+  solo queda en el log del servidor.
+- **H3:** `referencias.py` interpolaba `{e}` en `detail` de errores 502/500 → mensajes genéricos + `log.exception`.
+  (`analisis_apu.py` y `constructor_apu.py` ya usaban el patrón correcto: `str(e)` solo para `ValueError`.)
+- **H5:** rate limiting en `POST /auth/login` (10/min por IP) y `POST /auth/register` (5/min por IP).
+- **H6:** política de contraseñas en backend (`validar_password` en `src/presentation/auth.py`: mín. 8
+  caracteres, letra + número), aplicada en registro público y creación por admin; frontend espeja la regla.
+- **H7:** webhook de WhatsApp en modo fail-closed: sin `AUTH_TOKEN` rechaza todo con `UNAUTHORIZED`.
+
+### Usuarios
+- Nueva columna `users.activo TINYINT(1) DEFAULT 1` (migración idempotente en `schema.py`).
+  `PATCH /auth/users/{id}` ahora persiste `activo`; el login y `get_current_user` bloquean desactivados.
+  `GET /auth/users` expone `activo` (con fallback si la BD aún no migra).
+
+### Configuración
+- **H4:** `provider.py`, `whatsapp.py`, `socrata_client.py`, `secop_source.py` y `CORS/ENV` en
+  `src/presentation/main.py` ahora leen `src/config/settings.py`. `idu/invias_source.py` mantienen
+  re-lectura dinámica del entorno (`os.getenv(...) or settings...`) porque los tests la exigen vía monkeypatch.
+- **H8:** `DB_SSLMODE` por defecto `"disabled"` (antes `"prefer"`, resabio de PostgreSQL sin efecto en MySQL).
+- **H10:** `logging.basicConfig` solo en `src/presentation/main.py`; `main.py` raíz ya no duplica.
+
+### Frontend
+- **H13:** eliminado el componente legacy `nuevos-apu-ia/` (la ruta redirige a `constructor-apu`).
+- **H14:** rutas con `loadComponent()` (lazy loading): bundle inicial 681 KB → ~324 KB.
+- **H15:** budget `anyComponentStyle` 16 kB → 28 kB warning / 40 kB error (ya no hay warnings).
+- Ruta catch-all `**` → `/dashboard-apus`. Política de clave del panel de usuarios: 8 + letra/número.
+
+### DevOps / repo
+- **H12/H17:** eliminados `0`, `test.py`, `change.py` y `package-lock.json` de la raíz.
+- **H16:** `ca.pem` verificado: ignorado por git (`*.pem`), no trackeado — se conserva local (lo usa `DB_SSLMODE`).
+- **H18:** `backups/*.sql` verificados: ignorados (`*.sql`), no trackeados.
+- **H19:** `cloud_sql_proxy.exe` des-trackeado (`git rm --cached`, se conserva local; cubierto por `.gitignore`).
+- **H21:** CI (`ci.yml`) con nuevo job `frontend`: `npm ci` + `ng test --watch=false` + `npm run build`.
+
+### Pendiente (no crítico / requiere decisión de producto)
+- ~~**H9:** partir `constructor_apu.py`, `manage_analisis.py`, `analisis_repository.py`~~ ✅ hecho (2ª ronda):
+  `constructor_apu.py` 1231→593 + `constructor_propuesta.py` (598) + `constructor_costos.py`;
+  `manage_analisis.py` 1009→406 + `analisis_comparacion.py` + `analisis_ia.py`;
+  `analisis_repository.py` 872→565 + `analisis_matching.py`. Fachadas con re-export: imports intactos.
+- ~~**H20:** mover scripts a `scripts/`~~ ✅ hecho con `git mv` (historial preservado) + fix de `sys.path`.
+- ~~Recuperación de contraseña, refresh token, tests E2E, logs JSON, backups automáticos, auditoría de
+  acciones admin~~ ✅ hecho (2ª ronda, ver §13).
+- Paginación de usuarios ✅ (backend `limite/offset` + pager en el panel).
+
+---
+
+## 13. Segunda ronda — Septiembre 2026 (cierre de auditoría)
+
+### Auth: recuperación y refresh
+- Tablas `password_resets` (token SHA-256, 30 min, un solo uso) y `refresh_tokens` (7 días, rotación con
+  revocación). Settings: `REFRESH_EXPIRE_DAYS`, `PASSWORD_RESET_EXPIRE_MINUTES`.
+- Endpoints públicos: `POST /auth/forgot-password` (respuesta genérica anti-enumeración; el token solo se
+  devuelve fuera de producción, en prod queda en log para retransmisión interna hasta tener SMTP),
+  `POST /auth/reset-password` (valida política de clave, revoca refresh tokens),
+  `POST /auth/refresh` (rota y devuelve access 8h + refresh nuevo).
+- Login/registro devuelven también `refresh_token`. Rate limits: refresh 20/min, forgot 3/min, reset 5/min.
+- Frontend: vista "¿Olvidaste tu contraseña?" en login (solicitar token → restablecer); el interceptor
+  renueva el access automáticamente ante un 401 (una vez, con promesa compartida) y solo cierra sesión
+  si el refresh falla. Tests: `tests/test_password_recovery.py` (10 casos, DB simulada).
+- E2E (Playwright, `frontend/e2e/smoke.spec.ts`): login renderiza, guard redirige, login→dashboard con
+  API mockeada, flujo completo de recuperación. Job `e2e` en CI (chromium).
+
+### Observabilidad y ops
+- Logs JSON en producción (`ENV=production`), texto en desarrollo.
+- `scripts/backup_mysql.py`: `mysqldump` + gzip + retención (`--retener 7`), listo para cron/Task Scheduler.
+- Tabla `auditoria_admin` + `GET /auth/auditoria` (admin): registra crear_usuario, cambio_rol,
+  activar/desactivar, solicitud/reset de contraseña.
+- OpenAPI: descripción, contacto y ejemplos en modelos de auth (`/docs`).
+
+---
+
 *Documentación generada para desarrolladores — MAPUS v2.1.0*

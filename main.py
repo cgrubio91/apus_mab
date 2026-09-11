@@ -4,14 +4,9 @@ Delegates to Clean Architecture application in src/
 """
 
 import logging
-import os
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
+# H10: el logging se configura una sola vez en src/presentation/main.py.
+# (logging.basicConfig solo tiene efecto la primera vez; duplicarlo confunde.)
 log = logging.getLogger("mapus")
 
 # Backward compatibility: tests import `from main import app`
@@ -20,12 +15,13 @@ from src.presentation.main import app
 if __name__ == "__main__":
     import uvicorn
 
-    port = int(os.getenv("PORT", 10000))
-    log.info("Starting MAPUS server on port %d", port)
+    from src.config.settings import settings
+
+    log.info("Starting MAPUS server on port %d", settings.PORT)
 
     uvicorn.run(
         "src.presentation.main:app",
         host="0.0.0.0",
-        port=port,
-        reload=os.getenv("ENV", "").lower() == "development",
+        port=settings.PORT,
+        reload=settings.ENV.lower() == "development",
     )

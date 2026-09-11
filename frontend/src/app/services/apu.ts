@@ -101,10 +101,31 @@ export interface HistoricoPunto {
   registros: number;
 }
 
+/** Un hallazgo puntual: precios de un insumo en una ciudad y mes concretos. */
+export interface HistoricoDetalle extends HistoricoPunto {
+  anio: string;
+  ciudad: string;
+}
+
+/** Resumen de una descripción concreta de insumo, con su evolución por ciudad y mes. */
+export interface HistoricoInsumo {
+  insumo_descripcion: string;
+  precio_promedio: number;
+  precio_minimo: number;
+  precio_maximo: number;
+  registros: number;
+  /** Ciudades donde aparece este insumo, orden alfabético. */
+  ciudades: string[];
+  detalle: HistoricoDetalle[];
+}
+
 export interface HistoricoPreciosResponse {
   success: boolean;
   insumo: string;
+  /** Serie mensual consolidada (gráfico y tarjetas). */
   data: HistoricoPunto[];
+  /** Una fila por descripción distinta de insumo, de mayor a menor precio. */
+  insumos: HistoricoInsumo[];
 }
 
 export interface UsuarioAdmin {
@@ -520,8 +541,10 @@ export class ApuService {
   }
 
   // ── Gestión de usuarios (admin) ─────────────────────────────────
-  getUsers(): Observable<{ users: UsuarioAdmin[] }> {
-    return this.http.get<{ users: UsuarioAdmin[] }>(`${this.baseUrl}/auth/users`);
+  getUsers(limite = 50, offset = 0): Observable<{ users: UsuarioAdmin[]; total: number; limite: number; offset: number }> {
+    return this.http.get<{ users: UsuarioAdmin[]; total: number; limite: number; offset: number }>(
+      `${this.baseUrl}/auth/users`, { params: { limite, offset } },
+    );
   }
 
   createUser(user: { telefono: string; nombre: string; email?: string; password: string; rol: string }): Observable<any> {

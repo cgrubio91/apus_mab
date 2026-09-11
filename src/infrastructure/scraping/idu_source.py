@@ -27,7 +27,12 @@ FUENTE = "IDU"
 
 
 def urls_semilla() -> list[str]:
-    """URLs de documentos IDU configuradas en IDU_URLS_SEED (coma o espacio)."""
+    """URLs de documentos IDU configuradas en IDU_URLS_SEED (coma o espacio).
+
+    `settings` es la fuente canónica (documenta la variable en settings.py);
+    se re-lee el entorno en cada llamada para que los tests (monkeypatch)
+    y los cambios de .env sin reimportar sigan funcionando.
+    """
     raw = os.getenv("IDU_URLS_SEED") or settings.IDU_URLS_SEED or ""
     return [u.strip() for u in raw.replace("\n", ",").replace(" ", ",").split(",") if u.strip()]
 

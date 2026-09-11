@@ -3,6 +3,7 @@
 // por HttpClient.
 export const TOKEN_KEY = 'mapus_token';
 export const USER_KEY = 'mapus_user';
+export const REFRESH_KEY = 'mapus_refresh';
 
 export function getStoredToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -11,6 +12,7 @@ export function getStoredToken(): string | null {
 export function clearStoredSession(): void {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(REFRESH_KEY);
 }
 
 /** Devuelve true si el token JWT almacenado está expirado o es ilegible. */

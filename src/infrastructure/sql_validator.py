@@ -78,6 +78,10 @@ def _normalize_sql_accents(sql: str) -> str:
 
 
 def _adjust_limit(sql: str) -> str:
+    # El `;` final se quita antes de tocar el LIMIT: si la IA genera "SELECT ... ;"
+    # y se concatena el LIMIT tal cual, queda "SELECT ... ; LIMIT 20", donde el
+    # límite cae fuera del statement y deja de acotar la consulta.
+    sql = sql.rstrip().rstrip(";").rstrip()
     match = re.search(r"\blimit\s+(\d+)", sql, re.IGNORECASE)
     if match:
         limit_value = int(match.group(1))
@@ -131,13 +135,9 @@ def _sqlparse_validate(sql: str) -> Tuple[bool, str]:
     stmt_type = stmt.get_type()
 
     if stmt_type == "SELECT":
-        has_limit = False
-        for token in stmt.tokens:
-            if token.ttype is Keyword and token.value.upper() == "LIMIT":
-                has_limit = True
-                break
         return True, _adjust_limit(sql)
-    
+
+
     for token in stmt.tokens:
         if token.ttype in (DDL, DML):
             return False, f"Solo se permiten consultas SELECT. Detectado: {token.value.upper()}"

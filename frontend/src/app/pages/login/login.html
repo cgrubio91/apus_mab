@@ -52,8 +52,11 @@
       <div class="alert error" *ngIf="error">
         <span class="material-symbols-outlined alert-icon">warning</span><span>{{ error }}</span>
       </div>
+      <div class="alert success" *ngIf="info">
+        <span class="material-symbols-outlined alert-icon">check_circle</span><span>{{ info }}</span>
+      </div>
 
-      <form (ngSubmit)="login()" class="auth-form" autocomplete="on">
+      <form (ngSubmit)="login()" class="auth-form" autocomplete="on" *ngIf="modo === 'login'">
         <div class="field">
           <label for="username">USUARIO</label>
           <div class="input-wrap">
@@ -96,6 +99,50 @@
           {{ loading ? 'Ingresando…' : 'Ingresar al sistema' }}
           <span class="material-symbols-outlined" *ngIf="!loading">arrow_forward</span>
         </button>
+
+        <button type="button" class="link-btn" (click)="irA('forgot')">
+          ¿Olvidaste tu contraseña?
+        </button>
+      </form>
+
+      <form (ngSubmit)="solicitarToken()" class="auth-form" *ngIf="modo === 'forgot'">
+        <p class="card-subtitle">Ingresa tu teléfono o correo y te generaremos un token de recuperación.</p>
+        <div class="field">
+          <label for="identificador">TELÉFONO O CORREO</label>
+          <div class="input-wrap">
+            <span class="material-symbols-outlined field-icon">person</span>
+            <input id="identificador" type="text" [(ngModel)]="identificador" name="identificador"
+                   placeholder="3001234567" required autocomplete="username" />
+          </div>
+        </div>
+        <button type="submit" class="submit-btn" [disabled]="loading">
+          {{ loading ? 'Generando…' : 'Generar token' }}
+        </button>
+        <button type="button" class="link-btn" (click)="irA('login')">Volver al ingreso</button>
+      </form>
+
+      <form (ngSubmit)="restablecer()" class="auth-form" *ngIf="modo === 'reset'">
+        <p class="card-subtitle">Ingresa el token recibido y tu nueva contraseña (mín. 8 caracteres, letra y número).</p>
+        <div class="field">
+          <label for="reset-token">TOKEN</label>
+          <div class="input-wrap">
+            <span class="material-symbols-outlined field-icon">key</span>
+            <input id="reset-token" type="text" [(ngModel)]="resetToken" name="resetToken"
+                   placeholder="Token de recuperación" required autocomplete="one-time-code" />
+          </div>
+        </div>
+        <div class="field">
+          <label for="nueva-password">NUEVA CONTRASEÑA</label>
+          <div class="input-wrap">
+            <span class="material-symbols-outlined field-icon">lock</span>
+            <input id="nueva-password" type="password" [(ngModel)]="nuevaPassword" name="nuevaPassword"
+                   placeholder="••••••••" required autocomplete="new-password" />
+          </div>
+        </div>
+        <button type="submit" class="submit-btn" [disabled]="loading">
+          {{ loading ? 'Guardando…' : 'Restablecer contraseña' }}
+        </button>
+        <button type="button" class="link-btn" (click)="irA('login')">Volver al ingreso</button>
       </form>
     </div>
   </main>

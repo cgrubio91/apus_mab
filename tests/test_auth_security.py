@@ -25,11 +25,12 @@ class TestRegisterPrivilegeEscalation:
         """Aunque el payload incluya rol=admin, el usuario se crea como 'user'."""
         llamadas = []
 
-        def fake_execute_query(query, params=None, fetch=True):
+        def fake_execute_query(query, params=None, **kwargs):
             llamadas.append((query, params))
             if query.strip().upper().startswith("SELECT"):
                 return []  # el teléfono no existe aún
-            return None
+            # Los INSERT con return_lastrowid devuelven el id autogenerado.
+            return 1 if kwargs.get("return_lastrowid") else None
 
         monkeypatch.setattr(auth_router, "execute_query", fake_execute_query)
 

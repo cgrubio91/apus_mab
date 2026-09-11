@@ -396,6 +396,56 @@ SCHEMA_STATEMENTS = [
     "ALTER TABLE solicitudes_apu ADD COLUMN numero_acta_aprobacion VARCHAR(100) NULL",
     "ALTER TABLE solicitudes_apu ADD COLUMN fecha_aprobacion_entidad DATE NULL",
     "ALTER TABLE solicitudes_apu ADD COLUMN estado_incorporacion VARCHAR(30) DEFAULT 'pendiente'",
+
+    # ── Migración: desactivación real de usuarios (el endpoint PATCH la aceptaba
+    # pero no la persistía porque no existía la columna) ──
+    "ALTER TABLE users ADD COLUMN activo TINYINT(1) DEFAULT 1",
+
+    # ── Limpieza H1: normaliza valores legacy de tipo_item fuera del ENUM ──
+    "UPDATE item_proyecto SET tipo_item = 'NP' WHERE tipo_item NOT IN ('PREVISTO','NP','NPP')",
+
+    # ── Recuperación de contraseña: tokens de un solo uso con expiración ──
+    """
+    CREATE TABLE IF NOT EXISTS password_resets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_pwresets_user (user_id),
+        KEY idx_pwresets_hash (token_hash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    """,
+
+    # ── Refresh tokens JWT (rotación con revocación) ──
+    """
+    CREATE TABLE IF NOT EXISTS refresh_tokens (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        token_hash CHAR(64) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        revoked TINYINT(1) DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_reftokens_user (user_id),
+        KEY idx_reftokens_hash (token_hash)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    """,
+
+    # ── Auditoría de acciones administrativas ──
+    """
+    CREATE TABLE IF NOT EXISTS auditoria_admin (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        actor_id INT NULL,
+        accion VARCHAR(80) NOT NULL,
+        objetivo_tipo VARCHAR(40) NULL,
+        objetivo_id INT NULL,
+        detalle VARCHAR(500) NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        KEY idx_audit_actor (actor_id),
+        KEY idx_audit_accion (accion)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    """,
 ]
 
 
@@ -426,8 +476,11 @@ def ensure_schema():
 def _migrar_usuarios_legacy(log):
     """Migra datos de `usuarios` (legacy MAPUS) a `users` + `usuario_rol`,
     luego elimina la tabla `usuarios`."""
+    from src.infrastructure.database.connection import execute_query
+
     try:
-        rows = execute_query("SELECT COUNT(*) AS cnt FROM usuarios")
+        # 1146 = tabla inexistente: es el caso normal una vez migrada, no un error.
+        rows = execute_query("SELECT COUNT(*) AS cnt FROM usuarios", silent_errors={1146})
     except Exception:
         return
     count = rows[0]["cnt"] if rows else 0
@@ -450,7 +503,8 @@ def _migrar_usuarios_legacy(log):
                   u.telefono, 'Usuario MAPUS', 'LOCAL'
            FROM usuarios u
            WHERE NOT EXISTS (
-               SELECT 1 FROM users us WHERE us.phone = u.telefono
+               SELECT 1 FROM users us
+                WHERE us.phone = u.telefono COLLATE utf8mb4_general_ci
            )""",
         fetch=False,
     )
@@ -459,8 +513,8 @@ def _migrar_usuarios_legacy(log):
         """INSERT IGNORE INTO usuario_rol (user_id, rol_id)
            SELECT us.id, r.id
            FROM usuarios u
-           JOIN users us ON us.phone = u.telefono
-           JOIN rol r ON r.codigo = LOWER(u.rol)
+           JOIN users us ON us.phone = u.telefono COLLATE utf8mb4_general_ci
+           JOIN rol r ON r.codigo = LOWER(u.rol) COLLATE utf8mb4_general_ci
            WHERE NOT EXISTS (
                SELECT 1 FROM usuario_rol ur WHERE ur.user_id = us.id
            )""",
@@ -506,7 +560,10 @@ def _seed_interventoria_data():
     except Exception:
         log.exception("Error sincronizando roles")
 
-    _migrar_usuarios_legacy(log)
+    try:
+        _migrar_usuarios_legacy(log)
+    except Exception:
+        log.exception("Error migrando usuarios legacy — se continúa con el resto del seed")
 
     try:
         rows = execute_query("SELECT COUNT(*) AS cnt FROM users")

@@ -207,9 +207,16 @@ async def historico_precios(
             condiciones.append("TRIM(nombre_proyecto) = TRIM(%s)")
             params.append(nombre_proyecto)
 
+        # Se agrupa por (insumo, ciudad, período) en una sola consulta: de ahí salen
+        # el desglose por insumo, la serie mensual consolidada y la ciudad de cada
+        # hallazgo. Sin abrir por insumo, una búsqueda como "grúa" mezcla equipos de
+        # 30 t y de 120 t en un mismo promedio, y el rango mín/máx resultante no
+        # describe a ninguno de los dos.
         rows = await asyncio.to_thread(
             execute_query,
-            f"""SELECT CONCAT(
+            f"""SELECT insumo_descripcion,
+                       COALESCE(NULLIF(TRIM(ciudad), ''), '(sin ciudad)') AS ciudad_hallazgo,
+                       CONCAT(
                        YEAR(COALESCE(fecha_analisis_apu, fecha_aprobacion_apu, created_at)), '-',
                        LPAD(MONTH(COALESCE(fecha_analisis_apu, fecha_aprobacion_apu, created_at)), 2, '0')
                    ) AS periodo,
@@ -219,23 +226,62 @@ async def historico_precios(
                        COUNT(*) AS registros
                 FROM apus
                 WHERE {' AND '.join(condiciones)}
-                GROUP BY periodo
-                ORDER BY periodo
-                LIMIT 120""",
+                GROUP BY insumo_descripcion, ciudad_hallazgo, periodo
+                ORDER BY insumo_descripcion, periodo, ciudad_hallazgo
+                LIMIT 6000""",
             tuple(params),
         )
-        data = [
-            {
+        celdas = [r for r in (rows or []) if r.get("periodo")]
+
+        def _consolidar(grupos: dict, clave: str) -> list[dict]:
+            """Resume una lista de celdas en una fila por clave.
+
+            El promedio se pondera por número de registros: promediar los promedios
+            daría el mismo peso a un período con 4 registros que a uno con 4.928.
+            """
+            resumen = []
+            for valor, filas in grupos.items():
+                total = sum(f["registros"] for f in filas)
+                suma = sum(f["precio_promedio"] * f["registros"] for f in filas)
+                resumen.append({
+                    clave: valor,
+                    "precio_promedio": (suma / total) if total else 0.0,
+                    "precio_minimo": min(f["precio_minimo"] for f in filas),
+                    "precio_maximo": max(f["precio_maximo"] for f in filas),
+                    "registros": total,
+                })
+            return resumen
+
+        por_insumo: dict[str, list[dict]] = {}
+        por_periodo: dict[str, list[dict]] = {}
+        for r in celdas:
+            celda = {
                 "periodo": r["periodo"],
+                "anio": r["periodo"].split("-")[0],
+                "ciudad": r["ciudad_hallazgo"],
+                "insumo_descripcion": r["insumo_descripcion"] or "(sin descripción)",
                 "precio_promedio": float(r["precio_promedio"] or 0),
                 "precio_minimo": float(r["precio_minimo"] or 0),
                 "precio_maximo": float(r["precio_maximo"] or 0),
                 "registros": int(r["registros"]),
             }
-            for r in (rows or [])
-            if r.get("periodo")
-        ]
-        return {"success": True, "insumo": insumo, "data": data}
+            por_insumo.setdefault(celda["insumo_descripcion"], []).append(celda)
+            por_periodo.setdefault(celda["periodo"], []).append(celda)
+
+        # Serie mensual consolidada: alimenta el gráfico y las tarjetas de resumen.
+        data = sorted(_consolidar(por_periodo, "periodo"), key=lambda d: d["periodo"])
+
+        # Desglose por insumo, del más caro al más barato. `detalle` trae cada
+        # hallazgo (insumo × ciudad × mes) para filtrar por año y ver la ciudad de
+        # origen en el frontend sin volver a consultar el backend.
+        insumos = _consolidar(por_insumo, "insumo_descripcion")
+        for fila in insumos:
+            celdas_insumo = por_insumo[fila["insumo_descripcion"]]
+            fila["detalle"] = sorted(celdas_insumo, key=lambda c: (c["periodo"], c["ciudad"]))
+            fila["ciudades"] = sorted({c["ciudad"] for c in celdas_insumo})
+        insumos.sort(key=lambda d: d["precio_promedio"], reverse=True)
+
+        return {"success": True, "insumo": insumo, "data": data, "insumos": insumos}
     except mysql.connector.Error:
         log.exception("Database error in historico_precios")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al consultar el histórico de precios.")
@@ -351,7 +397,7 @@ class ActualizarProyectoRequest(BaseModel):
 @router.post("/proyectos-mapus", tags=["APUs"])
 async def crear_proyecto(payload: CrearProyectoRequest) -> dict:
     try:
-        execute_query(
+        project_id = execute_query(
             """INSERT INTO proyectos (id_proy, descripcion, presupuesto_total, id_folder, id_folder_bim,
                                       pdo_current_version_id, pdo_drive_subfolder_id,
                                       aiu_administracion, aiu_imprevistos, aiu_utilidad, aiu_iva_utilidad)
@@ -360,8 +406,8 @@ async def crear_proyecto(payload: CrearProyectoRequest) -> dict:
              payload.id_folder_bim, payload.pdo_current_version_id, payload.pdo_drive_subfolder_id,
              payload.aiu_administracion, payload.aiu_imprevistos, payload.aiu_utilidad, payload.aiu_iva_utilidad),
             fetch=False,
+            return_lastrowid=True,
         )
-        project_id = execute_query("SELECT LAST_INSERT_ID() AS id")[0]["id"]
         log.info("Proyecto %d creado con AIU paramétrico: %s", project_id, payload.descripcion)
         return {"success": True, "id": project_id}
     except Exception:

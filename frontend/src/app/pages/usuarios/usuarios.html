@@ -43,7 +43,7 @@
       </div>
       <div class="field">
         <label for="nuevo-password">Contraseña</label>
-        <input id="nuevo-password" type="password" [(ngModel)]="nuevo.password" placeholder="Mínimo 6 caracteres" />
+        <input id="nuevo-password" type="password" [(ngModel)]="nuevo.password" placeholder="Mín. 8 caracteres, letra y número" />
       </div>
       <div class="field">
         <label for="nuevo-rol">Rol</label>
@@ -106,6 +106,12 @@
 
   <div class="empty-state" *ngIf="!isLoading && usuarios.length === 0 && !errorMessage">
     No hay usuarios registrados.
+  </div>
+
+  <div class="pager" *ngIf="!isLoading && total > limite">
+    <button class="toggle-btn" (click)="paginaAnterior()" [disabled]="offset === 0">‹ Anterior</button>
+    <span>Página {{ paginaActual }} de {{ totalPaginas }} ({{ total }} usuarios)</span>
+    <button class="toggle-btn" (click)="paginaSiguiente()" [disabled]="offset + limite >= total">Siguiente ›</button>
   </div>
 </div>
 

@@ -1,4 +1,6 @@
+import hashlib
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -75,6 +77,20 @@ def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
+def validar_password(password: str) -> None:
+    """H6: política mínima de contraseñas (backend es la fuente autoritativa).
+
+    Mínimo 8 caracteres, con al menos una letra y un dígito. Lanza ValueError
+    con mensaje controlado (apto para detail 400) si no cumple.
+    """
+    if not password or len(password) < 8:
+        raise ValueError("La contraseña debe tener mínimo 8 caracteres.")
+    tiene_letra = any(c.isalpha() for c in password)
+    tiene_digito = any(c.isdigit() for c in password)
+    if not (tiene_letra and tiene_digito):
+        raise ValueError("La contraseña debe incluir al menos una letra y un número.")
+
+
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode(), password_hash.encode())
@@ -87,6 +103,89 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, _get_secret(), algorithm=ALGORITHM)
+
+
+def _ahora_naive_utc() -> datetime:
+    """MySQL DATETIME no guarda zona; se usa UTC naive en ambas direcciones."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
+def emitir_refresh_token(user_id: int) -> str:
+    """Crea un refresh token opaco (7 días) y devuelve el valor en claro (única vez)."""
+    raw = secrets.token_urlsafe(48)
+    expira = _ahora_naive_utc() + timedelta(days=settings.REFRESH_EXPIRE_DAYS)
+    execute_query(
+        "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+        (user_id, _hash_token(raw), expira),
+        fetch=False,
+    )
+    return raw
+
+
+def rotar_refresh_token(raw: str) -> tuple[int, str] | None:
+    """Valida un refresh token, lo revoca y emite uno nuevo (rotación).
+
+    Devuelve (user_id, nuevo_token) o None si es inválido/expirado/revocado.
+    """
+    rows = execute_query(
+        "SELECT id, user_id, expires_at, revoked FROM refresh_tokens WHERE token_hash = %s",
+        (_hash_token(raw),),
+    )
+    if not rows:
+        return None
+    fila = rows[0]
+    if fila.get("revoked") or not fila.get("expires_at") or fila["expires_at"] < _ahora_naive_utc():
+        return None
+    user_id = fila["user_id"]
+    execute_query("UPDATE refresh_tokens SET revoked = 1 WHERE id = %s", (fila["id"],), fetch=False)
+    return user_id, emitir_refresh_token(user_id)
+
+
+def revocar_refresh_tokens(user_id: int) -> None:
+    """Revoca todos los refresh tokens de un usuario (ej. tras cambiar la clave)."""
+    try:
+        execute_query(
+            "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = %s AND revoked = 0",
+            (user_id,),
+            fetch=False,
+        )
+    except Exception:
+        log.exception("Error revocando refresh tokens de user %s", user_id)
+
+
+def emitir_reset_token(user_id: int) -> str:
+    """Crea un token de recuperación de un solo uso y devuelve el valor en claro."""
+    raw = secrets.token_urlsafe(32)
+    expira = _ahora_naive_utc() + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
+    execute_query(
+        "INSERT INTO password_resets (user_id, token_hash, expires_at) VALUES (%s, %s, %s)",
+        (user_id, _hash_token(raw), expira),
+        fetch=False,
+    )
+    return raw
+
+
+def consumir_reset_token(raw: str) -> int | None:
+    """Valida un token de recuperación, lo marca como usado y devuelve el user_id."""
+    rows = execute_query(
+        "SELECT id, user_id, expires_at, used_at FROM password_resets WHERE token_hash = %s",
+        (_hash_token(raw or ""),),
+    )
+    if not rows:
+        return None
+    fila = rows[0]
+    if fila.get("used_at") or not fila.get("expires_at") or fila["expires_at"] < _ahora_naive_utc():
+        return None
+    execute_query(
+        "UPDATE password_resets SET used_at = %s WHERE id = %s",
+        (_ahora_naive_utc(), fila["id"]),
+        fetch=False,
+    )
+    return fila["user_id"]
 
 
 def verify_token(token: str) -> dict:
@@ -102,11 +201,11 @@ def _buscar_usuario_por_id(user_id: int) -> dict | None:
         rows = execute_query(
             """SELECT u.id, u.phone AS telefono, u.name AS nombre, u.email,
                       GROUP_CONCAT(DISTINCT r.codigo ORDER BY r.codigo SEPARATOR ',') AS roles_str
-               FROM users u
-               LEFT JOIN usuario_rol ur ON ur.user_id = u.id
-               LEFT JOIN rol r ON r.id = ur.rol_id
-               WHERE u.id = %s
-               GROUP BY u.id""",
+                FROM users u
+                LEFT JOIN usuario_rol ur ON ur.user_id = u.id
+                LEFT JOIN rol r ON r.id = ur.rol_id
+                WHERE u.id = %s
+                GROUP BY u.id""",
             (user_id,),
         )
     except Exception:
@@ -121,10 +220,26 @@ def _buscar_usuario_por_id(user_id: int) -> dict | None:
             "nombre": u["nombre"] or "",
             "email": u.get("email") or "",
             "rol": _resolve_mapus_role(role_list),
-            "activo": True,
+            "activo": _activo_usuario(u["id"]),
         }
 
     return None
+
+
+def _activo_usuario(user_id: int) -> bool:
+    """Lee la columna users.activo (migración idempotente en schema.py).
+
+    Devuelve True si la columna aún no existe (BD sin migrar) para no
+    bloquear logins durante el despliegue.
+    """
+    try:
+        rows = execute_query("SELECT activo FROM users WHERE id = %s", (user_id,))
+    except Exception:
+        return True
+    if not rows:
+        return False
+    val = rows[0].get("activo")
+    return bool(val) if val is not None else True
 
 
 def _buscar_usuario_por_login(identificador: str) -> dict | None:
@@ -153,7 +268,7 @@ def _buscar_usuario_por_login(identificador: str) -> dict | None:
             "email": u.get("email") or "",
             "password_hash": u.get("password"),
             "rol": _resolve_mapus_role(role_list),
-            "activo": True,
+            "activo": _activo_usuario(u["id"]),
         }
 
     return None

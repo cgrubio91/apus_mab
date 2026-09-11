@@ -2,7 +2,7 @@ import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { ApuService, FilterOptions, HistoricoPunto } from '../../services/apu';
+import { ApuService, FilterOptions, HistoricoDetalle, HistoricoInsumo, HistoricoPunto } from '../../services/apu';
 
 @Component({
   selector: 'app-historico-precios',
@@ -19,7 +19,21 @@ export class HistoricoPrecios implements OnInit {
   ciudades: string[] = [];
   proyectos: string[] = [];
 
+  /** Respuesta cruda del backend, sin filtrar por año. */
+  private puntosRaw: HistoricoPunto[] = [];
+  private insumosRaw: HistoricoInsumo[] = [];
+
+  /** Lo que pinta la plantilla: recalculado a partir de *Raw cada vez que cambia el año. */
   puntos: HistoricoPunto[] = [];
+  insumos: HistoricoInsumo[] = [];
+
+  /** Años presentes en la última búsqueda, más reciente primero. */
+  anios: string[] = [];
+  /** '' = todos los años. */
+  anioSeleccionado = '';
+
+  /** Descripciones desplegadas en la tabla, para ver su evolución mensual. */
+  expandidos = new Set<string>();
   isLoading = false;
   buscado = false;
   errorMessage = '';
@@ -50,7 +64,13 @@ export class HistoricoPrecios implements OnInit {
     this.errorMessage = '';
     this.apuService.getHistoricoPrecios(term, this.ciudad || undefined, this.proyecto || undefined).subscribe({
       next: (res) => {
-        this.puntos = res.data || [];
+        this.puntosRaw = res.data || [];
+        this.insumosRaw = res.insumos || [];
+        this.expandidos.clear();
+        this.anioSeleccionado = '';
+        this.anios = Array.from(new Set(this.puntosRaw.map(p => p.periodo.slice(0, 4))))
+          .sort((a, b) => b.localeCompare(a));
+        this.aplicarFiltroAnio();
         this.buscado = true;
         this.isLoading = false;
         this.cdr.markForCheck();
@@ -61,6 +81,51 @@ export class HistoricoPrecios implements OnInit {
         this.cdr.markForCheck();
       },
     });
+  }
+
+  /** Recalcula `puntos` e `insumos` a partir de *Raw, limitados al año elegido. */
+  onAnioChange(): void {
+    this.aplicarFiltroAnio();
+    this.cdr.markForCheck();
+  }
+
+  private aplicarFiltroAnio(): void {
+    const anio = this.anioSeleccionado;
+
+    this.puntos = anio ? this.puntosRaw.filter(p => p.periodo.startsWith(anio)) : this.puntosRaw;
+
+    const insumos: HistoricoInsumo[] = [];
+    for (const ins of this.insumosRaw) {
+      const detalle = anio ? ins.detalle.filter(d => d.anio === anio) : ins.detalle;
+      if (detalle.length === 0) continue; // el insumo no tuvo hallazgos en ese año
+      insumos.push({
+        insumo_descripcion: ins.insumo_descripcion,
+        ...this.consolidarDetalle(detalle),
+        ciudades: Array.from(new Set(detalle.map(d => d.ciudad))).sort(),
+        detalle,
+      });
+    }
+    insumos.sort((a, b) => b.precio_promedio - a.precio_promedio);
+    this.insumos = insumos;
+  }
+
+  /** Mismo criterio de consolidación que el backend: el promedio se pondera por
+   *  número de registros, no por cantidad de filas (un mes con 4.928 registros
+   *  pesa más que uno con 4). */
+  private consolidarDetalle(detalle: HistoricoDetalle[]): Pick<HistoricoInsumo, 'precio_promedio' | 'precio_minimo' | 'precio_maximo' | 'registros'> {
+    const registros = detalle.reduce((acc, d) => acc + d.registros, 0);
+    const suma = detalle.reduce((acc, d) => acc + d.precio_promedio * d.registros, 0);
+    return {
+      precio_promedio: registros ? suma / registros : 0,
+      precio_minimo: Math.min(...detalle.map(d => d.precio_minimo)),
+      precio_maximo: Math.max(...detalle.map(d => d.precio_maximo)),
+      registros,
+    };
+  }
+
+  /** Si la búsqueda trajo datos en algún año (independiente del filtro actual). */
+  get tieneResultados(): boolean {
+    return this.puntosRaw.length > 0;
   }
 
   get maxPrecio(): number {
@@ -85,16 +150,43 @@ export class HistoricoPrecios implements OnInit {
 
   private router = inject(Router);
 
-  /** Abre el Banco de APUs filtrado por el insumo, ciudad y proyecto buscados. */
-  verRegistros(p: HistoricoPunto): void {
-    const queryParams: Record<string, string> = { q: this.insumo.trim() };
+  /** Abre el Banco de APUs filtrado por el insumo, ciudad y proyecto buscados.
+   *  Si se pasa una descripción concreta, filtra por ella y no por el término buscado. */
+  verRegistros(descripcion?: string): void {
+    const queryParams: Record<string, string> = { q: descripcion || this.insumo.trim() };
     if (this.ciudad) queryParams['ciudad'] = this.ciudad;
     if (this.proyecto) queryParams['proyecto'] = this.proyecto;
     this.router.navigate(['/consulta-apus'], { queryParams });
   }
 
+  toggleInsumo(i: HistoricoInsumo): void {
+    if (this.expandidos.has(i.insumo_descripcion)) {
+      this.expandidos.delete(i.insumo_descripcion);
+    } else {
+      this.expandidos.add(i.insumo_descripcion);
+    }
+  }
+
+  estaExpandido(i: HistoricoInsumo): boolean {
+    return this.expandidos.has(i.insumo_descripcion);
+  }
+
   trackByPeriodo(_i: number, p: HistoricoPunto): string {
     return p.periodo;
+  }
+
+  trackByInsumo(_i: number, item: HistoricoInsumo): string {
+    return item.insumo_descripcion;
+  }
+
+  trackByDetalle(_i: number, d: HistoricoDetalle): string {
+    return d.periodo + '|' + d.ciudad;
+  }
+
+  /** Resumen corto de ciudades para la fila del insumo (sin expandir). */
+  resumenCiudades(i: HistoricoInsumo): string {
+    if (i.ciudades.length <= 2) return i.ciudades.join(', ');
+    return `${i.ciudades.slice(0, 2).join(', ')} +${i.ciudades.length - 2} más`;
   }
 }
 
