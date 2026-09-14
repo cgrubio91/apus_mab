@@ -11,11 +11,16 @@ import argparse
 import logging
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
 import mysql.connector
 import openpyxl
+
+# Permite importar src.* al ejecutar desde la raíz del repo.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.infrastructure.geo import canonicalizar_ciudad  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
 log = logging.getLogger("invias")
@@ -266,7 +271,10 @@ def read_labor_prices(ws):
 
 def extract_file(wb, dept, prov, filename):
     items = {}
-    ciudad = CIUDAD_MAP.get((dept, prov), "")
+    # canonicalizar_ciudad unifica con los nombres ya en uso en la BD (p.ej. "Medellin" ->
+    # "Medellín"); para las ~90 ciudades que no están en su diccionario, es un no-op
+    # (deja el mismo Title Case que ya devuelve CIUDAD_MAP).
+    ciudad = canonicalizar_ciudad(CIUDAD_MAP.get((dept, prov), "")) or ""
     idx_name = find_sheet(wb, "INDICE")
     if idx_name:
         ws = wb[idx_name]
