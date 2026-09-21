@@ -3,12 +3,18 @@ Tests del directorio de proveedores del IDU y del Banco de Precios de Referencia
 emparejamiento insumo → grupo, sugerencia de proveedores y uso del precio oficial.
 """
 
+import json
 import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.application.use_cases.constructor_propuesta import _aplicar_jerarquia_precios
+from src.application.use_cases.constructor_apu import _fila_desde_propuesta
+from src.application.use_cases.constructor_propuesta import (
+    _aplicar_jerarquia_precios,
+    _sugerir_proveedores,
+)
+from src.infrastructure.database.repositories.analisis_repository import _json_columna
 from src.infrastructure.database.repositories.proveedor_repository import (
     ProveedorRepository,
     _raiz,
@@ -131,7 +137,8 @@ def test_insumo_sin_precio_recibe_proveedores_sugeridos(monkeypatch):
 
 
 def test_precio_oficial_idu_entra_en_la_cascada(monkeypatch):
-    """Con precio en el BPR se usa como fuente, citando el código del insumo."""
+    """Con precio en el BPR se usa como fuente, citando el código del insumo. Y aun
+    así se sugiere a quién pedir la cotización, sin tocar la fuente del precio."""
     repo = _repo(monkeypatch)
 
     class SinPrecio:
@@ -156,3 +163,59 @@ def test_precio_oficial_idu_entra_en_la_cascada(monkeypatch):
     assert ins["unidad"] == "HR"
     assert "Banco de Precios IDU" in ins["fuente"]
     assert "6013" in ins["fuente"]
+    assert ins["grupo_proveedores"] == "EQUIPO PESADO"
+    assert ins["proveedores_sugeridos"][0]["nombre"] == "CENTRALQUIPOS SAS"
+
+
+def test_con_precio_se_sugiere_proveedor_sin_tocar_la_fuente(monkeypatch):
+    """Un insumo con precio no debe cambiar su fuente: la sugerencia solo se suma."""
+    repo = _repo(monkeypatch)
+    fila = {"descripcion": "MOTONIVELADORA 180 HP", "precio": 400000,
+            "fuente": "CYPE Colombia · zona Bogotá"}
+    _sugerir_proveedores(fila, "Bogotá", proveedor_repo_=repo)
+    assert fila["grupo_proveedores"] == "EQUIPO PESADO"
+    assert fila["proveedores_sugeridos"][0]["nombre"] == "CENTRALQUIPOS SAS"
+    assert fila["fuente"] == "CYPE Colombia · zona Bogotá"
+
+
+def test_sugerencia_no_reescribe_la_que_ya_existe():
+    fila = {"descripcion": "Bordillo A80", "precio_banco": 46992,
+            "proveedores_sugeridos": [{"nombre": "YA SUGERIDO"}], "grupo_proveedores": "X"}
+
+    class _RepoNuncaLlamado:
+        def sugerir_para_insumo(self, *a, **kw):
+            raise AssertionError("no debería consultar si ya hay sugerencia")
+
+    _sugerir_proveedores(fila, "Bogotá", proveedor_repo_=_RepoNuncaLlamado())
+    assert fila["proveedores_sugeridos"] == [{"nombre": "YA SUGERIDO"}]
+    assert fila["grupo_proveedores"] == "X"
+
+
+def test_sugerir_proveedores_acepta_clave_insumo_descripcion(monkeypatch):
+    """`_sugerir_proveedores` debe funcionar también con la fila ya persistida del
+    borrador (clave `insumo_descripcion`), no solo con la propuesta de la IA."""
+    repo = _repo(monkeypatch)
+    fila = {"insumo_descripcion": "Bordillo prefabricado A80", "precio_banco": None}
+    _sugerir_proveedores(fila, "Bogotá", proveedor_repo_=repo)
+    assert fila["grupo_proveedores"] == "BORDILLOS Y LOSETAS"
+    assert fila["proveedores_sugeridos"][0]["nombre"] == "INVERSIONES TJ"
+
+
+def test_fila_desde_propuesta_carrea_sugerencia_de_proveedores():
+    proveedores = [{"nombre": "INVERSIONES TJ", "municipio": "Bogotá", "telefono": "3143941329"}]
+    fila = _fila_desde_propuesta(
+        {"tipo_insumo": "Materiales", "descripcion": "Bordillo A80", "unidad": "UN",
+         "rendimiento": 1, "precio": None,
+         "grupo_proveedores": "BORDILLOS Y LOSETAS", "proveedores_sugeridos": proveedores},
+        item="NPC-1", items_descripcion="Ítem", item_unidad="UN",
+    )
+    assert fila["grupo_proveedores"] == "BORDILLOS Y LOSETAS"
+    assert fila["proveedores_sugeridos"] == proveedores
+
+
+def test_json_columna_serializa_listas_y_pasa_strings():
+    assert _json_columna(None) is None
+    assert _json_columna("") is None
+    assert _json_columna("PINTURAS") == "PINTURAS"
+    lista = [{"nombre": "EASY & CIA", "municipio": "Bogotá"}]
+    assert json.loads(_json_columna(lista)) == lista

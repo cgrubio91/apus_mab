@@ -27,6 +27,16 @@ from src.infrastructure.database.repositories.analisis_matching import (
 
 log = logging.getLogger("mapus.infrastructure.analisis_repo")
 
+
+def _json_columna(valor) -> Optional[str]:
+    """Serializa un list/dict para una columna JSON de MySQL (los strings se pasan tal cual)."""
+    if valor is None or valor == "":
+        return None
+    if isinstance(valor, (dict, list)):
+        return json.dumps(valor, ensure_ascii=False, default=str)
+    return str(valor)
+
+
 __all__ = [
     "AnalisisMySQLRepository",
     "analisis_repo",
@@ -133,12 +143,14 @@ class AnalisisMySQLRepository:
                                 item, items_descripcion, item_unidad,
                                 codigo_insumo, insumo_descripcion, insumo_unidad,
                                 rendimiento_insumo, precio_unitario_apu, precio_parcial_apu, tipo_insumo,
-                                precio_banco, rendimiento_banco, fuente_precio)
-                               VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s)""",
+                                precio_banco, rendimiento_banco, fuente_precio,
+                                grupo_proveedores, proveedores_sugeridos)
+                               VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s)""",
                             (solicitud_id, f.get("item"), f.get("items_descripcion"), f.get("item_unidad"),
                              f.get("codigo_insumo"), f.get("insumo_descripcion"), f.get("insumo_unidad"),
                              f.get("rendimiento_insumo"), f.get("tipo_insumo"),
-                             f.get("precio_banco"), f.get("rendimiento_banco"), f.get("fuente_precio")),
+                             f.get("precio_banco"), f.get("rendimiento_banco"), f.get("fuente_precio"),
+                             f.get("grupo_proveedores"), _json_columna(f.get("proveedores_sugeridos"))),
                         )
                     conn.commit()
         except Exception:
@@ -155,12 +167,14 @@ class AnalisisMySQLRepository:
                             item, items_descripcion, item_unidad,
                             codigo_insumo, insumo_descripcion, insumo_unidad,
                             rendimiento_insumo, precio_unitario_apu, precio_parcial_apu, tipo_insumo,
-                            precio_banco, rendimiento_banco, fuente_precio)
-                           VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s)""",
+                            precio_banco, rendimiento_banco, fuente_precio,
+                            grupo_proveedores, proveedores_sugeridos)
+                           VALUES (%s, 1, 'Estructura Constructor', %s, %s, %s, %s, %s, %s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s)""",
                         (solicitud_id, fila.get("item"), fila.get("items_descripcion"), fila.get("item_unidad"),
                          fila.get("codigo_insumo"), fila.get("insumo_descripcion"), fila.get("insumo_unidad"),
                          fila.get("rendimiento_insumo"), fila.get("tipo_insumo"),
-                         fila.get("precio_banco"), fila.get("rendimiento_banco"), fila.get("fuente_precio")),
+                         fila.get("precio_banco"), fila.get("rendimiento_banco"), fila.get("fuente_precio"),
+                         fila.get("grupo_proveedores"), _json_columna(fila.get("proveedores_sugeridos"))),
                     )
                     insumo_id = cursor.lastrowid
                     conn.commit()

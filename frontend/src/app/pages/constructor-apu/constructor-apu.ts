@@ -13,6 +13,8 @@ interface FilaPropuesta {
   precio: number | null;
   fuente: string;
   fuente_link: string;
+  grupoProveedores?: string;
+  proveedoresSugeridos?: any[];
 }
 
 interface BorradorResumen {
@@ -455,6 +457,8 @@ export class ConstructorApu implements OnInit, OnDestroy {
       precio: null,
       fuente: '',
       fuente_link: '',
+      grupoProveedores: '',
+      proveedoresSugeridos: [],
     });
   }
 
@@ -489,6 +493,8 @@ export class ConstructorApu implements OnInit, OnDestroy {
         precio: f.precio,
         fuente: f.fuente,
         fuente_link: f.fuente_link || '',
+        grupo_proveedores: f.grupoProveedores || null,
+        proveedores_sugeridos: f.proveedoresSugeridos?.length ? f.proveedoresSugeridos : null,
       })),
     };
     this.isLoading = true;
@@ -722,12 +728,33 @@ export class ConstructorApu implements OnInit, OnDestroy {
     return '';
   }
 
+  //** La columna JSON de proveedores llega como string desde la BD; se normaliza a array. */
+  private _normalizarProveedores(valor: any): any[] {
+    if (!valor) return [];
+    if (Array.isArray(valor)) return valor;
+    if (typeof valor === 'string') {
+      try {
+        const parsed = JSON.parse(valor);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch { return []; }
+    }
+    return [];
+  }
+
+  /** Convierte el contacto del proveedor en un enlace usable (mailto si no trae protocolo). */
+  enlaceWeb(valor?: string): string {
+    const t = (valor || '').trim();
+    if (!t) return '';
+    return /^(https?:|mailto:|tel:)/i.test(t) ? t : `mailto:${t}`;
+  }
+
   private _aplicarDetalleSolicitud(s: any): void {
     this.insumosBorrador = (s.insumos || [])
       .filter((ins: any) => !this._esIndirectoOAiu(ins.insumo_descripcion, ins.tipo_insumo))
       .map((ins: any) => ({
         ...ins,
         fuente_link: this._inferirFuenteLink(ins.fuente_precio, ins.fuente_link),
+        proveedores_sugeridos: this._normalizarProveedores(ins.proveedores_sugeridos),
       }));
     this.preciosContratista = {};
     for (const ins of this.insumosBorrador) {
@@ -769,6 +796,8 @@ export class ConstructorApu implements OnInit, OnDestroy {
         precio: i.precio ?? null,
         fuente: i.fuente || '',
         fuente_link: this._inferirFuenteLink(i.fuente, i.fuente_link),
+        grupoProveedores: i.grupo_proveedores || '',
+        proveedoresSugeridos: this._normalizarProveedores(i.proveedores_sugeridos),
       }));
     this.respuestasPreguntas = new Array(this.preguntasIa.length).fill('');
     this.isLoading = false;

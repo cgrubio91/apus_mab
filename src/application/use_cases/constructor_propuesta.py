@@ -431,6 +431,11 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
         if not desc:
             continue
 
+        # A quién pedir la cotización: el directorio IDU se sugiere para todos los
+        # insumos (tengan o no precio en el banco), porque el nombre del proveedor
+        # nunca va a coincidir literal con la descripción del insumo.
+        _sugerir_proveedores(ins, ciudad_txt, proveedor_repo_=proveedor_repo_)
+
         asignado = False
 
         # ── 1ª PRIORIDAD: CYPE COLOMBIA ──
@@ -509,11 +514,11 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
         if asignado:
             continue
 
-        # ── SIN PRECIO: al menos, a quién pedirle la cotización ──
+        # ── SIN PRECIO: queda pendiente de cotización por el contratista ──
         if not asignado:
             ins["precio"] = None
-            ins["fuente"] = "Pendiente cotización contratista"
-            _sugerir_proveedores(ins, ciudad_txt, proveedor_repo_=proveedor_repo_)
+            if not ins.get("fuente"):
+                ins["fuente"] = "Pendiente cotización contratista"
 
     return propuesta
 
@@ -561,25 +566,35 @@ def _usar_precio_idu(ins: dict, desc: str, proveedor_repo_=None) -> bool:
 def _sugerir_proveedores(ins: dict, ciudad: Optional[str], proveedor_repo_=None) -> None:
     """Adjunta al insumo los proveedores del directorio IDU que podrían cotizarlo.
 
-    No fija precio: el directorio no los tiene. Solo convierte un "pendiente de
-    cotización" en algo accionable para el residente.
+    Se llama para todos los insumos (haya o no precio): sirve de guía para pedir
+    la cotización al contratista. No fija precio: el directorio no los tiene. Solo
+    cuando el insumo quedó sin precio convierte la fuente en "Pendiente cotización
+    · Sugeridos: ..." (con precio, la fuente de la que salió se respeta).
     """
+    if ins.get("proveedores_sugeridos"):
+        return
     repo = _repo_proveedores(proveedor_repo_)
     if repo is None:
         return
+    desc = (ins.get("descripcion") or ins.get("insumo_descripcion") or "").strip()
+    if not desc:
+        return
     try:
-        sugerencia = repo.sugerir_para_insumo(ins.get("descripcion") or "", ciudad=ciudad)
+        sugerencia = repo.sugerir_para_insumo(desc, ciudad=ciudad)
     except Exception:
-        log.debug("No se pudieron sugerir proveedores para '%s'", ins.get("descripcion"), exc_info=True)
+        log.debug("No se pudieron sugerir proveedores para '%s'", desc, exc_info=True)
         return
     if not sugerencia:
         return
 
     ins["proveedores_sugeridos"] = sugerencia["proveedores"]
     ins["grupo_proveedores"] = sugerencia["grupo"]
-    nombres = ", ".join(p["nombre"] for p in sugerencia["proveedores"][:2])
-    if nombres:
-        ins["fuente"] = f"Pendiente cotización · Sugeridos: {nombres}"
+
+    tiene_precio = (float(ins.get("precio") or 0) > 0) or (float(ins.get("precio_banco") or 0) > 0)
+    if not tiene_precio:
+        nombres = ", ".join(p["nombre"] for p in sugerencia["proveedores"][:2])
+        if nombres:
+            ins["fuente"] = f"Pendiente cotización · Sugeridos: {nombres}"
 
 
 def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None,

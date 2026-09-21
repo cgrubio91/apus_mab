@@ -419,6 +419,48 @@ textarea {
   color: #9ca3af;
 }
 
+.prov-sugeridos {
+  font-size: 12px;
+
+  summary {
+    color: #2563eb;
+    cursor: pointer;
+    font-weight: 500;
+    list-style-position: inside;
+
+    &:hover {
+      color: #1d4ed8;
+      text-decoration: underline;
+    }
+  }
+
+  .prov-list {
+    margin: 6px 0 0;
+    padding-left: 0;
+    list-style: none;
+
+    li {
+      padding: 6px 8px;
+      border-left: 3px solid #dbeafe;
+      background: #f8fafc;
+      margin-bottom: 4px;
+      border-radius: 4px;
+      line-height: 1.4;
+
+      a {
+        display: inline-block;
+        color: #2563eb;
+        text-decoration: none;
+        word-break: break-all;
+
+        &:hover {
+          text-decoration: underline;
+        }
+      }
+    }
+  }
+}
+
 .center {
   text-align: center;
 }

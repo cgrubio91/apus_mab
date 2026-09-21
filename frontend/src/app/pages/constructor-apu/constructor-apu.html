@@ -143,7 +143,8 @@
           <thead>
             <tr>
               <th></th><th>Tipo</th><th>Descripción</th><th>Und.</th>
-              <th>Rendimiento</th><th>Precio banco</th><th>Parcial</th><th>Fuente</th><th></th>
+              <th>Rendimiento</th><th>Precio banco</th><th>Parcial</th><th>Fuente</th>
+              <th>Proveedores sugeridos</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -171,9 +172,23 @@
                    class="fuente-link">{{ f.fuente || '—' }}</a>
                 <ng-template #fuentePlain>{{ f.fuente || '—' }}</ng-template>
               </td>
+              <td>
+                <details class="prov-sugeridos" *ngIf="f.proveedoresSugeridos && f.proveedoresSugeridos.length">
+                  <summary>{{ f.grupoProveedores || 'A quién pedir cotización' }}</summary>
+                  <ul class="prov-list">
+                    <li *ngFor="let p of f.proveedoresSugeridos">
+                      <strong>{{ p.nombre }}</strong>
+                      <span *ngIf="p.municipio"> · {{ p.municipio }}</span>
+                      <span *ngIf="p.telefono"><br />📞 {{ p.telefono }}</span>
+                      <a *ngIf="p.web_correo" [href]="enlaceWeb(p.web_correo)" target="_blank" rel="noopener">{{ p.web_correo }}</a>
+                    </li>
+                  </ul>
+                </details>
+                <span *ngIf="!f.proveedoresSugeridos || !f.proveedoresSugeridos.length" class="muted">—</span>
+              </td>
               <td><button class="icon-btn" type="button" title="Quitar fila" (click)="eliminarFila(i)">✕</button></td>
             </tr>
-            <tr *ngIf="!filas.length"><td colspan="9" class="muted center">Sin propuesta todavía.</td></tr>
+            <tr *ngIf="!filas.length"><td colspan="10" class="muted center">Sin propuesta todavía.</td></tr>
           </tbody>
         </table>
       </div>
@@ -275,6 +290,7 @@
           <tr>
             <th>Descripción</th><th>Und.</th><th>Rendimiento</th>
             <th>Precio banco</th><th>Precio contratista *</th><th>Fuente banco</th>
+            <th>A quién pedir cotización</th>
           </tr>
         </thead>
         <tbody>
@@ -295,6 +311,20 @@
                  [target]="ins.fuente_link.startsWith('http') ? '_blank' : '_self'"
                  class="fuente-link">{{ ins.fuente_precio || '—' }}</a>
               <ng-template #fuenteBancoPlain>{{ ins.fuente_precio || '—' }}</ng-template>
+            </td>
+            <td>
+              <details class="prov-sugeridos" *ngIf="ins.proveedores_sugeridos && ins.proveedores_sugeridos.length">
+                <summary>{{ ins.grupo_proveedores || 'Sugerencia del directorio IDU' }}</summary>
+                <ul class="prov-list">
+                  <li *ngFor="let p of ins.proveedores_sugeridos">
+                    <strong>{{ p.nombre }}</strong>
+                    <span *ngIf="p.municipio"> · {{ p.municipio }}</span>
+                    <span *ngIf="p.telefono"><br />📞 {{ p.telefono }}</span>
+                    <a *ngIf="p.web_correo" [href]="enlaceWeb(p.web_correo)" target="_blank" rel="noopener">{{ p.web_correo }}</a>
+                  </li>
+                </ul>
+              </details>
+              <span *ngIf="!ins.proveedores_sugeridos || !ins.proveedores_sugeridos.length" class="muted">—</span>
             </td>
           </tr>
         </tbody>

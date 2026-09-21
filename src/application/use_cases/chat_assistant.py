@@ -4,12 +4,14 @@ Natural language → SQL → Results → Summary pipeline.
 Features: semantic cache, multi-turn refinement, stage tracking, unified response.
 """
 
+import html
 import json
 import logging
 import re
 import time
 import hashlib
 from collections import OrderedDict
+from typing import Optional
 
 from src.application.use_cases.assistant_common import (
     build_schema_prompt,
@@ -29,6 +31,131 @@ MAX_RESULTS_FOR_SUMMARY = 40
 MAX_FIELD_LENGTH = 300
 CACHE_TTL = 300  # 5 minutes
 CACHE_MAX_ENTRIES = 500
+
+# Marca con la que la IA pide al backend la sugerencia de proveedores del
+# directorio IDU para un insumo (emparejamiento fuzzy que el SQL no puede hacer).
+_MARCA_SUGERIR_PROVEEDORES = re.compile(r"SUGERIR_PROVEEDORES\s*[:\-]?\s*([^\n]+)", re.IGNORECASE)
+
+# Instrucción que se inyecta en el prompt de generación de SQL.
+_INSTRUCCION_MARCA_SUGERENCIA = """CONSULTAS ESPECIALES (devuélvelas SIN SQL):
+Si el usuario pregunta A QUIÉN pedirle cotización de un insumo (p.ej. "¿a quién le pido cotización
+de pintura anticorrosiva?", "¿qué proveedores venden bordillos prefabricados?", "¿qué proveedor
+suministra el neopreno?"), NO generes SQL: responde ÚNICAMENTE con la línea
+SUGERIR_PROVEEDORES: <descripción del insumo> | <ciudad si la menciona>
+(sin SQL, sin markdown y sin texto adicional).
+NO uses esta marca para preguntas sobre contratistas/proveedores de contratos (esa info va en
+precio_referencia_externa.proveedor y se resuelve con SQL normal)."""
+
+
+def _marca_sugerencia_insumo(texto: str) -> Optional[tuple[str, Optional[str]]]:
+    """Extrae (descripcion, ciudad) de la línea 'SUGERIR_PROVEEDORES: ... | ciudad'."""
+    m = _MARCA_SUGERIR_PROVEEDORES.search(texto or "")
+    if not m:
+        return None
+    partes = [p.strip() for p in m.group(1).split("|")]
+    descripcion = (partes[0] or "").strip()
+    if not descripcion:
+        return None
+    ciudad = (partes[1] or "").strip() if len(partes) > 1 else None
+    return descripcion, ciudad or None
+
+
+def _buscar_sugerencia_proveedores(descripcion: str, ciudad: Optional[str] = None) -> Optional[dict]:
+    """Sugerencia del directorio IDU: grupo + proveedores que pueden cotizar el insumo."""
+    try:
+        from src.infrastructure.database.repositories.proveedor_repository import (
+            proveedor_repo,
+        )
+        return proveedor_repo.sugerir_para_insumo(descripcion, ciudad=ciudad, limite=3)
+    except Exception:
+        log.debug("No se pudieron sugerir proveedores para '%s'", descripcion, exc_info=True)
+        return None
+
+
+def _fila_proveedor_html(p: dict) -> str:
+    def _esc(v):
+        return html.escape(str(v or ""), quote=True)
+
+    nombre = _esc(p.get("nombre"))
+    ubicacion = _esc(", ".join(x for x in (p.get("municipio"), p.get("departamento")) if x))
+    telefono = _esc(p.get("telefono"))
+    contacto = _esc(p.get("contacto"))
+    web = (p.get("web_correo") or "").strip()
+    celda = contacto or ""
+    if web:
+        enlace = web if web.startswith(("http://", "https://", "mailto:")) else f"mailto:{web}"
+        celda = f'<a href="{html.escape(enlace, quote=True)}" target="_blank" rel="noopener">{_esc(web)}</a>'
+        if contacto:
+            celda += f" · {contacto}"
+    return (f"<tr><td>{nombre}</td><td>{ubicacion}</td>"
+            f"<td>{telefono}</td><td>{celda}</td></tr>")
+
+
+def _redactar_respuesta_sugerencia(
+    descripcion: str, ciudad: Optional[str], sugerencia: dict
+) -> tuple[str, str, list[dict]]:
+    """Responde con el directorio de proveedores sugerido. Devuelve (reply, sql_historial, results)."""
+    proveedores = (sugerencia or {}).get("proveedores") or []
+    if not proveedores:
+        base = (f"No encontré proveedores del directorio IDU para cotizar '{descripcion}'"
+                + (f" en {ciudad}." if ciudad else "."))
+        reply = (base + " Prueba con otra descripción del insumo, o pregúntame por el directorio de "
+                 "proveedores de una ciudad (tabla proveedor) o por precios oficiales del BPR "
+                 "(insumo_referencia_idu).")
+        return reply, "", []
+
+    grupo = (sugerencia or {}).get("grupo")
+    insumo_idu = (sugerencia or {}).get("insumo_idu")
+    encabezado = f"Para cotizar <strong>{html.escape(descripcion, quote=True)}</strong>"
+    if grupo:
+        encabezado += f" (grupo: {html.escape(grupo, quote=True)})"
+    if insumo_idu:
+        encabezado += f", el BPR lo registra como {html.escape(insumo_idu, quote=True)}"
+    if ciudad:
+        encabezado += f". Priorizando proveedores de {html.escape(ciudad, quote=True)}"
+    filas = "".join(_fila_proveedor_html(p) for p in proveedores)
+    reply = (
+        f"{encabezado}, el directorio de cotizaciones del IDU sugiere pedir cotización a:\n"
+        '<table border="1"><tr><th>Proveedor</th><th>Ubicación</th><th>Teléfono</th>'
+        f'<th>Contacto / Web</th></tr>{filas}</table>'
+    )
+    sql_hist = f"Sugerencia de proveedores para '{descripcion}'" + (f" en {ciudad}" if ciudad else "")
+    return reply, sql_hist, proveedores
+
+
+def _procesar_sugerencia_proveedores(marca: tuple[str, Optional[str]], message: str, telefono: str,
+                                     stages: list[dict], tiene_contexto: bool) -> dict:
+    """Camino alternativo al SQL: sugerencia de proveedores del directorio IDU."""
+    descripcion, ciudad = marca
+    t0 = _total_seconds()
+    sugerencia = _buscar_sugerencia_proveedores(descripcion, ciudad)
+    stages.append({"phase": "Buscando proveedores en el directorio IDU", "duration_ms": _total_seconds() - t0})
+
+    reply, sql_hist, proveedores = _redactar_respuesta_sugerencia(descripcion, ciudad, sugerencia)
+    grupo = (sugerencia or {}).get("grupo") if sugerencia else None
+
+    if proveedores:
+        followups = [
+            f"Muéstrame los proveedores del grupo '{grupo}'",
+            f"¿Cuál es el precio oficial del BPR del insumo {descripcion}?",
+            "Lista todos los grupos que abastece uno de estos proveedores",
+        ]
+    else:
+        followups = [
+            "¿Qué proveedores del directorio hay en Bogotá?",
+            "Muéstrame los precios oficiales del BPR de un insumo",
+        ]
+
+    _guardar_conversacion(telefono, message, sql_hist, reply)
+    return {
+        "reply": reply,
+        "sql_query": None,
+        "results": proveedores,
+        "stages": stages,
+        "cached": False,
+        "tiene_contexto": tiene_contexto,
+        "suggested_followups": followups,
+    }
 
 
 class ChatCache:
@@ -134,6 +261,8 @@ def process_chat_message(message: str, telefono: str, nombre: str) -> dict:
 
 {schema_info}
 
+{_INSTRUCCION_MARCA_SUGERENCIA}
+
 {ctx}
 
 Pregunta:
@@ -142,9 +271,15 @@ Pregunta:
 SQL:
 """
         raw_sql = _gemini_generate(prompt_sql)
-        sql = strip_sql_markdown(raw_sql)
         stages.append({"phase": "Generando SQL", "duration_ms": _total_seconds() - t0})
 
+        marca = _marca_sugerencia_insumo(raw_sql)
+        if marca:
+            return _procesar_sugerencia_proveedores(
+                marca, message, telefono, stages, tiene_contexto
+            )
+
+        sql = strip_sql_markdown(raw_sql)
         sql = _normalize_sql_for_mysql(sql)
 
         if sql.strip().upper() == "INVALID_QUERY":

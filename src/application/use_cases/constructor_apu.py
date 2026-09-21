@@ -46,6 +46,7 @@ from src.application.use_cases.constructor_propuesta import (
     _referencias_para_propuesta,
     _rellenar_precios_reales,
     _rendimientos_por_insumo,
+    _sugerir_proveedores,
     _validar_solicitud_borrador,
     _validar_solicitud_constructor,
     refinar_propuesta,
@@ -87,6 +88,7 @@ __all__ = [
     "_rellenar_precios_reales",
     "_rendimientos_por_insumo",
     "_respuesta_propuesta",
+    "_sugerir_proveedores",
     "_validar_solicitud_borrador",
     "_validar_solicitud_constructor",
     "actualizar_justificacion",
@@ -250,6 +252,9 @@ def _fila_desde_propuesta(ins: dict, item: str, items_descripcion: str, item_uni
         "precio_banco": precio,
         "rendimiento_banco": rendimiento,
         "fuente_precio": (ins.get("fuente") or "").strip() or None,
+        # Sugerencia de proveedores del directorio IDU (a quién pedir cotización).
+        "grupo_proveedores": (ins.get("grupo_proveedores") or "").strip() or None,
+        "proveedores_sugeridos": ins.get("proveedores_sugeridos"),
     }
 
 
@@ -269,6 +274,14 @@ def aplicar_estructura(solicitud_id: int, propuesta: dict, usuario_rol: str = ""
     item_unidad = (propuesta.get("unidad") or solicitud.get("unidad_actividad") or "").strip()
 
     filas = [_fila_desde_propuesta(i, codigo_item, items_descripcion, item_unidad) for i in insumos]
+
+    # Sugerencia de proveedores del directorio IDU para todas las filas que aún no
+    # la tengan (añadidas o editadas manualmente): el paso de precios del
+    # contratista sabe a quién pedir la cotización, haya o no precio en el banco.
+    ciudad = (solicitud.get("ciudad") or "").strip() or None
+    for f in filas:
+        _sugerir_proveedores(f, ciudad)
+
     analisis_repo.reemplazar_insumos_estructura(solicitud_id, filas)
     analisis_repo.actualizar_tipo_comparacion(solicitud_id, "apu")
     analisis_repo.insertar_historial(

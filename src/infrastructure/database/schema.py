@@ -173,6 +173,8 @@ SCHEMA_STATEMENTS = [
         precio_unitario_apu DECIMAL(30,10),
         precio_parcial_apu DECIMAL(30,10),
         tipo_insumo VARCHAR(100),
+        grupo_proveedores VARCHAR(255) NULL,
+        proveedores_sugeridos JSON NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (solicitud_id) REFERENCES solicitudes_apu(id) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -436,6 +438,9 @@ SCHEMA_STATEMENTS = [
     "ALTER TABLE solicitud_insumos ADD COLUMN precio_banco DECIMAL(30,10) NULL",
     "ALTER TABLE solicitud_insumos ADD COLUMN rendimiento_banco DECIMAL(30,10) NULL",
     "ALTER TABLE solicitud_insumos ADD COLUMN fuente_precio VARCHAR(255) NULL",
+    # Sugerencia de proveedores del directorio IDU (a quién pedir cotización).
+    "ALTER TABLE solicitud_insumos ADD COLUMN grupo_proveedores VARCHAR(255) NULL",
+    "ALTER TABLE solicitud_insumos ADD COLUMN proveedores_sugeridos JSON NULL",
 
     # ── Migración: vínculo real (FK lógica) entre el banco de APUs y proyectos,
     # para poder asignar filas de `apus` a un proyecto sin depender solo del texto

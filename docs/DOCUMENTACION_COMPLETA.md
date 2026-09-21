@@ -647,7 +647,9 @@ El asistente cuenta con acceso multi-fuente a 5 tablas permitidas (`apus`, `prec
 | `/constructor-apu/{id}/memoria-pdf`            | GET     | Descarga memoria técnica PDF                                    | user          |
 | `/constructor-apu/{id}/export-excel`           | GET     | Descarga APU Excel con fórmulas                                 | user          |
 
-**Columnas nuevas:** `solicitudes_apu.origen ('carga'|'constructor')`, `descripcion_actividad`, `unidad_actividad`, `codigo_item`, `ciudad`; `solicitud_insumos.precio_banco`, `rendimiento_banco`, `fuente_precio`. Estado inicial nuevo: `borrador`.
+**Columnas nuevas:** `solicitudes_apu.origen ('carga'|'constructor')`, `descripcion_actividad`, `unidad_actividad`, `codigo_item`, `ciudad`; `solicitud_insumos.precio_banco`, `rendimiento_banco`, `fuente_precio`, `grupo_proveedores` (grupo de proveedores del directorio IDU sugerido), `proveedores_sugeridos` (JSON con el listado a quién pedir cotización). Estado inicial nuevo: `borrador`.
+
+> **Sugerencia de proveedores:** para TODOS los insumos (hayan conseguido precio o no), `_sugerir_proveedores` (constructor_propuesta.py) consulta `ProveedorRepository.sugerir_para_insumo()` (emparejamiento fuzzy insumo→grupo→proveedores del directorio IDU) y adjunta `grupo_proveedores` + `proveedores_sugeridos` a modo de guía de "a quién pedir cotización". Solo en insumos SIN precio la fuente pasa a "Pendiente cotización · Sugeridos: ...". Se persiste al guardar estructura y se muestra en el constructor (pasos 2 y 3). El chat NL→SQL detecta la intención de "a quién pedir cotización" y responde sin SQL mediante la marca `SUGERIR_PROVEEDORES: <descripción> | <ciudad>` (chat_assistant.py).
 
 > Los roles de interventoría traducen a niveles MAPUS para este flujo: `residente`→analista, `director`→subgerente, `inspector`→contraparte (ver `EQUIVALENCIA_ROLES_INTERVENTORIA` en `src/presentation/auth.py`).
 
