@@ -25,7 +25,16 @@ log = logging.getLogger("mapus.application.ingesta_referencias")
 def ingerir_secop(keyword: str, ciudad: Optional[str] = None,
                   desde_fecha: Optional[str] = None, limite: int = 200,
                   source: Optional[SecopSource] = None) -> dict:
-    """Busca en SECOP II por término y guarda las referencias (idempotente).
+    """DESACTIVADO (2026-09-21) — no se invoca desde ninguna parte de la aplicación.
+
+    El open data de SECOP II solo publica contratos completos (licitaciones de
+    cientos de millones, sin unidad ni desglose), así que nunca aportó un precio
+    unitario: la cascada los descartaba por `granularidad == "contrato"`. Se quitó
+    del scheduler, de la jerarquía de precios, de los prompts de la IA y del
+    frontend. Se conserva por si se retoma con el dataset de ÍTEMS del contrato,
+    que sí tendría granularidad de insumo.
+
+    Busca en SECOP II por término y guarda las referencias (idempotente).
 
     Args:
         keyword: término de búsqueda (objeto del contrato).

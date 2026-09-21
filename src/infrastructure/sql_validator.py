@@ -20,6 +20,10 @@ ALLOWED_TABLES = {
     "indice_costos",
     "insumo_maestro",
     "precio_insumo_historico",
+    # Directorio de proveedores y precios de referencia del IDU.
+    "proveedor",
+    "proveedor_grupo",
+    "insumo_referencia_idu",
 }
 
 DANGEROUS_FUNCTIONS = re.compile(

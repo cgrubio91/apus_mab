@@ -344,6 +344,65 @@ SCHEMA_STATEMENTS = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     """,
 
+    # ── Directorio de proveedores de cotizaciones (IDU) ──
+    # Fuente: "Visor directorio de proveedores de cotizaciones". No trae precios:
+    # responde "a quién pedirle cotización", no "cuánto cuesta".
+    """
+    CREATE TABLE IF NOT EXISTS proveedor (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        municipio VARCHAR(120),
+        departamento VARCHAR(120),
+        direccion TEXT,
+        telefono VARCHAR(255),
+        web_correo TEXT,
+        contacto VARCHAR(255),
+        cotizo TINYINT(1) DEFAULT 0,
+        fuente VARCHAR(80) DEFAULT 'Directorio IDU',
+        periodo VARCHAR(30),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_proveedor_nombre (nombre),
+        KEY idx_proveedor_municipio (municipio),
+        KEY idx_proveedor_departamento (departamento)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
+    # Un proveedor abastece varios grupos (Homecenter aparece en 24).
+    """
+    CREATE TABLE IF NOT EXISTS proveedor_grupo (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        proveedor_id INT NOT NULL,
+        grupo VARCHAR(180) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_proveedor_grupo (proveedor_id, grupo),
+        KEY idx_proveedor_grupo_grupo (grupo),
+        CONSTRAINT fk_proveedor_grupo_proveedor FOREIGN KEY (proveedor_id)
+            REFERENCES proveedor (id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
+    # ── Banco de Precios de Referencia del IDU (BPR) ──
+    # Precio oficial por insumo. `grupo` es la misma llave que en `proveedor_grupo`,
+    # así que sirve de puente entre un insumo y quién puede suministrarlo.
+    """
+    CREATE TABLE IF NOT EXISTS insumo_referencia_idu (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        codigo VARCHAR(40) NOT NULL,
+        grupo VARCHAR(180),
+        nombre TEXT NOT NULL,
+        unidad VARCHAR(40),
+        precio DECIMAL(30,10),
+        origen VARCHAR(60),
+        periodo VARCHAR(60),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uni_insumo_idu_codigo (codigo),
+        KEY idx_insumo_idu_grupo (grupo),
+        FULLTEXT KEY ftx_insumo_idu_nombre (nombre)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """,
+
     # ── Índices adicionales ──
 
     "CREATE INDEX idx_apus_proyecto ON apus (nombre_proyecto(100))",

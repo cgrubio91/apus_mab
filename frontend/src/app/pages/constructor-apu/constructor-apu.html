@@ -54,7 +54,12 @@
       <div class="retry-progress-bar" *ngIf="retryCountdown > 0">
         <div class="retry-bar-fill" [style.width.%]="(1 - retryCountdown / 15) * 100"></div>
       </div>
-      <span class="scraping-hint">{{ retryCountdown > 0 ? 'El servicio de IA está saturado. Se reintentará automáticamente.' : 'Consultando CYPE Colombia, SECOP II y banco histórico' }}</span>
+      <span class="scraping-hint">{{ retryCountdown > 0 ? 'El servicio de IA está saturado. Se reintentará automáticamente.' : 'Consultando CYPE Colombia y banco histórico' }}</span>
+      <p class="scraping-libre" *ngIf="propuestaEnSegundoPlano">
+        <span class="material-symbols-outlined">notifications_active</span>
+        Puedes salir de esta pantalla: el proceso sigue en el servidor y te avisaremos
+        con una notificación cuando la propuesta esté lista.
+      </p>
     </div>
   </div>
 

@@ -198,7 +198,7 @@ INSTUCCIONES DE FORMATO:
 - Si hay datos duplicados, agrupa y muestra valores únicos.
 - No repitas la misma información.
 - Si los datos contienen un desglose de insumos por ítem (múltiples filas por ítem), PRESENTA TODOS los insumos de CADA ítem. No omitas ninguno. Agrupa por ítem y muestra cada insumo con su tipo, descripción y precio parcial.
-- Si la consulta compara o cruza fuentes (por ejemplo apus vs precio_referencia_externa o índices DANE), ACLARA explícitamente qué precio es 'interno (banco aprobado)' y cuál es 'de mercado/externo' indicando su respectiva fuente (SECOP II, CYPE Colombia, Constructor Homecenter, ANI, etc.).
+- Si la consulta compara o cruza fuentes (por ejemplo apus vs precio_referencia_externa o índices DANE), ACLARA explícitamente qué precio es 'interno (banco aprobado)' y cuál es 'de mercado/externo' indicando su respectiva fuente (CYPE Colombia, Constructor Homecenter, ANI, etc.).
 - Al final de tu respuesta, sugiere 2-3 preguntas de seguimiento útiles y naturales, separadas por "|". Ejemplo: "PREGUNTAS:¿Cuál es el precio unitario de cada uno?|Compara los costos entre estos dos proyectos|Muéstrame solo los insumos de tipo Equipos"
   Si no hay datos suficientes para sugerencias útiles, omite esta sección.
 

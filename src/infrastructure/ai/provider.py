@@ -24,9 +24,29 @@ SESSION = requests.Session()
 
 # Retry settings for transient Gemini errors (429, 503, 500)
 _GEMINI_RETRY_CODES = {429, 500, 503}
-_GEMINI_MAX_RETRIES = 5
+_GEMINI_MAX_RETRIES = 3
 _GEMINI_BASE_DELAY = 2.0   # seconds
-_GEMINI_MAX_DELAY = 60.0   # seconds
+_GEMINI_MAX_DELAY = 8.0    # seconds
+
+# Tope de tiempo total gastado reintentando. Cuando Gemini está saturado tarda ~45s en
+# devolver cada 503, así que 5 reintentos dejaban la petición colgada >3 min y el
+# navegador cortaba antes de recibir la respuesta (el usuario veía "la IA no pudo
+# generar la propuesta" aunque el backend terminara en 200). Rindiéndose rápido, el
+# endpoint devuelve 503 y el frontend hace su propio reintento con cuenta regresiva.
+_GEMINI_RETRY_BUDGET = 45.0  # seconds
+
+# Tope para una generación completa, reintentos externos incluidos. `generate_text`
+# envuelve a `_call_gemini`, así que sin esto los dos bucles se multiplican: con
+# Gemini saturado (~60s por 503) eran 4 intentos x ~70s = más de 4 minutos, con el
+# navegador cortando mucho antes. El presupuesto solo frena REINTENTOS; nunca
+# interrumpe una llamada en curso que puede terminar bien.
+_GENERACION_PRESUPUESTO = 100.0  # seconds
+
+
+def _es_saturacion(exc: Exception) -> bool:
+    """True si el error es 'servicio ocupado' (429/503), no un fallo puntual."""
+    resp = getattr(exc, "response", None)
+    return bool(resp is not None and getattr(resp, "status_code", None) in (429, 503))
 
 
 def _backoff_delay(attempt: int, base: float = 3.0, cap: float = 30.0) -> float:
@@ -56,10 +76,25 @@ class AIProvider:
     def _get_ollama_model(self) -> str:
         return settings.OLLAMA_MODEL or "qwen2.5-coder:7b"
 
-    def _call_gemini(self, payload: dict, timeout: int = 300) -> dict:
-        """Call Gemini API with built-in retry for transient errors (429/500/503)."""
+    def _call_gemini(self, payload: dict, timeout: int = 300,
+                     retry_budget: float = _GEMINI_RETRY_BUDGET) -> dict:
+        """Call Gemini API with built-in retry for transient errors (429/500/503).
+
+        `retry_budget` acota el tiempo TOTAL de reintentos; al agotarse se abandona
+        aunque queden intentos, para no dejar colgada la petición del usuario.
+        """
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{self._get_gemini_model()}:generateContent"
         last_exc = None
+        inicio = time.monotonic()
+
+        def _presupuesto_agotado(delay: float) -> bool:
+            if time.monotonic() - inicio + delay <= retry_budget:
+                return False
+            log.warning(
+                "Gemini sigue saturado tras %.0fs; se abandona el reintento para no colgar la petición.",
+                time.monotonic() - inicio,
+            )
+            return True
 
         for attempt in range(_GEMINI_MAX_RETRIES):
             try:
@@ -79,6 +114,8 @@ class AIProvider:
                         f"Gemini API error {resp.status_code}: {resp.text[:200]}",
                         response=resp,
                     )
+                    if _presupuesto_agotado(delay):
+                        break
                     time.sleep(delay)
                     continue
 
@@ -92,6 +129,8 @@ class AIProvider:
                     attempt + 1, _GEMINI_MAX_RETRIES, delay, str(e)[:100],
                 )
                 last_exc = e
+                if _presupuesto_agotado(delay):
+                    break
                 time.sleep(delay)
             except requests.exceptions.Timeout as e:
                 delay = _backoff_delay(attempt, _GEMINI_BASE_DELAY, _GEMINI_MAX_DELAY)
@@ -100,6 +139,8 @@ class AIProvider:
                     attempt + 1, _GEMINI_MAX_RETRIES, delay,
                 )
                 last_exc = e
+                if _presupuesto_agotado(delay):
+                    break
                 time.sleep(delay)
 
         # All retries exhausted
@@ -131,9 +172,11 @@ class AIProvider:
             return None
         return "".join(p.get("text", "") for p in parts).strip()
 
-    def generate_text(self, prompt: str, system: Optional[str] = None, timeout: int = 120) -> str:
+    def generate_text(self, prompt: str, system: Optional[str] = None, timeout: int = 120,
+                      presupuesto: float = _GENERACION_PRESUPUESTO) -> str:
         provider = self._get_provider()
         max_attempts = 4
+        inicio = time.monotonic()
 
         for attempt in range(max_attempts):
             try:
@@ -154,16 +197,40 @@ class AIProvider:
                 payload = {"contents": [{"parts": [{"text": prompt}]}]}
                 if system:
                     payload["systemInstruction"] = {"parts": [{"text": system}]}
-                data = self._call_gemini(payload, timeout)
+                # El primer intento conserva su timeout completo (una extracción de
+                # documento grande puede tardar minutos y terminar bien). Los
+                # reintentos se acotan a lo que quede de presupuesto: si no, cada
+                # uno puede volver a consumir el timeout entero.
+                restante = presupuesto - (time.monotonic() - inicio)
+                timeout_intento = timeout if attempt == 0 else max(15, int(restante))
+                data = self._call_gemini(
+                    payload, timeout_intento,
+                    retry_budget=_GEMINI_RETRY_BUDGET if attempt == 0 else max(5.0, restante),
+                )
                 text = self._safe_extract_gemini_text(data)
                 if text is None:
                     raise RuntimeError("Gemini devolvió una estructura sin fragmentos de texto válidos.")
                 return text
-            except Exception:
+            except Exception as e:
                 log.exception("Text generation attempt %d/%d failed", attempt + 1, max_attempts)
                 if attempt == max_attempts - 1:
                     raise
+                # Saturación del proveedor: `_call_gemini` ya reintentó con su propio
+                # presupuesto. Insistir aquí solo alarga la espera del usuario; es
+                # mejor devolver el 503 y que el frontend reintente, que ya lo hace
+                # con cuenta regresiva visible.
+                if _es_saturacion(e):
+                    log.warning("Proveedor de IA saturado; se devuelve el error sin reintentar de nuevo.")
+                    raise
                 delay = _backoff_delay(attempt, 3.0, 24.0)
+                transcurrido = time.monotonic() - inicio
+                if transcurrido + delay > presupuesto:
+                    log.warning(
+                        "Generación abandonada tras %.0fs (presupuesto %.0fs): se devuelve el "
+                        "error para que el cliente reintente, en vez de seguir esperando.",
+                        transcurrido, presupuesto,
+                    )
+                    raise
                 log.info("Waiting %.1fs before retry...", delay)
                 time.sleep(delay)
 

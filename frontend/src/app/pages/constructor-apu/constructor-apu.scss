@@ -946,3 +946,23 @@ textarea {
     background: #6d28d9 !important;
   }
 }
+
+// Aviso de que la propuesta sigue calculándose aunque se salga de la vista.
+.scraping-libre {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #eef6ff;
+  border: 1px solid #cfe3fb;
+  color: #2c5f9e;
+  font-size: 12px;
+  line-height: 1.4;
+
+  .material-symbols-outlined {
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+}

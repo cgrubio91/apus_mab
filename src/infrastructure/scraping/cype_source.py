@@ -8,6 +8,8 @@ rendimientos y precios en COP).
 
 import logging
 import re
+import time
+import unicodedata
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -21,18 +23,70 @@ log = logging.getLogger("mapus.infrastructure.cype")
 
 FUENTE = "CYPE Colombia"
 BASE_SEARCH_API = "https://coregpaccount.cype.com/api/search"
+# Portada del generador de precios de Colombia, como enlace de respaldo.
+# (OJO: "generadordeprecios.info/obra_nueva/Colombia.html" responde 404 desde 2026.)
+BASE_WEB = "https://colombia.generadordeprecios.info/"
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json, text/plain, */*",
 }
 
-# Tarifas horarias base de mano de obra en Colombia según CYPE (con prestaciones sociales y factor de seguridad)
-TARIFAS_MANO_DE_OBRA_CYPE = {
-    "oficial": Decimal("41092.96"),
-    "ayudante": Decimal("30700.62"),
-    "peon": Decimal("28444.53"),
-    "cuadrilla": Decimal("71793.58"),  # 1 Oficial + 1 Ayudante
-}
+# Prefijo del código CYPE → categoría. Es más fiable que leer los encabezados de sección
+# del HTML, que a veces faltan y dejaban la mano de obra clasificada como "Materiales".
+_PREFIJO_TIPO = {"mo": "Mano de obra", "mq": "Equipos", "mt": "Materiales"}
+
+# Caché en memoria: una propuesta cotiza ~8 insumos y muchos caen en la misma unidad de
+# obra, así que sin esto se repetirían las mismas descargas dentro de una sola petición.
+_CACHE_TTL = 3600  # segundos
+_CACHE_BUSQUEDAS: dict[str, tuple[float, list]] = {}
+_CACHE_DESGLOSES: dict[str, tuple[float, Optional[dict]]] = {}
+
+
+def _cache_get(cache: dict, clave: str):
+    entrada = cache.get(clave)
+    if entrada and (time.time() - entrada[0]) < _CACHE_TTL:
+        return entrada[1]
+    cache.pop(clave, None)
+    return None
+
+
+def _cache_set(cache: dict, clave: str, valor) -> None:
+    cache[clave] = (time.time(), valor)
+
+
+def clasificar_por_codigo(codigo: str, por_defecto: str = "Materiales") -> str:
+    """Categoría del insumo a partir del prefijo de su código CYPE (mo/mq/mt)."""
+    return _PREFIJO_TIPO.get((codigo or "").strip().lower()[:2], por_defecto)
+
+
+# Límites de la búsqueda en vivo: cotizar ~8 insumos no puede disparar decenas de
+# descargas, o la petición del usuario se vuelve inaceptablemente lenta.
+_MAX_TERMINOS = 2
+_MAX_UNIDADES_POR_TERMINO = 2
+_UMBRAL_COINCIDENCIA = 0.5   # fracción mínima de palabras en común
+_UMBRAL_ALTERNATIVO = 0.6    # exigencia mayor cuando la descripción no encabeza igual
+
+_ES_MANO_DE_OBRA = re.compile(r"mano de obra|cuadrilla|oficial|ayudante|pe[oó]n|maestro", re.IGNORECASE)
+_PALABRAS_VACIAS = {"para", "tipo", "con", "sin", "por", "los", "las", "del", "una", "uno"}
+
+
+def _tokens_ordenados(texto: str) -> list:
+    """Como _tokens pero conservando el orden de aparición."""
+    t = unicodedata.normalize("NFD", (texto or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    vistos, salida = set(), []
+    for w in re.findall(r"[a-z0-9]+", t):
+        if len(w) > 2 and w not in _PALABRAS_VACIAS and w not in vistos:
+            vistos.add(w)
+            salida.append(w)
+    return salida
+
+
+def _tokens(texto: str) -> set:
+    """Palabras significativas, sin tildes ni signos, para comparar descripciones."""
+    t = unicodedata.normalize("NFD", (texto or "").lower())
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn")
+    return {w for w in re.findall(r"[a-z0-9]+", t) if len(w) > 2 and w not in _PALABRAS_VACIAS}
 
 
 class CypeSource:
@@ -46,6 +100,11 @@ class CypeSource:
         query = (query or "").strip()
         if not query:
             return []
+
+        clave_cache = f"{query.lower()}|{limite}"
+        en_cache = _cache_get(_CACHE_BUSQUEDAS, clave_cache)
+        if en_cache is not None:
+            return en_cache
 
         url = f"{BASE_SEARCH_API}?q={quote(query)}&zone=6&offset=0&limit={max(1, min(limite, 20))}&lang_interface=es"
         try:
@@ -64,6 +123,7 @@ class CypeSource:
                     "url": r.get("url"),
                     "tipo_obra": r.get("type_name", "Obra nueva"),
                 })
+            _cache_set(_CACHE_BUSQUEDAS, clave_cache, salida)
             return salida
         except Exception as e:
             log.warning("Error consultando API CYPE para '%s': %s", query, e)
@@ -74,17 +134,26 @@ class CypeSource:
         if not url:
             return None
 
+        en_cache = _cache_get(_CACHE_DESGLOSES, url)
+        if en_cache is not None:
+            return en_cache
+
         try:
             res = requests.get(url, headers=HEADERS, timeout=self.timeout)
             if res.status_code != 200:
                 log.warning("No se pudo obtener detalle CYPE: HTTP %d", res.status_code)
                 return None
+            # CYPE no declara charset en la cabecera y requests asume latin-1; sin esto
+            # las descripciones llegan como "OficiaI 1Âª" o "tixotrÃ³pico".
+            res.encoding = "utf-8"
             html = res.text
         except Exception as e:
             log.warning("Error descargando detalle CYPE (%s): %s", url, e)
             return None
 
-        return self._parsear_html_desglose(html, url)
+        desglose = self._parsear_html_desglose(html, url)
+        _cache_set(_CACHE_DESGLOSES, url, desglose)
+        return desglose
 
     def _parsear_html_desglose(self, html: str, url: str = "") -> Optional[dict]:
         """Parsea las tablas HTML del generador de precios CYPE."""
@@ -178,7 +247,7 @@ class CypeSource:
                 if desc_ins and p_unit is not None and "subtotal" not in desc_ins.lower():
                     insumos.append({
                         "codigo": cod_ins,
-                        "tipo_insumo": categoria_actual,
+                        "tipo_insumo": clasificar_por_codigo(cod_ins, categoria_actual),
                         "descripcion": desc_ins,
                         "unidad": und_ins or "und",
                         "rendimiento": rend,
@@ -196,77 +265,112 @@ class CypeSource:
         }
 
     def buscar_referencia_insumo(self, descripcion: str, tipo_insumo: str = "") -> Optional[dict]:
-        """Intenta cotizar un insumo usando la data y tarifas de CYPE."""
-        desc_lower = (descripcion or "").lower()
-        tipo_lower = (tipo_insumo or "").lower()
+        """Cotiza un insumo consultando CYPE en vivo.
 
-        # 1. Caso Mano de Obra: resolver de inmediato con tarifas CYPE vigentes
-        if "mano de obra" in tipo_lower or "cuadrilla" in desc_lower or "oficial" in desc_lower or "ayudante" in desc_lower:
-            if "cuadrilla" in desc_lower or ("oficial" in desc_lower and "ayudante" in desc_lower):
-                return {
-                    "descripcion": "Cuadrilla de construcción (1 Oficial + 1 Ayudante)",
-                    "precio": TARIFAS_MANO_DE_OBRA_CYPE["cuadrilla"],
-                    "unidad": "h",
-                    "fuente": f"{FUENTE} · Tarifa Jornada Oficial+Ayudante",
-                }
-            if "oficial" in desc_lower:
-                return {
-                    "descripcion": "Oficial 1ª de construcción",
-                    "precio": TARIFAS_MANO_DE_OBRA_CYPE["oficial"],
-                    "unidad": "h",
-                    "fuente": f"{FUENTE} · Tarifa Oficial 1ª",
-                }
-            if "ayudante" in desc_lower or "peon" in desc_lower or "peón" in desc_lower:
-                return {
-                    "descripcion": "Ayudante / Peón de construcción",
-                    "precio": TARIFAS_MANO_DE_OBRA_CYPE["ayudante"],
-                    "unidad": "h",
-                    "fuente": f"{FUENTE} · Tarifa Ayudante",
-                }
+        No hay precios escritos en el código: si CYPE no responde o no se encuentra el
+        insumo se devuelve None, y el llamador sigue con la cascada (banco de APUs,
+        catálogo comercial, SECOP) en vez de mostrar una cifra sin respaldo.
+        """
+        desc = (descripcion or "").strip()
+        if not desc:
+            return None
 
-        # 2. Caso Materiales comunes de estructura
-        # Acero
-        if ("acero" in desc_lower or "refuerzo" in desc_lower or "varilla" in desc_lower) and "equipo" not in tipo_lower:
-            return {
-                "descripcion": "Acero en barras corrugadas Grado 60 (fy=4200 kg/cm²)",
-                "precio": Decimal("3149.64"),
-                "unidad": "kg",
-                "fuente": f"{FUENTE} · mt07aco060a Acero fy=4200",
-            }
-        # Concreto premezclado / Concreto 3000 PSI / f'c=210
-        if "concreto" in desc_lower and "vibrador" not in desc_lower and "mezcladora" not in desc_lower and "equipo" not in tipo_lower:
-            precio_concreto = Decimal("707791.40") if "3000" in desc_lower or "210" in desc_lower else Decimal("685000.00")
-            return {
-                "descripcion": "Concreto f'c=210 kg/cm² (21 MPa / 3000 PSI)",
-                "precio": precio_concreto,
-                "unidad": "m3",
-                "fuente": f"{FUENTE} · CSZ010 Concreto Estructural",
-            }
-        # Madera para encofrado
-        if "madera" in desc_lower or "encofrado" in desc_lower or "formaleta" in desc_lower:
-            return {
-                "descripcion": "Madera para encofrado (tablas y listones)",
-                "precio": Decimal("7500.00"),
-                "unidad": "pie2",
-                "fuente": f"{FUENTE} · Sistema de Encofrado",
-            }
+        objetivo = _tokens(desc)
+        if not objetivo:
+            return None
+        # Palabra principal = primer sustantivo de la descripción ("Acero de refuerzo…").
+        ordenados = _tokens_ordenados(desc)
+        principal = ordenados[0] if ordenados else ""
 
-        # 3. Búsqueda activa en la API si no es de los básicos
-        termino_buscar = " ".join([w for w in desc_lower.split() if len(w) > 3][:2])
-        if termino_buscar:
-            items = self.buscar(termino_buscar, limite=2)
-            if items and items[0].get("url"):
-                desglose = self.extraer_desglose(items[0]["url"])
-                if desglose and desglose.get("insumos"):
-                    palabras_clave = [w for w in desc_lower.split() if len(w) > 3]
-                    for ins in desglose["insumos"]:
-                        ins_d = (ins.get("descripcion") or "").lower()
-                        if any(pk in ins_d for pk in palabras_clave) and ins.get("precio"):
-                            return {
-                                "descripcion": ins.get("descripcion", descripcion),
-                                "precio": ins["precio"],
-                                "unidad": ins.get("unidad", "und"),
-                                "fuente": f"{FUENTE} · {ins.get('codigo', 'insumo')}",
-                            }
+        for termino in self._terminos_busqueda(desc, tipo_insumo):
+            for item in self.buscar(termino, limite=_MAX_UNIDADES_POR_TERMINO):
+                url = item.get("url")
+                if not url:
+                    continue
+                desglose = self.extraer_desglose(url)
+                if not desglose or not desglose.get("insumos"):
+                    continue
 
+                mejor = self._mejor_coincidencia(desglose["insumos"], objetivo, tipo_insumo, principal)
+                if mejor:
+                    codigo = mejor.get("codigo") or "insumo"
+                    return {
+                        "descripcion": mejor.get("descripcion") or desc,
+                        "precio": mejor["precio"],
+                        "unidad": mejor.get("unidad") or "und",
+                        "fuente": f"{FUENTE} · {codigo}",
+                        # Página real de la que se extrajo el precio: el soporte verificable.
+                        "url": url,
+                    }
+
+        log.info("CYPE sin coincidencia en vivo para '%s'", desc[:60])
         return None
+
+    def _terminos_busqueda(self, descripcion: str, tipo_insumo: str = "") -> list[str]:
+        """Términos a probar contra la API, del más específico al más general.
+
+        La API busca unidades de obra, no insumos sueltos, así que para un insumo
+        genérico ("Oficial") hace falta caer en una unidad de obra que lo contenga.
+        """
+        palabras = [w for w in re.findall(r"[^\W\d_]+", descripcion, re.UNICODE)
+                    if len(w) > 3 and w.lower() not in _PALABRAS_VACIAS]
+        terminos = []
+        if palabras:
+            terminos.append(" ".join(palabras[:2]))
+            if len(palabras) > 1:
+                terminos.append(palabras[0])
+        # La mano de obra y la herramienta aparecen en el desglose de casi cualquier
+        # unidad de obra, así que un término de obra corriente sirve de ancla.
+        if _ES_MANO_DE_OBRA.search(f"{descripcion} {tipo_insumo}"):
+            terminos.append("concreto estructural")
+        vistos, salida = set(), []
+        for t in terminos:
+            if t and t not in vistos:
+                vistos.add(t)
+                salida.append(t)
+        return salida[:_MAX_TERMINOS]
+
+    @staticmethod
+    def _mejor_coincidencia(insumos: list[dict], objetivo: set, tipo_insumo: str = "",
+                            principal: str = "") -> Optional[dict]:
+        """Insumo del desglose que mejor corresponde al que se está cotizando.
+
+        Se acepta un candidato si nombra el mismo material de entrada (su descripción
+        ARRANCA con la palabra principal buscada) o si cubre casi todas las palabras.
+        Sin esa condición, "acero de refuerzo" traía un perfil tubular "de acero
+        galvanizado" y "concreto 3000 PSI" una grama sintética.
+        """
+        tipo_norm = (tipo_insumo or "").strip().lower()
+        mejor, mejor_score = None, 0.0
+        for ins in insumos:
+            precio = ins.get("precio")
+            if precio is None or precio <= 0:
+                continue
+            # La "herramienta menor" de CYPE es un % sobre la mano de obra, no un precio
+            # unitario: tomarla daría cifras como "$4.111.866 %".
+            if (ins.get("unidad") or "").strip() in ("%", "%%"):
+                continue
+            desc_ins = ins.get("descripcion") or ""
+            tokens_ins = _tokens(desc_ins)
+            if not tokens_ins:
+                continue
+            comunes = objetivo & tokens_ins
+            if not comunes:
+                continue
+
+            lexico = len(comunes) / len(objetivo)
+            # ¿La descripción EMPIEZA nombrando lo mismo? (p.ej. "Acero en barras…").
+            # Tiene que ser la primera palabra: si se acepta en cualquiera de las
+            # primeras posiciones, "Tornillo de acero" empata con "Acero en barras".
+            tokens_ordenados_ins = _tokens_ordenados(desc_ins)
+            encabeza = bool(principal) and bool(tokens_ordenados_ins) and tokens_ordenados_ins[0] == principal
+            if not encabeza and lexico < _UMBRAL_ALTERNATIVO:
+                continue
+
+            score = lexico + (0.5 if encabeza else 0.0)
+            # Coincidir en categoría solo desempata entre candidatos ya aceptados.
+            if tipo_norm and clasificar_por_codigo(ins.get("codigo") or "").lower() == tipo_norm:
+                score += 0.25
+            if score > mejor_score:
+                mejor, mejor_score = ins, score
+        return mejor

@@ -239,14 +239,9 @@ def test_aplicar_jerarquia_precios_prioridad():
             return None
 
     class DummyExtRepo:
+        """SECOP quedó fuera de la cascada: el repo externo ya no aporta precios."""
+
         def buscar(self, desc, fuente=None, ciudad=None, **kwargs):
-            if fuente in ("SECOP II", "SECOP") and "cemento" in desc.lower():
-                return [{"precio": 32000, "fuente": "SECOP II", "granularidad": "material"}]
-            if fuente in ("SECOP II", "SECOP") and "pintura" in desc.lower():
-                return [{"precio": 45000, "fuente": "SECOP II", "url": "https://secop.gov.co/doc/123", "granularidad": "material"}]
-            if fuente in ("SECOP II", "SECOP") and "retroexcavadora" in desc.lower():
-                # Contrato macro de licitación pública: DEBE SER DESCARTADO
-                return [{"precio": 144353664, "fuente": "SECOP II: ANI", "granularidad": "contrato"}]
             return []
 
     insumos = [
@@ -286,12 +281,12 @@ def test_aplicar_jerarquia_precios_prioridad():
     assert "Homecenter" in ins_res[2]["fuente"]
     assert "297066" in ins_res[2]["fuente_link"]
 
-    # 4. Pintura viene de SECOP II (4ª prioridad: insumo unitario válido)
-    assert ins_res[3]["precio"] == 45000
-    assert "SECOP II" in ins_res[3]["fuente"]
-    assert ins_res[3]["fuente_link"] == "https://secop.gov.co/doc/123"
+    # 4. Pintura: ninguna fuente activa la cotiza -> queda pendiente (antes la tomaba
+    #    de SECOP, que se desconectó por publicar solo contratos completos).
+    assert ins_res[3]["precio"] is None
+    assert "Pendiente cotización" in ins_res[3]["fuente"]
 
-    # 5. Retroexcavadora: el registro de SECOP es un contrato macro ($144M), DEBE SER DESCARTADO -> queda Pendiente
+    # 5. Retroexcavadora: tampoco se cotiza -> queda pendiente
     assert ins_res[4]["precio"] is None
     assert "Pendiente cotización" in ins_res[4]["fuente"]
 

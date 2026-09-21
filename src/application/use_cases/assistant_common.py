@@ -97,10 +97,10 @@ def build_schema_prompt() -> str:
    - ciudad, pais, entidad, contratista, nombre_proyecto, numero_contrato: Datos del proyecto.
    - proyecto_id: ID del proyecto asociado en la tabla de proyectos.
 
-2. precio_referencia_externa: Precios de mercado y referencias externas (SECOP II, CYPE Colombia, Constructor Homecenter, ANI, IDU, INVÍAS).
+2. precio_referencia_externa: Precios de mercado y referencias externas (CYPE Colombia, Constructor Homecenter, ANI, IDU, INVÍAS).
    Úsala para comparar precios del banco interno contra el mercado exterior o consultar referencias públicas.
    Columnas clave:
-   - fuente: Origen del dato ('SECOP II', 'CYPE Colombia', 'Constructor Homecenter', 'ANI', 'IDU', 'INVÍAS').
+   - fuente: Origen del dato ('CYPE Colombia', 'Constructor Homecenter', 'ANI', 'IDU', 'INVÍAS').
    - fuente_id: Identificador en la fuente externa (ej: código CYPE, id contrato).
    - granularidad: 'insumo' (insumo de obra), 'material' (producto de ferretería/retail), o 'contrato' (proyecto/contrato global).
    - descripcion: Nombre del insumo, material o contrato.
@@ -138,9 +138,34 @@ def build_schema_prompt() -> str:
    - fecha: Fecha del registro de precio.
    - fuente: Fuente que aportó el precio.
 
+
+6. proveedor: Directorio de proveedores que pueden cotizar insumos (fuente: IDU).
+   Úsala para responder "¿quién vende X?" o "¿qué proveedores hay en tal ciudad?". NO tiene precios.
+   Columnas clave:
+   - nombre: Razón social del proveedor.
+   - municipio, departamento: Dónde está ubicado (la mayoría en Bogotá).
+   - telefono, web_correo, contacto: Datos para pedir la cotización.
+   - cotizo: 1 si ya respondió cotizaciones antes.
+
+7. proveedor_grupo: Qué grupos de insumo abastece cada proveedor (un proveedor puede estar en varios).
+   Columnas clave:
+   - proveedor_id: Se une con proveedor.id.
+   - grupo: Categoría del insumo ('PINTURAS', 'NEOPRENOS', 'EQUIPO PESADO', 'CONCRETOS Y MORTEROS PREMEZCLADOS', ...).
+
+8. insumo_referencia_idu: Banco de Precios de Referencia (BPR) del IDU: precio oficial por insumo.
+   Úsala como precio de referencia oficial y vigente, y como puente para saber quién suministra un insumo
+   (insumo_referencia_idu.grupo = proveedor_grupo.grupo).
+   Columnas clave:
+   - codigo: Código del insumo en el BPR.
+   - grupo: Misma categoría que proveedor_grupo.grupo.
+   - nombre: Descripción del insumo.
+   - unidad, precio: Unidad y precio oficial en COP.
+   - periodo: Publicación del BPR (ej. '2026-I Fase I').
+
 REGLAS ABSOLUTAS (SINTAXIS ESTRICTAMENTE MySQL 8.0):
 1. SOLO consultas SELECT o WITH.
-2. SOLO las 5 tablas autorizadas arriba (apus, precio_referencia_externa, indice_costos, insumo_maestro, precio_insumo_historico).
+2. SOLO las 8 tablas autorizadas arriba (apus, precio_referencia_externa, indice_costos, insumo_maestro,
+   precio_insumo_historico, proveedor, proveedor_grupo, insumo_referencia_idu).
 3. Para búsquedas de texto usar siempre LIKE con % (NUNCA ILIKE — MySQL no soporta ILIKE).
 4. Máximo LIMIT 20.
 5. Nunca uses markdown en la respuesta SQL (sin comillas invertidas ni explicaciones).

@@ -10,37 +10,81 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.infrastructure.scraping.cype_source import CypeSource, TARIFAS_MANO_DE_OBRA_CYPE
+from src.infrastructure.scraping.cype_source import CypeSource
 from src.application.use_cases.constructor_apu import _rellenar_precios_reales
 
 
-def test_tarifas_mano_de_obra_cype():
+_DESGLOSE_FAKE = {
+    "codigo": "CSZ010",
+    "titulo": "Zapata de concreto armado",
+    "unidad": "m³",
+    "precio_total": Decimal("434745.16"),
+    "url": "https://colombia.generadordeprecios.info/CSZ010.html",
+    "insumos": [
+        {"codigo": "mt26reh302", "tipo_insumo": "Materiales", "descripcion": "Tornillo de acero de 6 mm",
+         "unidad": "Ud", "rendimiento": Decimal("2"), "precio": Decimal("136.77")},
+        {"codigo": "mt07aco060a", "tipo_insumo": "Materiales", "descripcion": "Acero en barras corrugadas, Grado 60",
+         "unidad": "kg", "rendimiento": Decimal("51"), "precio": Decimal("3149.64")},
+        {"codigo": "mo043", "tipo_insumo": "Mano de obra", "descripcion": "Oficial 1ª armador de concreto.",
+         "unidad": "h", "rendimiento": Decimal("0.174"), "precio": Decimal("41092.96")},
+        {"codigo": "", "tipo_insumo": "Herramienta", "descripcion": "Herramienta menor",
+         "unidad": "%", "rendimiento": Decimal("2"), "precio": Decimal("4111866.54")},
+    ],
+}
+
+
+def _cype_mockeado(monkeypatch, desglose=_DESGLOSE_FAKE, resultados=None):
+    """CypeSource que no toca la red: devuelve un desglose fijo."""
     src = CypeSource()
-    cuadrilla = src.buscar_referencia_insumo("Cuadrilla de construcción (Oficial + Ayudante)", tipo_insumo="Mano de obra")
-    assert cuadrilla is not None
-    assert cuadrilla["precio"] == TARIFAS_MANO_DE_OBRA_CYPE["cuadrilla"]
-    assert cuadrilla["unidad"] == "h"
-    assert "CYPE Colombia" in cuadrilla["fuente"]
+    items = resultados if resultados is not None else [{"codigo": "CSZ010", "titulo": "Zapata",
+                                                        "url": _DESGLOSE_FAKE["url"]}]
+    monkeypatch.setattr(src, "buscar", lambda q, limite=5: items)
+    monkeypatch.setattr(src, "extraer_desglose", lambda url: desglose)
+    return src
 
 
-def test_referencia_materiales_cype():
-    src = CypeSource()
-    # Concreto
-    concreto = src.buscar_referencia_insumo("Concreto 3000 PSI", tipo_insumo="Materiales")
-    assert concreto is not None
-    assert concreto["precio"] > Decimal("600000")
-    assert concreto["unidad"] == "m3"
+def test_cotiza_en_vivo_y_devuelve_el_enlace_del_soporte(monkeypatch):
+    """El precio sale del desglose descargado y trae la URL de la que se extrajo."""
+    src = _cype_mockeado(monkeypatch)
 
-    # Acero
-    acero = src.buscar_referencia_insumo("Acero de refuerzo figurado y colocado", tipo_insumo="Materiales")
-    assert acero is not None
-    assert acero["precio"] > Decimal("3000")
-    assert acero["unidad"] == "kg"
+    ref = src.buscar_referencia_insumo("Acero de refuerzo figurado", tipo_insumo="Materiales")
+    assert ref is not None
+    assert ref["precio"] == Decimal("3149.64")      # barras corrugadas, no el tornillo
+    assert ref["unidad"] == "kg"
+    assert "mt07aco060a" in ref["fuente"]
+    assert ref["url"] == _DESGLOSE_FAKE["url"]      # soporte verificable, no la portada
 
-    # Madera
-    madera = src.buscar_referencia_insumo("Madera para encofrado (tablas, listones)", tipo_insumo="Materiales")
-    assert madera is not None
-    assert madera["precio"] > Decimal("0")
+
+def test_no_inventa_precio_cuando_cype_no_responde(monkeypatch):
+    """Sin respuesta de CYPE no se devuelve ningún precio: la cascada sigue al banco."""
+    src = _cype_mockeado(monkeypatch, resultados=[])
+    assert src.buscar_referencia_insumo("Concreto 3000 PSI", tipo_insumo="Materiales") is None
+
+
+def test_descarta_insumo_de_otro_material(monkeypatch):
+    """Un insumo que solo comparte una palabra no debe adoptarse como precio."""
+    grama = dict(_DESGLOSE_FAKE, insumos=[
+        {"codigo": "mt47cit230b", "tipo_insumo": "Materiales",
+         "descripcion": "Grama sintética sobre base de concreto", "unidad": "m²",
+         "rendimiento": Decimal("1"), "precio": Decimal("57186.87")},
+    ])
+    src = _cype_mockeado(monkeypatch, desglose=grama)
+    assert src.buscar_referencia_insumo("Concreto 3000 PSI", tipo_insumo="Materiales") is None
+
+
+def test_descarta_herramienta_menor_porcentual(monkeypatch):
+    """La herramienta menor de CYPE es un % sobre la mano de obra, no un precio unitario."""
+    src = _cype_mockeado(monkeypatch)
+    assert src.buscar_referencia_insumo("Herramienta menor", tipo_insumo="Equipos") is None
+
+
+def test_clasifica_insumos_por_prefijo_de_codigo():
+    """mo/mq/mt determinan la categoría; antes la mano de obra caía en 'Materiales'."""
+    from src.infrastructure.scraping.cype_source import clasificar_por_codigo
+
+    assert clasificar_por_codigo("mo043") == "Mano de obra"
+    assert clasificar_por_codigo("mq06pym020") == "Equipos"
+    assert clasificar_por_codigo("mt07aco060a") == "Materiales"
 
 
 def test_parsear_html_desglose_cype():
@@ -74,28 +118,33 @@ def test_parsear_html_desglose_cype():
     assert desglose["insumos"][1]["precio"] == Decimal("41092.96")
 
 
-def test_rellenar_precios_reales_completa_insumos_vacios():
+def test_rellenar_precios_reales_completa_insumos_vacios(monkeypatch):
+    """CYPE cotiza lo que encuentra en vivo; lo que no, se deja sin precio para que la
+    cascada siga al banco de APUs en lugar de inventar una cifra."""
+    import src.infrastructure.scraping.cype_source as cype_mod
+
+    fake = _cype_mockeado(monkeypatch)
+    monkeypatch.setattr(cype_mod, "CypeSource", lambda *a, **kw: fake)
+
     propuesta = {
         "insumos": [
-            {"tipo_insumo": "Materiales", "descripcion": "Concreto 3000 PSI", "unidad": "m3", "precio": None, "fuente": "Sin referencia"},
-            {"tipo_insumo": "Mano de obra", "descripcion": "Cuadrilla Oficial + Ayudante", "unidad": "h", "precio": None, "fuente": None},
+            {"tipo_insumo": "Mano de obra", "descripcion": "Oficial", "unidad": "h", "precio": None, "fuente": None},
+            {"tipo_insumo": "Materiales", "descripcion": "Membrana geotextil no tejida", "unidad": "m2", "precio": None, "fuente": None},
             {"tipo_insumo": "Equipos", "descripcion": "Vibrador de concreto", "unidad": "h", "precio": 11000.0, "fuente": "Banco INVIAS"},
         ]
     }
-    resultado = _rellenar_precios_reales(propuesta, ciudad="Bogota")
-    insumos = resultado["insumos"]
-    
-    # Concreto debe tener precio
-    assert insumos[0]["precio"] is not None
-    assert insumos[0]["precio"] > 0
+    insumos = _rellenar_precios_reales(propuesta, ciudad="Bogota")["insumos"]
+
+    # Oficial sí está en el desglose de CYPE.
+    assert insumos[0]["precio"] == 41092.96
     assert "CYPE" in insumos[0]["fuente"]
+    assert insumos[0]["fuente_link"].startswith("https://colombia.generadordeprecios.info/")
 
-    # Cuadrilla debe tener precio
-    assert insumos[1]["precio"] is not None
-    assert insumos[1]["precio"] > 0
-    assert "CYPE" in insumos[1]["fuente"]
+    # Lo que CYPE no cubre no se le atribuye a CYPE: lo resuelve (o no) el resto de la
+    # cascada —banco de APUs, catálogo comercial, SECOP—, nunca un precio inventado aquí.
+    assert "CYPE" not in (insumos[1].get("fuente") or "")
 
-    # Vibrador debe conservar su precio original del banco
+    # Un precio ya resuelto por el banco se conserva intacto.
     assert insumos[2]["precio"] == 11000.0
     assert insumos[2]["fuente"] == "Banco INVIAS"
 

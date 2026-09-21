@@ -1,7 +1,7 @@
 """
 Infrastructure: Scheduler de Fondo Automático
 Ejecuta tareas periódicas no bloqueantes para mantener al día los índices DANE (ICCP)
-y referencias de precios de contratos públicos (SECOP II y ANI).
+y referencias de precios de concesiones públicas (ANI).
 """
 
 import asyncio
@@ -41,19 +41,13 @@ async def _ejecutar_ciclo_actualizacion():
     except Exception:
         log.warning("No se pudo actualizar el índice DANE en este ciclo", exc_info=True)
 
-    # 2. Ingesta ligera de contratos recientes SECOP II
-    try:
-        from src.application.use_cases.ingesta_referencias import ingerir_secop
-        for kw in ["pavimento", "concreto", "interventoría"]:
-            try:
-                res_secop = await asyncio.to_thread(ingerir_secop, kw, limite=15)
-                log.info("Sincronización SECOP II ('%s'): %s contratos.", kw, res_secop.get("registros", 0))
-            except Exception:
-                pass
-    except Exception:
-        log.warning("No se pudo actualizar SECOP II en este ciclo", exc_info=True)
+    # SECOP II está desactivado: su open data solo expone contratos completos
+    # (licitaciones de cientos de millones, sin unidad ni desglose), así que nunca
+    # aportó un precio unitario utilizable. El adaptador sigue en
+    # `src/infrastructure/scraping/secop_source.py` por si se retoma con el dataset
+    # de ítems, pero no se ingiere ni se muestra en la aplicación.
 
-    # 3. Ingesta ligera de concesiones ANI
+    # 2. Ingesta ligera de concesiones ANI
     try:
         from src.application.use_cases.ingesta_referencias import ingerir_ani
         res_ani = await asyncio.to_thread(ingerir_ani, "vial", limite=20)

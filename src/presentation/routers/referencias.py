@@ -1,8 +1,8 @@
 """
-Presentation: Referencias de precio externas (SECOP II, ...)
+Presentation: Referencias de precio externas (CYPE, Homecenter, ANI, IDU, INVÍAS)
 
 Endpoints para:
-  - disparar la ingesta desde SECOP por término (rol analista+), y
+  - disparar la ingesta por término (rol analista+), y
   - consultar las referencias externas ya guardadas.
 """
 
@@ -30,35 +30,12 @@ from src.application.use_cases.ingesta_referencias import (
     ingerir_homecenter,
     ingerir_idu,
     ingerir_invias,
-    ingerir_secop,
 )
 from src.presentation.auth import get_current_user, require_role
 
 log = logging.getLogger("mapus.presentation.referencias")
 
 router = APIRouter(prefix="/referencias", tags=["referencias-externas"])
-
-
-class IngestaSecopRequest(BaseModel):
-    keyword: str = Field(..., min_length=3, description="Término de búsqueda (objeto del contrato)")
-    ciudad: Optional[str] = Field(None, description="Filtro de ciudad/municipio")
-    desde_fecha: Optional[str] = Field(None, description="'YYYY-MM-DD' para acotar por recencia")
-    limite: int = Field(200, ge=1, le=1000, description="Máximo de contratos a traer")
-
-
-@router.post("/secop/ingerir")
-async def ingerir_secop_endpoint(payload: IngestaSecopRequest,
-                                 user: dict = Depends(require_role("analista"))) -> dict:
-    try:
-        return ingerir_secop(
-            payload.keyword, ciudad=payload.ciudad,
-            desde_fecha=payload.desde_fecha, limite=payload.limite,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
-        log.exception("Error ingiriendo desde SECOP")
-        raise HTTPException(status_code=502, detail="Fallo consultando SECOP. Intenta nuevamente.")
 
 
 class IngestaCypeRequest(BaseModel):
@@ -234,7 +211,7 @@ async def backfill_catalogo_endpoint(
     user: dict = Depends(require_role("analista")),
 ) -> dict:
     """origen=banco: puebla desde la tabla apus. origen=externas: puebla desde
-    TODAS las referencias externas ya ingeridas (SECOP, IDU, INVÍAS)."""
+    TODAS las referencias externas ya ingeridas (CYPE, IDU, INVÍAS, ...)."""
     try:
         if origen == "externas":
             return backfill_desde_referencias_externas(limite=limite)

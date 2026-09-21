@@ -406,6 +406,18 @@ export class ApuService {
     });
   }
 
+  /** Encola la propuesta en segundo plano; responde de inmediato con el job_id. */
+  sugerirEstructuraAsync(solicitudId: number, porcentajesAiu?: any): Observable<any> {
+    return this.http.post(`${this.baseUrl}/constructor-apu/${solicitudId}/sugerir-async`, {
+      porcentajes_aiu: porcentajesAiu || null,
+    });
+  }
+
+  /** Estado y resultado de la propuesta en segundo plano de un borrador. */
+  consultarPropuestaJob(solicitudId: number): Observable<any> {
+    return this.http.get(`${this.baseUrl}/constructor-apu/${solicitudId}/propuesta-job`);
+  }
+
   refinarPropuesta(
     solicitudId: number,
     conversacion: { rol: 'ia' | 'usuario'; texto: string }[],

@@ -26,6 +26,9 @@ log = logging.getLogger("mapus.application.constructor_propuesta")
 
 TIPOS_INSUMO_VALIDOS = ["Materiales", "Equipos", "Mano de obra", "Transporte", "Herramienta", "Otro"]
 
+# Enlace de respaldo cuando la referencia CYPE no trae la página de la que salió el precio.
+CYPE_BASE_WEB = "https://colombia.generadordeprecios.info/"
+
 
 def _es_indirecto_o_aiu(desc: Optional[str] = None, tipo: Optional[str] = None) -> bool:
     """Detecta si un insumo corresponde a costos indirectos o A.I.U.
@@ -358,7 +361,6 @@ INSTRUCCIONES:
    parámetros contractuales del proyecto. Todos los insumos aquí deben ser estrictamente costos directos de ejecución.
 2. JERARQUÍA ESTRICTA DE FUENTES PARA PRECIOS:
    - 1ª Prioridad (CYPE Colombia): Aplica para mano de obra (jornales/hora de oficial, obrero, ayudante) y materiales estándar de mercado vigentes. Rotula la fuente como "CYPE Colombia".
-   - 2ª Prioridad (SECOP II): Si no está en CYPE pero proviene de contratación pública estatal de SECOP II, rotula la fuente como "SECOP II: <entidad>".
    - 3ª Prioridad (Banco de APUs): Si no está en las anteriores, usa la MEDIANA indexada del banco histórico de APUs, rotulando "Banco: <proyecto> · <ciudad>".
    - Si no hay referencia en ninguna fuente, deja el precio en null y fuente "Pendiente cotización contratista".
    Para el RENDIMIENTO, cuando el insumo aparezca en "RENDIMIENTOS DE REFERENCIA" usa la MEDIANA
@@ -384,12 +386,12 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
                                precios_ref_banco: Optional[Any] = None,
                                cype_source: Optional[Any] = None,
                                referencia_externa_repo: Optional[Any] = None,
-                               materiales_source: Optional[Any] = None) -> dict:
+                               materiales_source: Optional[Any] = None,
+                               proveedor_repo_: Optional[Any] = None) -> dict:
     """Aplica la jerarquía obligatoria de precios por insumo:
        1º CYPE Colombia (tarifas oficiales y de mercado vigentes)
        2º Banco de APUs (mediana histórica indexada a pesos de hoy o referencias del banco)
        3º Catálogo de Materiales Comerciales en Vivo (Homecenter Colombia y marcas de ferretería)
-       4º SECOP II (precios de contratación pública estatal, excluyendo contratos macro)
        5º Sin precio (null, pendiente de cotización por contratista)
     """
     ciudad_txt = (solicitud.get("ciudad") or "").strip()
@@ -441,7 +443,9 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
                     if ciudad_txt and "zona" not in fuente.lower():
                         fuente = f"{fuente} · zona {ciudad_txt}"
                     ins["fuente"] = fuente
-                    ins["fuente_link"] = "https://generadordeprecios.info/obra_nueva/Colombia.html"
+                    # Enlace a la página CYPE de la que salió el precio. Los precios de la
+                    # tabla de tarifas fijas no tienen página propia y caen a la portada.
+                    ins["fuente_link"] = ref_cype.get("url") or CYPE_BASE_WEB
                     if ref_cype.get("unidad") and not ins.get("unidad"):
                         ins["unidad"] = ref_cype["unidad"]
                     asignado = True
@@ -451,7 +455,13 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
         if asignado:
             continue
 
-        # ── 2ª PRIORIDAD: BANCO DE APUs (Histórico) ──
+        # ── 2ª PRIORIDAD: BANCO DE PRECIOS DE REFERENCIA DEL IDU ──
+        # Precio oficial de la entidad, con período de publicación: mejor soporte
+        # ante interventoría que el histórico del banco, que mezcla varios años.
+        if _usar_precio_idu(ins, desc, proveedor_repo_=proveedor_repo_):
+            continue
+
+        # ── 3ª PRIORIDAD: BANCO DE APUs (Histórico) ──
         tokens = _tokenizar(desc)
         candidatos_clave = list(tokens)
         if desc.lower().strip() not in candidatos_clave:
@@ -474,7 +484,7 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
 
         if not asignado and ins.get("precio") is not None and float(ins["precio"]) > 0:
             fuente_ia = (ins.get("fuente") or "").strip()
-            if not fuente_ia or ("cype" not in fuente_ia.lower() and "secop" not in fuente_ia.lower() and "homecenter" not in fuente_ia.lower()):
+            if not fuente_ia or ("cype" not in fuente_ia.lower() and "homecenter" not in fuente_ia.lower()):
                 ins["fuente"] = fuente_ia if fuente_ia.startswith("Banco") else f"Banco de APUs: {fuente_ia or 'Referencia histórica'}"
                 ins["fuente_link"] = "/banco-apus"
                 asignado = True
@@ -499,40 +509,77 @@ def _aplicar_jerarquia_precios(propuesta: dict, solicitud: dict,
         if asignado:
             continue
 
-        # ── 4ª PRIORIDAD: SECOP II (Contratación Pública - SOLO granularidad de insumo unitario) ──
-        if referencia_externa_repo:
-            try:
-                filas_secop = referencia_externa_repo.buscar(desc, fuente="SECOP II", limite=3)
-                if not filas_secop:
-                    filas_secop = referencia_externa_repo.buscar(desc, fuente="SECOP", limite=3)
-                for fs in filas_secop:
-                    # OMITIR contratos completos: son licitaciones globales macro, no precios unitarios
-                    if fs.get("granularidad") == "contrato":
-                        continue
-                    p_val = fs.get("precio") if fs.get("precio") is not None else fs.get("precio_unitario")
-                    if p_val is not None and 0 < float(p_val) <= 2_500_000:
-                        ins["precio"] = float(p_val)
-                        ent = fs.get("entidad") or fs.get("proveedor") or "SECOP II"
-                        fecha_str = f" · {fs['fecha']}" if fs.get("fecha") else ""
-                        ins["fuente"] = f"SECOP II: {ent}{fecha_str}"
-                        secop_url = fs.get("url") or ""
-                        ins["fuente_link"] = secop_url if secop_url else "https://community.secop.gov.co/Public/Tendering/ContractNoticeManagement/Index"
-                        if fs.get("unidad") and not ins.get("unidad"):
-                            ins["unidad"] = fs["unidad"]
-                        asignado = True
-                        break
-            except Exception:
-                pass
-
-        if asignado:
-            continue
-
-        # ── 5ª PRIORIDAD: SIN PRECIO ──
+        # ── SIN PRECIO: al menos, a quién pedirle la cotización ──
         if not asignado:
             ins["precio"] = None
             ins["fuente"] = "Pendiente cotización contratista"
+            _sugerir_proveedores(ins, ciudad_txt, proveedor_repo_=proveedor_repo_)
 
     return propuesta
+
+
+def _repo_proveedores(proveedor_repo_=None):
+    """Repo del directorio IDU, importado perezosamente (los tests lo inyectan)."""
+    if proveedor_repo_ is not None:
+        return proveedor_repo_
+    try:
+        from src.infrastructure.database.repositories.proveedor_repository import (
+            proveedor_repo as repo_por_defecto,
+        )
+        return repo_por_defecto
+    except Exception:
+        return None
+
+
+def _usar_precio_idu(ins: dict, desc: str, proveedor_repo_=None) -> bool:
+    """Cotiza el insumo con el Banco de Precios de Referencia del IDU.
+
+    Devuelve True si asignó precio. El BPR no publica una página por insumo, así
+    que no se fija `fuente_link`: el soporte es el código del insumo y el período.
+    """
+    repo = _repo_proveedores(proveedor_repo_)
+    if repo is None:
+        return False
+    try:
+        match = repo.buscar_grupo_de_insumo(desc)
+    except Exception:
+        log.debug("Fallo consultando el BPR para '%s'", desc, exc_info=True)
+        return False
+
+    if not match or match.get("precio") is None or float(match["precio"]) <= 0:
+        return False
+
+    ins["precio"] = float(match["precio"])
+    codigo = match.get("codigo_idu") or "s/código"
+    ins["fuente"] = f"Banco de Precios IDU · {codigo}"
+    ins["codigo_insumo"] = ins.get("codigo_insumo") or codigo
+    if match.get("unidad") and not ins.get("unidad"):
+        ins["unidad"] = match["unidad"]
+    return True
+
+
+def _sugerir_proveedores(ins: dict, ciudad: Optional[str], proveedor_repo_=None) -> None:
+    """Adjunta al insumo los proveedores del directorio IDU que podrían cotizarlo.
+
+    No fija precio: el directorio no los tiene. Solo convierte un "pendiente de
+    cotización" en algo accionable para el residente.
+    """
+    repo = _repo_proveedores(proveedor_repo_)
+    if repo is None:
+        return
+    try:
+        sugerencia = repo.sugerir_para_insumo(ins.get("descripcion") or "", ciudad=ciudad)
+    except Exception:
+        log.debug("No se pudieron sugerir proveedores para '%s'", ins.get("descripcion"), exc_info=True)
+        return
+    if not sugerencia:
+        return
+
+    ins["proveedores_sugeridos"] = sugerencia["proveedores"]
+    ins["grupo_proveedores"] = sugerencia["grupo"]
+    nombres = ", ".join(p["nombre"] for p in sugerencia["proveedores"][:2])
+    if nombres:
+        ins["fuente"] = f"Pendiente cotización · Sugeridos: {nombres}"
 
 
 def _rellenar_precios_reales(propuesta: dict, ciudad: Optional[str] = None,
@@ -562,9 +609,9 @@ def _validar_solicitud_borrador(solicitud_id: int) -> dict:
 
 def _referencias_para_propuesta(solicitud: dict) -> list[dict]:
     descripcion = solicitud.get("descripcion_actividad") or ""
-    secop_refs = consultar_referencias(descripcion, limite=5)
+    refs_externas = consultar_referencias(descripcion, limite=5)
     refs_internos = analisis_repo.buscar_apus_similares(descripcion)
-    return _rankear_referencias(secop_refs + refs_internos, ciudad=solicitud.get("ciudad"))
+    return _rankear_referencias(refs_externas + refs_internos, ciudad=solicitud.get("ciudad"))
 
 
 def sugerir_estructura(solicitud_id: int, porcentajes_aiu: Optional[dict] = None) -> dict:

@@ -107,6 +107,51 @@ def _obtener_status_error(e: Exception) -> int:
     return status
 
 
+@router.post("/constructor-apu/{solicitud_id}/sugerir-async", tags=["Constructor APU"])
+async def sugerir_estructura_async(solicitud_id: int, payload: Optional[SugerirRequest] = None,
+                                   user: dict = Depends(_ROL_RESIDENTE)) -> dict:
+    """Encola la propuesta y responde de inmediato con el `job_id`.
+
+    Proponer la estructura puede tardar minutos (IA + CYPE + banco). Así el
+    usuario puede irse a otra vista: el avance se consulta en
+    `GET /constructor-apu/{id}/propuesta-job` y al terminar llega una notificación.
+    """
+    from src.application.use_cases import constructor_job
+
+    # Se valida antes de encolar: si el borrador no existe o no está en estado
+    # 'borrador', conviene devolver el error ahora y no dentro del job.
+    try:
+        solicitud = await asyncio.to_thread(constructor_apu._validar_solicitud_borrador, solicitud_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        log.exception("No se pudo validar el borrador %d antes de encolar", solicitud_id)
+        raise HTTPException(status_code=500, detail="No se pudo iniciar la generación de la propuesta.")
+
+    job_id = constructor_job.lanzar_generacion(
+        solicitud_id,
+        porcentajes_aiu=payload.porcentajes_aiu if payload else None,
+        rol_destino=user.get("rol") or "analista",
+        actividad=(solicitud.get("descripcion_actividad") or "")[:120],
+    )
+    return {"job_id": job_id, "status": "QUEUED", "solicitud_id": solicitud_id}
+
+
+@router.get("/constructor-apu/{solicitud_id}/propuesta-job", tags=["Constructor APU"])
+async def estado_propuesta_job(solicitud_id: int, user: dict = Depends(_ROL_RESIDENTE)) -> dict:
+    """Estado (y resultado, si terminó) de la propuesta en segundo plano.
+
+    Se consulta por `solicitud_id` y no por `job_id` para poder retomar el
+    proceso aunque el usuario haya recargado la página o cambiado de vista.
+    """
+    from src.application.use_cases import constructor_job
+
+    estado = await asyncio.to_thread(constructor_job.job_de_solicitud, solicitud_id)
+    if not estado:
+        return {"status": "NONE", "solicitud_id": solicitud_id}
+    return {**estado, "solicitud_id": solicitud_id}
+
+
 @router.post("/constructor-apu/{solicitud_id}/sugerir", tags=["Constructor APU"])
 async def sugerir_estructura(solicitud_id: int, payload: Optional[SugerirRequest] = None,
                              user: dict = Depends(_ROL_RESIDENTE)) -> dict:

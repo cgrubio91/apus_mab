@@ -86,6 +86,9 @@ export class ConstructorApu implements OnInit, OnDestroy {
   private sugerenciaRetries = 0;
   private sugerenciaMaxRetries = 2;
   private retryTimer: ReturnType<typeof setInterval> | null = null;
+  private jobTimer: ReturnType<typeof setInterval> | null = null;
+  /** La propuesta se está calculando en el servidor; se puede salir de la vista. */
+  propuestaEnSegundoPlano = false;
   retryCountdown = 0;
 
   ngOnInit(): void {
@@ -123,6 +126,8 @@ export class ConstructorApu implements OnInit, OnDestroy {
       clearInterval(this.retryTimer);
       this.retryTimer = null;
     }
+    // Solo se deja de mirar: el job sigue en el servidor y avisará por la campana.
+    this.detenerVigilancia();
   }
 
   cargarListaBorradores(): void {
@@ -341,37 +346,77 @@ export class ConstructorApu implements OnInit, OnDestroy {
     this.errorMessage = '';
     this.retryCountdown = 0;
     this.iniciarProgresoScraping();
-    this.apuService.sugerirEstructura(this.solicitudId, this.aiuConfig).subscribe({
+    // La propuesta se calcula en segundo plano: el backend responde enseguida con
+    // un job y se puede salir de esta vista mientras tanto.
+    this.apuService.sugerirEstructuraAsync(this.solicitudId, this.aiuConfig).subscribe({
+      next: () => this.vigilarPropuestaEnCurso(),
+      error: (e) => this._fallo(e, 'No se pudo iniciar la generación de la propuesta.'),
+    });
+  }
+
+  /** Consulta periódicamente el job hasta que termine. */
+  vigilarPropuestaEnCurso(): void {
+    if (!this.solicitudId) return;
+    this.propuestaEnSegundoPlano = true;
+    this.isLoading = true;
+    if (!this.progresoTimer) this.iniciarProgresoScraping();
+    this.detenerVigilancia();
+    this.jobTimer = setInterval(() => this.revisarPropuestaJob(), 4000);
+    this.revisarPropuestaJob();
+  }
+
+  private revisarPropuestaJob(): void {
+    if (!this.solicitudId) return;
+    this.apuService.consultarPropuestaJob(this.solicitudId).subscribe({
       next: (res) => {
-        this.sugerenciaRetries = 0;
-        this._cargarPropuesta(res);
-      },
-      error: (e) => {
-        const status = e?.status || 0;
-        const isOverloaded = status === 503 || status === 502;
-        if (isOverloaded && this.sugerenciaRetries < this.sugerenciaMaxRetries) {
-          this.sugerenciaRetries++;
-          this.progresoTexto = `IA temporalmente saturada. Reintentando automáticamente (${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
-          this.retryCountdown = 15;
-          this.cdr.markForCheck();
-          if (this.retryTimer) clearInterval(this.retryTimer);
-          this.retryTimer = setInterval(() => {
-            this.retryCountdown--;
-            if (this.retryCountdown > 0) {
-              this.progresoTexto = `Reintentando en ${this.retryCountdown}s (intento ${this.sugerenciaRetries}/${this.sugerenciaMaxRetries})...`;
-              this.cdr.markForCheck();
-            } else {
-              clearInterval(this.retryTimer!);
-              this.retryTimer = null;
-              this.generarSugerencia();
-            }
-          }, 1000);
-        } else {
+        const estado = res?.status;
+        if (estado === 'DONE') {
+          this.detenerVigilancia();
+          this.propuestaEnSegundoPlano = false;
           this.sugerenciaRetries = 0;
-          this._fallo(e, 'La IA no pudo generar la propuesta. Intenta de nuevo.');
+          this._cargarPropuesta(res.result);
+        } else if (estado === 'ERROR') {
+          this.detenerVigilancia();
+          this.propuestaEnSegundoPlano = false;
+          this._fallo({ error: { detail: res?.error } },
+                      'La IA no pudo generar la propuesta. Intenta de nuevo.');
+        } else if (estado === 'NONE') {
+          // El job caducó o el servidor se reinició: no tiene sentido seguir esperando.
+          this.detenerVigilancia();
+          this.propuestaEnSegundoPlano = false;
+          this.isLoading = false;
+          this.detenerProgresoScraping();
+          this.cdr.markForCheck();
         }
       },
+      error: () => { /* un fallo puntual de red no debe cortar la vigilancia */ },
     });
+  }
+
+  /** Retoma la propuesta en curso o ya terminada; si no hay ninguna, la genera. */
+  retomarOGenerar(): void {
+    if (!this.solicitudId) return;
+    this.isLoading = true;
+    this.apuService.consultarPropuestaJob(this.solicitudId).subscribe({
+      next: (res) => {
+        const estado = res?.status;
+        if (estado === 'DONE' && res.result) {
+          this._cargarPropuesta(res.result);
+        } else if (estado === 'QUEUED' || estado === 'EXTRACTING' || estado === 'POST_PROCESSING') {
+          this.vigilarPropuestaEnCurso();
+        } else {
+          this.generarSugerencia();
+        }
+      },
+      error: () => this.generarSugerencia(),
+    });
+  }
+
+  private detenerVigilancia(): void {
+    if (this.jobTimer) {
+      clearInterval(this.jobTimer);
+      this.jobTimer = null;
+    }
   }
 
   refinar(): void {
@@ -495,7 +540,9 @@ export class ConstructorApu implements OnInit, OnDestroy {
         if (s.estado === 'borrador' && !(s.insumos || []).length) {
           this.paso = 2;
           this.pasoMax = 2;
-          this.generarSugerencia();
+          // Puede haber una propuesta ya calculándose (o lista) de una visita
+          // anterior: primero se retoma, y solo si no hay nada se lanza otra.
+          this.retomarOGenerar();
         } else if (s.estado === 'borrador') {
           this.paso = 3;
           this.pasoMax = 3;
@@ -668,10 +715,10 @@ export class ConstructorApu implements OnInit, OnDestroy {
     if (link) return link;
     if (!fuente) return '';
     const f = fuente.toLowerCase();
-    if (f.includes('cype')) return 'https://generadordeprecios.info/obra_nueva/Colombia.html';
+    // El dominio viejo (generadordeprecios.info/obra_nueva/Colombia.html) responde 404.
+    if (f.includes('cype')) return 'https://colombia.generadordeprecios.info/';
     if (f.includes('banco') || f.includes('histórica') || f.includes('historica')) return '/banco-apus';
     if (f.includes('homecenter') || f.includes('sodimac')) return 'https://www.homecenter.com.co';
-    if (f.includes('secop')) return 'https://community.secop.gov.co/Public/Tendering/ContractNoticeManagement/Index';
     return '';
   }
 
